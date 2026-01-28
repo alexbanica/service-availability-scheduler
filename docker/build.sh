@@ -40,8 +40,8 @@ if [ -z "${RELEASE_TAG}" ]; then
 fi
 
 export $(xargs < .env) && \
-IMAGE_TAG="${DOCKER_REGISTRY_URI}/device-integration-api:${RELEASE_TAG}-node${BASE_IMAGE_VERSION}" && \
-LATEST_TAG="${DOCKER_REGISTRY_URI}/device-integration-api:latest-node${BASE_IMAGE_VERSION}"
+IMAGE_TAG="${DOCKER_REGISTRY_URI}/service-availability-scheduler:${RELEASE_TAG}-node${BASE_IMAGE_VERSION}" && \
+LATEST_TAG="${DOCKER_REGISTRY_URI}/service-availability-scheduler:latest-node${BASE_IMAGE_VERSION}"
 
 # Build command
 export $(xargs < .env) && \
