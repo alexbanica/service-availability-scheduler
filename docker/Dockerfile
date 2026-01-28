@@ -12,7 +12,7 @@ RUN --mount=type=secret,id=GITHUB_AUTH \
     curl -o src.zip -fL \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $auth" \
+            #-H "Authorization: Bearer $auth" \
             "${GITHUB_REPO}/zipball/${RELEASE_TAG}"; \
     \
     unzip src.zip -d /tmp && \
@@ -23,15 +23,13 @@ FROM node:BASE_BUILD_IMAGE_VERSION AS builder
 WORKDIR /app
 COPY --from=downloader /tmp/src ./
 
-RUN npm install --production --silent nodemon
-RUN npm run build
+RUN npm ci --omit=dev
 
 FROM node:BASE_IMAGE_VERSION AS runtime
 
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
+COPY --from=builder /app ./
+#COPY --from=builder /app/dist ./dist
 
 EXPOSE 3000
 
