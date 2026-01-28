@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Availability - Login</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <h1>Service Availability</h1>
+    <p>Log in with your email address.</p>
+    <form id="login-form">
+      <label for="email">Email</label>
+      <input id="email" type="email" name="email" placeholder="you@example.com" required>
+      <button type="submit">Log In</button>
+      <div class="error" id="login-error"></div>
+    </form>
+  </main>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const errorEl = document.getElementById('login-error');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorEl.textContent = '';
+
+      const email = form.email.value.trim();
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        errorEl.textContent = data.error || 'Login failed.';
+        return;
+      }
+
+      window.location.href = '/';
+    });
+  </script>
+</body>
+</html>

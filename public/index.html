@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Availability</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body>
+  <header class="top-bar">
+    <div>
+      <h1>Service Availability</h1>
+      <p id="welcome"></p>
+    </div>
+    <div class="top-actions">
+      <button id="refresh">Refresh</button>
+      <button id="logout">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="in-use">
+      <h2>In Use</h2>
+      <div id="in-use" class="in-use-list"></div>
+    </section>
+    <section id="services" class="services-grid"></section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="/public/js/app.js"></script>
+</body>
+</html>
