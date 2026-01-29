@@ -23,7 +23,7 @@ FROM node:BASE_BUILD_IMAGE_VERSION AS builder
 WORKDIR /app
 COPY --from=downloader /tmp/src ./
 
-RUN npm install --production
+RUN npm ci --omit=dev
 RUN npm run build
 
 FROM node:BASE_IMAGE_VERSION AS runtime
@@ -33,6 +33,7 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/config/services.yml ./config/services.yml
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3000
 

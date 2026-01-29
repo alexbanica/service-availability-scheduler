@@ -50,7 +50,7 @@
             >
               <div class="service-info">
                 <h3>{{ service.label }}</h3>
-                <p>{{ service.active ? `Taken by ${service.claimed_by}` : 'Available' }}</p>
+                <p>{{ service.active ? `Taken by ${service.claimedBy}` : 'Available' }}</p>
                 <p class="muted">
                   {{ service.active ? `Ends at ${formatTime(service.expiresAt)}` : `Default ${service.defaultMinutes} minutes` }}
                 </p>
