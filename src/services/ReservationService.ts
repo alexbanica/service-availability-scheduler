@@ -183,6 +183,11 @@ export class ReservationService {
       );
   }
 
+  async cleanupExpired(now: Date): Promise<number> {
+    const nowIso = DateTimeHelper.toMysqlDateTime(now);
+    return this.reservationRepository.releaseExpired(nowIso);
+  }
+
   private findService(serviceKey: string): ServiceDefinition {
     const service = this.services.find((svc) => svc.key === serviceKey);
     if (!service) {

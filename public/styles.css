@@ -36,8 +36,30 @@ p {
   padding: 2.5rem 4vw 1.5rem;
 }
 
+.top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .top-actions button {
-  margin-left: 0.5rem;
+  margin-left: 0;
+}
+
+.owner-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.owner-filter select {
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-weight: 600;
 }
 
 main {

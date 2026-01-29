@@ -126,6 +126,16 @@ export class ReservationRepository extends AbstractMysqlRepository {
     return rows.map((row) => this.mapRow(row));
   }
 
+  async releaseExpired(now: string): Promise<number> {
+    const [result] = await this.db.query<ResultSetHeader>(
+      `UPDATE reservations
+       SET released_at = ?
+       WHERE released_at IS NULL AND expires_at <= ?`,
+      [now, now],
+    );
+    return result.affectedRows || 0;
+  }
+
   private mapRow(row: ReservationRow): Reservation {
     return new Reservation(
       row.id,

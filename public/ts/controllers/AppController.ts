@@ -9,13 +9,15 @@ import { TimeHelper } from '../helpers/TimeHelper.js';
 export class AppController {
   private refreshTimer: number | null = null;
   private readonly eventsService = new EventsService();
+  private readonly ownerFilterStorageKey = 'ownerFilter';
 
   bootstrap(Vue: any): void {
-    const { createApp, ref, computed, onMounted } = Vue as {
+    const { createApp, ref, computed, onMounted, watch } = Vue as {
       createApp: (options: Record<string, unknown>) => { mount: (selector: string) => void };
       ref: <T>(value: T) => { value: T };
       computed: <T>(fn: () => T) => { value: T };
       onMounted: (fn: () => void | Promise<void>) => void;
+      watch: <T>(source: { value: T }, cb: (value: T) => void) => void;
     };
 
     createApp({
@@ -24,18 +26,49 @@ export class AppController {
         const services = ref<Service[]>([]);
         const expiryWarningMinutes = ref(5);
         const autoRefreshMinutes = ref(2);
+        const ownerFilter = ref(
+          localStorage.getItem(this.ownerFilterStorageKey) || 'all',
+        );
         const toastMessage = ref('');
         const toastVisible = ref(false);
 
+        const normalizeOwner = (owner: string | null): string =>
+          owner || 'unowned';
+
+        const owners = computed(() => {
+          const uniqueOwners = new Map<string, string>();
+          services.value.forEach((svc) => {
+            const ownerKey = normalizeOwner(svc.owner);
+            if (!uniqueOwners.has(ownerKey)) {
+              uniqueOwners.set(
+                ownerKey,
+                ownerKey === 'unowned' ? 'Unowned' : ownerKey,
+              );
+            }
+          });
+          return Array.from(uniqueOwners.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([value, label]) => ({ value, label }));
+        });
+
+        const filteredServices = computed(() => {
+          if (ownerFilter.value === 'all') {
+            return services.value;
+          }
+          return services.value.filter(
+            (svc) => normalizeOwner(svc.owner) === ownerFilter.value,
+          );
+        });
+
         const inUseServices = computed(() =>
-          services.value
+          filteredServices.value
             .filter((svc: Service) => svc.active)
             .sort((a: Service, b: Service) => (a.expiresAt || '').localeCompare(b.expiresAt || ''))
         );
 
         const groupedServices = computed(() => {
           const map = new Map<string, Service[]>();
-          services.value.forEach((svc: Service) => {
+          filteredServices.value.forEach((svc: Service) => {
             const serviceLabel = svc.label;
             if (!map.has(serviceLabel)) {
               map.set(serviceLabel, []);
@@ -64,6 +97,11 @@ export class AppController {
           services.value = data.services;
           expiryWarningMinutes.value = data.expiryWarningMinutes;
           autoRefreshMinutes.value = data.autoRefreshMinutes;
+
+          const ownerKeys = new Set(owners.value.map((owner) => owner.value));
+          if (ownerFilter.value !== 'all' && !ownerKeys.has(ownerFilter.value)) {
+            ownerFilter.value = 'all';
+          }
         };
 
         const loadUser = async () => {
@@ -109,6 +147,7 @@ export class AppController {
 
         const logout = async () => {
           await AuthService.logout();
+          localStorage.removeItem(this.ownerFilterStorageKey);
         };
 
         const refresh = async () => {
@@ -142,11 +181,17 @@ export class AppController {
           scheduleAutoRefresh();
         });
 
+        watch(ownerFilter, (value) => {
+          localStorage.setItem(this.ownerFilterStorageKey, value);
+        });
+
         return {
           user,
           services,
           inUseServices,
           groupedServices,
+          ownerFilter,
+          owners,
           toastMessage,
           toastVisible,
           formatTime: TimeHelper.formatTime,

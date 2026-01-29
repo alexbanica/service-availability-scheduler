@@ -14,6 +14,15 @@
         <p v-if="user">Hello {{ user.nickname }}</p>
       </div>
       <div class="top-actions">
+        <label class="owner-filter">
+          <span>Owner</span>
+          <select v-model="ownerFilter">
+            <option value="all">All owners</option>
+            <option v-for="owner in owners" :key="owner.value" :value="owner.value">
+              {{ owner.label }}
+            </option>
+          </select>
+        </label>
         <button @click="refresh">Refresh</button>
         <button @click="logout">Logout</button>
       </div>

@@ -17,6 +17,7 @@ import { PageController } from './controllers/PageController';
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
+const CLEANUP_INTERVAL_MS = 60 * 1000;
 
 const ROOT_DIR = path.join(__dirname, '..');
 const APP_CONFIG_PATH = path.join(ROOT_DIR, 'config', 'app.yml');
@@ -58,6 +59,12 @@ async function start() {
     config.expiryWarningMinutes,
     config.autoRefreshMinutes,
   );
+
+  setInterval(() => {
+    reservationService.cleanupExpired(new Date()).catch((err) => {
+      console.error('Failed to cleanup expired reservations', err);
+    });
+  }, CLEANUP_INTERVAL_MS);
 
   new PageController(ROOT_DIR).register(app);
   new AuthController(userService).register(app);

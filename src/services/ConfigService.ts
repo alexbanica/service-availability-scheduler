@@ -14,9 +14,7 @@ export class ConfigService {
     const expiryWarningMinutes = Number(
       this.appConfig.expiry_warning_minutes ?? 5,
     );
-    const autoRefreshMinutes = Number(
-      this.appConfig.auto_refresh_minutes ?? 2,
-    );
+    const autoRefreshMinutes = Number(this.appConfig.auto_refresh_minutes ?? 2);
     const servicesRaw = Array.isArray(this.servicesConfig.services)
       ? (this.servicesConfig.services as Array<Record<string, unknown>>)
       : [];
@@ -43,10 +41,6 @@ export class ConfigService {
       );
     });
 
-    return new AppConfigDto(
-      expiryWarningMinutes,
-      autoRefreshMinutes,
-      services,
-    );
+    return new AppConfigDto(expiryWarningMinutes, autoRefreshMinutes, services);
   }
 }
