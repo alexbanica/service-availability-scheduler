@@ -37,9 +37,9 @@
       </section>
 
       <section class="services-grid">
-        <section v-for="group in groupedServices" :key="group.environment" class="env-card">
+        <section v-for="group in groupedServices" :key="group.serviceLabel" class="env-card">
           <div class="env-header">
-            <h2>{{ group.environment }}</h2>
+            <h2>{{ group.serviceLabel }}</h2>
           </div>
           <div class="service-list">
             <div
@@ -49,7 +49,7 @@
               :class="service.active ? 'claimed' : 'available'"
             >
               <div class="service-info">
-                <h3>{{ service.label }}</h3>
+                <h3>{{ service.environment }}</h3>
                 <p>{{ service.active ? `Taken by ${service.claimedBy}` : 'Available' }}</p>
                 <p class="muted">
                   {{ service.active ? `Ends at ${formatTime(service.expiresAt)}` : `Default ${service.defaultMinutes} minutes` }}

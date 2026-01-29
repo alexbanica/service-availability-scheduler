@@ -19,7 +19,8 @@ const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 
 const ROOT_DIR = path.join(__dirname, '..');
-const CONFIG_PATH = path.join(ROOT_DIR, 'config', 'services.yml');
+const APP_CONFIG_PATH = path.join(ROOT_DIR, 'config', 'app.yml');
+const SERVICES_CONFIG_PATH = path.join(ROOT_DIR, 'config', 'services.yml');
 
 app.use(express.json());
 app.use(
@@ -40,7 +41,7 @@ let db: Pool;
 
 async function start() {
   const configLoader = new ConfigLoaderService();
-  const config = configLoader.loadConfig(CONFIG_PATH);
+  const config = configLoader.loadConfig(APP_CONFIG_PATH, SERVICES_CONFIG_PATH);
   const catalogService = new ServiceCatalogService();
   const services = catalogService.buildServiceList(config);
 

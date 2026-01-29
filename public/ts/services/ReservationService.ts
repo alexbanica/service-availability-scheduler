@@ -31,10 +31,12 @@ export class ReservationService {
       const label = asString(svc.label, id);
       return new Service(
         asString(svc.key, id),
+        asString(svc.environment_id, 'unknown'),
         asString(svc.environment, 'Unknown'),
         id,
         label,
         asNumber(svc.default_minutes, 0),
+        asNullableString(svc.owner),
         Boolean(svc.active),
         asNullableString(svc.claimed_by),
         asNullableNumber(svc.claimed_by_id),

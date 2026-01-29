@@ -36,15 +36,20 @@ export class AppController {
         const groupedServices = computed(() => {
           const map = new Map<string, Service[]>();
           services.value.forEach((svc: Service) => {
-            if (!map.has(svc.environment)) {
-              map.set(svc.environment, []);
+            const serviceLabel = svc.label;
+            if (!map.has(serviceLabel)) {
+              map.set(serviceLabel, []);
             }
-            map.get(svc.environment)?.push(svc);
+            map.get(serviceLabel)?.push(svc);
           });
-          return Array.from(map.entries()).map(([environment, items]) => ({
-            environment,
-            services: items
-          }));
+          return Array.from(map.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([serviceLabel, items]) => ({
+              serviceLabel,
+              services: items.sort((a, b) =>
+                a.environment.localeCompare(b.environment),
+              ),
+            }));
         });
 
         const showToast = (message: string) => {

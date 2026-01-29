@@ -1,51 +1,62 @@
-expiry_warning_minutes: 5
-auto_refresh_minutes: 2
-
-environments:
-  - name: SRE STG
-    services:
-      - id: order-issues-api
-        label: Order Issues API
-        default_minutes: 60
-      - id: tms-automation-worker
-        label: Tms Automation Worker
-        default_minutes: 60
-      - id: tms-automation-infrastructure
-        label: Tms Automation Infrastructure
-        default_minutes: 60
-      - id: refund-api
-        label: Refund API
-        default_minutes: 60
-      - id: database-repeater
-        label: Database Repeater
-        default_minutes: 60
-  - name: EU1
-    services:
-      - id: order-issues-api
-        label: Order Issues API
-        default_minutes: 60
-      - id: tms-automation-worker
-        label: Tms Automation Worker
-        default_minutes: 60
-      - id: tms-automation-infrastructure
-        label: Tms Automation Infrastructure
-        default_minutes: 60
-  - name: EU2
-    services:
-      - id: order-issues-api
-        label: Order Issues API
-        default_minutes: 60
-      - id: tms-automation-worker
-        label: Tms Automation Worker
-        default_minutes: 60
-      - id: tms-automation-infrastructure
-        label: Tms Automation Infrastructure
-        default_minutes: 60
-  - name: LJE
-    services:
-      - id: coq
-        label: Consumer Order Queries
-        default_minutes: 60
-      - id: restaurant-claims
-        label: Restaurant Claims
-        default_minutes: 60
+services:
+  - id: order-issues-api
+    label: Order Issues API
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: sre-stg
+        name: SRE STG
+      - id: eu1
+        name: EU1
+      - id: eu2
+        name: EU2
+  - id: tms-automation-worker
+    label: Tms Automation Worker
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: sre-stg
+        name: SRE STG
+      - id: eu1
+        name: EU1
+      - id: eu2
+        name: EU2
+  - id: tms-automation-infrastructure
+    label: Tms Automation Infrastructure
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: sre-stg
+        name: SRE STG
+      - id: eu1
+        name: EU1
+      - id: eu2
+        name: EU2
+  - id: refund-api
+    label: Refund API
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: sre-stg
+        name: SRE STG
+  - id: database-repeater
+    label: Database Repeater
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: sre-stg
+        name: SRE STG
+  - id: coq
+    label: Consumer Order Queries
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: lje
+        name: LJE
+  - id: restaurant-claims
+    label: Restaurant Claims
+    default_minutes: 60
+    owner: order-issue-resolution
+    environments:
+      - id: lje
+        name: LJE

@@ -33,10 +33,12 @@ export class ReservationService {
       const active = reservationMap.get(svc.key);
       return new ServiceStatusDto(
         svc.key,
+        svc.environmentId,
         svc.environment,
         svc.id,
         svc.label,
         svc.defaultMinutes,
+        svc.owner,
         Boolean(active),
         active ? nicknameMap.get(active.userId) || null : null,
         active ? active.userId : null,

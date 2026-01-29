@@ -16,10 +16,12 @@ export class ServiceController {
           auto_refresh_minutes: list.autoRefreshMinutes,
           services: list.services.map((svc) => ({
             key: svc.key,
+            environment_id: svc.environmentId,
             environment: svc.environment,
             id: svc.id,
             label: svc.label,
             default_minutes: svc.defaultMinutes,
+            owner: svc.owner,
             active: svc.active,
             claimed_by: svc.claimedBy,
             claimed_by_id: svc.claimedById,

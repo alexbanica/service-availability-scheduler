@@ -45,7 +45,8 @@ Open `http://localhost:3000`.
 
 ## Config
 
-Edit `config/services.yml` to define environments and services, plus `expiry_warning_minutes` and `auto_refresh_minutes`.
+Edit `config/app.yml` for `expiry_warning_minutes` and `auto_refresh_minutes`.
+Edit `config/services.yml` to define services with owners and the environments they are deployed to.
 
 ## Schema
 
