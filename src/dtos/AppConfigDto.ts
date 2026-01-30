@@ -3,6 +3,15 @@ export class AppConfigDto {
     public readonly expiryWarningMinutes: number,
     public readonly autoRefreshMinutes: number,
     public readonly services: ServiceConfigDto[],
+    public readonly slack: SlackConfigDto,
+  ) {}
+}
+
+export class SlackConfigDto {
+  constructor(
+    public readonly enabled: boolean,
+    public readonly botToken: string | null,
+    public readonly notifyIntervalSeconds: number,
   ) {}
 }
 

@@ -14,4 +14,11 @@ export class UserService {
     users.forEach((user) => map.set(user.id, user.nickname));
     return map;
   }
+
+  async getEmailsByIds(ids: number[]): Promise<Map<number, string>> {
+    const users = await this.userRepository.findByIds(ids);
+    const map = new Map<number, string>();
+    users.forEach((user) => map.set(user.id, user.email));
+    return map;
+  }
 }

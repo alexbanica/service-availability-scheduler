@@ -1,2 +1,6 @@
 expiry_warning_minutes: 5
 auto_refresh_minutes: 2
+slack:
+  enabled: false
+  bot_token: ''
+  notify_interval_seconds: 60

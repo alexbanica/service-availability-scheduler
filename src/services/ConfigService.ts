@@ -2,6 +2,7 @@ import {
   AppConfigDto,
   EnvironmentConfigDto,
   ServiceConfigDto,
+  SlackConfigDto,
 } from '../dtos/AppConfigDto';
 
 export class ConfigService {
@@ -41,6 +42,79 @@ export class ConfigService {
       );
     });
 
-    return new AppConfigDto(expiryWarningMinutes, autoRefreshMinutes, services);
+    const slackConfig =
+      typeof this.appConfig.slack === 'object' && this.appConfig.slack
+        ? (this.appConfig.slack as Record<string, unknown>)
+        : {};
+    const slackEnabled = this.readBoolean(
+      process.env.SLACK_ENABLED,
+      slackConfig.enabled,
+      false,
+    );
+    const slackToken = this.readString(
+      process.env.SLACK_BOT_TOKEN,
+      slackConfig.bot_token,
+    );
+    const slackIntervalSeconds = this.readNumber(
+      process.env.SLACK_NOTIFY_INTERVAL_SECONDS,
+      slackConfig.notify_interval_seconds,
+      60,
+    );
+
+    const slack = new SlackConfigDto(
+      slackEnabled,
+      slackToken,
+      slackIntervalSeconds,
+    );
+
+    return new AppConfigDto(
+      expiryWarningMinutes,
+      autoRefreshMinutes,
+      services,
+      slack,
+    );
+  }
+
+  private readString(
+    envValue: string | undefined,
+    rawValue: unknown,
+  ): string | null {
+    if (envValue !== undefined && envValue !== '') {
+      return envValue;
+    }
+    if (typeof rawValue === 'string' && rawValue !== '') {
+      return rawValue;
+    }
+    return null;
+  }
+
+  private readNumber(
+    envValue: string | undefined,
+    rawValue: unknown,
+    fallback: number,
+  ): number {
+    if (envValue !== undefined && envValue !== '') {
+      const parsed = Number(envValue);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  private readBoolean(
+    envValue: string | undefined,
+    rawValue: unknown,
+    fallback: boolean,
+  ): boolean {
+    if (envValue !== undefined && envValue !== '') {
+      return envValue === 'true' || envValue === '1';
+    }
+    if (typeof rawValue === 'boolean') {
+      return rawValue;
+    }
+    if (typeof rawValue === 'string') {
+      return rawValue === 'true' || rawValue === '1';
+    }
+    return fallback;
   }
 }

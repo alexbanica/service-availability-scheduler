@@ -48,6 +48,21 @@ Open `http://localhost:3000`.
 Edit `config/app.yml` for `expiry_warning_minutes` and `auto_refresh_minutes`.
 Edit `config/services.yml` to define services with owners and the environments they are deployed to.
 
+### Slack notifications
+
+Enable Slack reminders to DM the claim owner when a reservation is about to
+expire. Configuration can come from `config/app.yml` or environment variables.
+
+Required Slack scopes:
+- `chat:write`
+- `im:write`
+- `users:read.email`
+
+Environment variables:
+- `SLACK_ENABLED` (`true`/`false`)
+- `SLACK_BOT_TOKEN` (bot token for the Slack app)
+- `SLACK_NOTIFY_INTERVAL_SECONDS` (poll interval for expiring claims)
+
 ## Schema
 
 See `schema.sql` for the full schema. Tables:

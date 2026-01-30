@@ -9,6 +9,8 @@ import { UserService } from './services/UserService';
 import { ReservationService } from './services/ReservationService';
 import { UserRepository } from './repositories/UserRepository';
 import { ReservationRepository } from './repositories/ReservationRepository';
+import { SlackNotificationService } from './services/SlackNotificationService';
+import { ExpiringReservationNotifier } from './services/ExpiringReservationNotifier';
 import { AuthController } from './controllers/AuthController';
 import { ServiceController } from './controllers/ServiceController';
 import { ReservationController } from './controllers/ReservationController';
@@ -60,11 +62,28 @@ async function start() {
     config.autoRefreshMinutes,
   );
 
+  const slackNotificationService = new SlackNotificationService(config.slack);
+  const expiringReservationNotifier = new ExpiringReservationNotifier(
+    reservationRepository,
+    userService,
+    slackNotificationService,
+    config.expiryWarningMinutes,
+  );
+
   setInterval(() => {
     reservationService.cleanupExpired(new Date()).catch((err) => {
       console.error('Failed to cleanup expired reservations', err);
     });
   }, CLEANUP_INTERVAL_MS);
+
+  if (slackNotificationService.isEnabled()) {
+    const intervalSeconds = Math.max(15, config.slack.notifyIntervalSeconds);
+    setInterval(() => {
+      expiringReservationNotifier.notifyExpiring(new Date()).catch((err) => {
+        console.error('Failed to notify expiring reservations', err);
+      });
+    }, intervalSeconds * 1000);
+  }
 
   new PageController(ROOT_DIR).register(app);
   new AuthController(userService).register(app);
