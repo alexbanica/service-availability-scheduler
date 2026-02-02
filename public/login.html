@@ -9,8 +9,22 @@
 <body class="login-body">
   <div id="login-app" v-cloak>
     <main class="login-card">
-      <h1>Service Availability</h1>
-      <p>Log in with your email address.</p>
+      <div class="login-header">
+        <div>
+          <h1>Service Availability</h1>
+          <p>Log in with your email address.</p>
+        </div>
+        <button
+          class="theme-toggle"
+          type="button"
+          @click="toggleTheme"
+          :aria-label="themeLabel"
+          :title="themeLabel"
+        >
+          <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
+          <span v-else class="theme-icon moon" aria-hidden="true"></span>
+        </button>
+      </div>
       <form @submit.prevent="submit">
         <label for="email">Email</label>
         <input id="email" v-model="email" type="email" name="email" placeholder="you@example.com" required>

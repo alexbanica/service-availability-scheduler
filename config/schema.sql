@@ -12,6 +12,8 @@ CREATE TABLE reservations (
   environment_name VARCHAR(120) NOT NULL,
   service_name VARCHAR(255) NOT NULL,
   user_id INT NOT NULL,
+  claimed_by_label VARCHAR(255) NULL,
+  claimed_by_team TINYINT(1) NOT NULL DEFAULT 0,
   claimed_at DATETIME NOT NULL,
   expires_at DATETIME NOT NULL,
   released_at DATETIME NULL,

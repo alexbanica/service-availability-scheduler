@@ -8,11 +8,15 @@ export class ReservationController {
   register(app: Express): void {
     app.post('/api/claim', requireAuth, async (req: Request, res: Response) => {
       const serviceKey = String(req.body.service_key || '').trim();
+      const claimedByLabel = String(req.body.claimed_by_label || '').trim();
+      const claimedByTeam = Boolean(req.body.claimed_by_team);
       try {
         const expires = await this.reservationService.claim(
           serviceKey,
           req.session.userId as number,
           new Date(),
+          claimedByLabel || null,
+          claimedByTeam,
         );
         res.json({ ok: true, expires_at: expires });
       } catch (err) {

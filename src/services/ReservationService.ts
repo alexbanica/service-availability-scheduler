@@ -31,6 +31,8 @@ export class ReservationService {
 
     const results = this.services.map((svc) => {
       const active = reservationMap.get(svc.key);
+      const claimedBy =
+        active?.claimedByLabel || (active ? nicknameMap.get(active.userId) : null);
       return new ServiceStatusDto(
         svc.key,
         svc.environmentId,
@@ -40,10 +42,11 @@ export class ReservationService {
         svc.defaultMinutes,
         svc.owner,
         Boolean(active),
-        active ? nicknameMap.get(active.userId) || null : null,
+        claimedBy || null,
         active ? active.userId : null,
         active ? DateTimeHelper.mysqlDateTimeToIso(active.claimedAt) : null,
         active ? DateTimeHelper.mysqlDateTimeToIso(active.expiresAt) : null,
+        Boolean(active?.claimedByTeam),
       );
     });
 
@@ -54,7 +57,13 @@ export class ReservationService {
     );
   }
 
-  async claim(serviceKey: string, userId: number, now: Date): Promise<string> {
+  async claim(
+    serviceKey: string,
+    userId: number,
+    now: Date,
+    claimedByLabel?: string | null,
+    claimedByTeam?: boolean,
+  ): Promise<string> {
     const service = this.findService(serviceKey);
     const nowIso = DateTimeHelper.toMysqlDateTime(now);
 
@@ -66,6 +75,15 @@ export class ReservationService {
       throw new Error('Service already claimed');
     }
 
+    const trimmedLabel = (claimedByLabel || '').trim();
+    if (claimedByTeam && !trimmedLabel) {
+      throw new Error('Team name is required');
+    }
+    if (trimmedLabel.length > 255) {
+      throw new Error('Team name is too long');
+    }
+    const effectiveLabel = claimedByTeam ? trimmedLabel : null;
+
     const expires = DateTimeHelper.toMysqlDateTime(
       new Date(now.getTime() + service.defaultMinutes * 60000),
     );
@@ -75,6 +93,8 @@ export class ReservationService {
       service.environment,
       service.label,
       userId,
+      effectiveLabel,
+      Boolean(claimedByTeam),
       nowIso,
       expires,
     );
@@ -91,7 +111,7 @@ export class ReservationService {
     if (!reservation) {
       throw new Error('Active reservation not found');
     }
-    if (reservation.userId !== userId) {
+    if (!reservation.claimedByTeam && reservation.userId !== userId) {
       throw new Error('Only the owner can release');
     }
     if (reservation.id === null) {

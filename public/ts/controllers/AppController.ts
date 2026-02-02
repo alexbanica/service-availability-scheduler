@@ -5,6 +5,7 @@ import { User } from '../entities/User.js';
 import { Service } from '../entities/Service.js';
 import { ServicesResponseDto } from '../dtos/ServicesResponseDto.js';
 import { TimeHelper } from '../helpers/TimeHelper.js';
+import { ThemeHelper, Theme } from '../helpers/ThemeHelper.js';
 
 export class AppController {
   private refreshTimer: number | null = null;
@@ -35,6 +36,14 @@ export class AppController {
         const expandedOverrides = ref<Record<string, boolean>>({});
         const toastMessage = ref('');
         const toastVisible = ref(false);
+        const isLoading = ref(true);
+        const theme = ref(ThemeHelper.getInitialTheme() as Theme);
+        const claimModalOpen = ref(false);
+        const claimType = ref<'self' | 'team'>('self');
+        const teamName = ref('');
+        const teamNameError = ref('');
+        const claimSubmitting = ref(false);
+        const claimServiceKey = ref<string | null>(null);
 
         const normalizeOwner = (owner: string | null): string =>
           owner || 'unowned';
@@ -150,6 +159,17 @@ export class AppController {
           }, 4000);
         };
 
+        const applyTheme = (value: Theme) => {
+          theme.value = value;
+          ThemeHelper.applyTheme(value);
+        };
+
+        const toggleTheme = () => {
+          applyTheme(theme.value === 'dark' ? 'light' : 'dark');
+        };
+
+        const themeLabel = computed(() => ThemeHelper.getLabel(theme.value));
+
         const applyServiceResponse = (data: ServicesResponseDto) => {
           services.value = data.services;
           expiryWarningMinutes.value = data.expiryWarningMinutes;
@@ -188,12 +208,51 @@ export class AppController {
           }
         };
 
-        const claim = async (serviceKey: string) => {
+        const resetClaimModal = () => {
+          claimType.value = 'self';
+          teamName.value = '';
+          teamNameError.value = '';
+          claimSubmitting.value = false;
+          claimServiceKey.value = null;
+        };
+
+        const openClaimModal = (serviceKey: string) => {
+          claimServiceKey.value = serviceKey;
+          claimModalOpen.value = true;
+        };
+
+        const closeClaimModal = () => {
+          claimModalOpen.value = false;
+          resetClaimModal();
+        };
+
+        const submitClaim = async () => {
+          if (!claimServiceKey.value) {
+            return;
+          }
+          teamNameError.value = '';
+          let teamLabel: string | null = null;
+          if (claimType.value === 'team') {
+            const trimmed = teamName.value.trim();
+            if (!trimmed) {
+              teamNameError.value = 'Team name is required.';
+              return;
+            }
+            if (trimmed.length > 255) {
+              teamNameError.value = 'Team name is too long.';
+              return;
+            }
+            teamLabel = trimmed;
+          }
+          claimSubmitting.value = true;
           try {
-            await ReservationService.claim(serviceKey);
+            await ReservationService.claim(claimServiceKey.value, teamLabel);
             await loadServices();
+            closeClaimModal();
           } catch (err) {
             showToast((err as Error).message);
+          } finally {
+            claimSubmitting.value = false;
           }
         };
 
@@ -238,6 +297,15 @@ export class AppController {
           await loadServices();
         };
 
+        const formatClaimedBy = (service: Service): string => {
+          if (!service.claimedBy) {
+            return 'Unknown';
+          }
+          return service.claimedByTeam
+            ? `${service.claimedBy} (team)`
+            : service.claimedBy;
+        };
+
         const scheduleAutoRefresh = () => {
           if (this.refreshTimer) {
             window.clearTimeout(this.refreshTimer);
@@ -259,10 +327,15 @@ export class AppController {
         };
 
         onMounted(async () => {
-          await loadUser();
-          await loadServices();
-          initEvents();
-          scheduleAutoRefresh();
+          applyTheme(theme.value);
+          try {
+            await loadUser();
+            await loadServices();
+            initEvents();
+            scheduleAutoRefresh();
+          } finally {
+            isLoading.value = false;
+          }
         });
 
         watch(ownerFilter, (value) => {
@@ -271,6 +344,10 @@ export class AppController {
 
         watch(serviceNameFilter, () => {
           expandedOverrides.value = {};
+        });
+
+        watch(claimType, () => {
+          teamNameError.value = '';
         });
 
         return {
@@ -285,8 +362,20 @@ export class AppController {
           toggleGroup,
           toastMessage,
           toastVisible,
+          isLoading,
+          theme,
+          themeLabel,
+          toggleTheme,
           formatTime: TimeHelper.formatTime,
-          claim,
+          formatClaimedBy,
+          claimModalOpen,
+          claimType,
+          teamName,
+          teamNameError,
+          claimSubmitting,
+          openClaimModal,
+          closeClaimModal,
+          submitClaim,
           release,
           extend,
           refresh,

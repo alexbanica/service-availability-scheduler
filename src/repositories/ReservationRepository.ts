@@ -8,6 +8,8 @@ type ReservationRow = RowDataPacket & {
   environment_name: string;
   service_name: string;
   user_id: number;
+  claimed_by_label: string | null;
+  claimed_by_team: number;
   claimed_at: string | Date;
   expires_at: string | Date;
   released_at: string | null;
@@ -23,7 +25,8 @@ export class ReservationRepository extends AbstractMysqlRepository {
     now: string,
   ): Promise<Reservation | null> {
     const row = await this.get<ReservationRow>(
-      `SELECT id, user_id, expires_at, service_key, environment_name, service_name, claimed_at, released_at
+      `SELECT id, user_id, expires_at, service_key, environment_name, service_name,
+              claimed_by_label, claimed_by_team, claimed_at, released_at
        FROM reservations
        WHERE service_key = ? AND released_at IS NULL AND expires_at > ?`,
       [serviceKey, now],
@@ -34,6 +37,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
   async findActiveByServiceKey(now: string): Promise<Reservation[]> {
     const rows = await this.all<ReservationRow>(
       `SELECT r.service_key, r.environment_name, r.service_name, r.user_id,
+              r.claimed_by_label, r.claimed_by_team,
               r.claimed_at, r.expires_at, r.released_at, r.id
        FROM reservations r
        WHERE r.released_at IS NULL AND r.expires_at > ?`,
@@ -47,14 +51,25 @@ export class ReservationRepository extends AbstractMysqlRepository {
     environmentName: string,
     serviceName: string,
     userId: number,
+    claimedByLabel: string | null,
+    claimedByTeam: boolean,
     claimedAt: string,
     expiresAt: string,
   ): Promise<Reservation> {
     const [result] = await this.db.query<ResultSetHeader>(
       `INSERT INTO reservations
-       (service_key, environment_name, service_name, user_id, claimed_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [serviceKey, environmentName, serviceName, userId, claimedAt, expiresAt],
+       (service_key, environment_name, service_name, user_id, claimed_by_label, claimed_by_team, claimed_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        serviceKey,
+        environmentName,
+        serviceName,
+        userId,
+        claimedByLabel,
+        claimedByTeam ? 1 : 0,
+        claimedAt,
+        expiresAt,
+      ],
     );
     return new Reservation(
       result.insertId || null,
@@ -62,6 +77,8 @@ export class ReservationRepository extends AbstractMysqlRepository {
       environmentName,
       serviceName,
       userId,
+      claimedByLabel,
+      claimedByTeam,
       claimedAt,
       expiresAt,
       null,
@@ -82,6 +99,8 @@ export class ReservationRepository extends AbstractMysqlRepository {
       reservation.environmentName,
       reservation.serviceName,
       reservation.userId,
+      reservation.claimedByLabel,
+      reservation.claimedByTeam,
       reservation.claimedAt,
       reservation.expiresAt,
       releasedAt,
@@ -102,6 +121,8 @@ export class ReservationRepository extends AbstractMysqlRepository {
       reservation.environmentName,
       reservation.serviceName,
       reservation.userId,
+      reservation.claimedByLabel,
+      reservation.claimedByTeam,
       reservation.claimedAt,
       expiresAt,
       reservation.releasedAt,
@@ -115,7 +136,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
   ): Promise<Reservation[]> {
     const rows = await this.all<ReservationRow>(
       `SELECT r.id, r.user_id, r.service_key, r.environment_name, r.service_name,
-              r.claimed_at, r.expires_at, r.released_at
+              r.claimed_by_label, r.claimed_by_team, r.claimed_at, r.expires_at, r.released_at
        FROM reservations r
        WHERE r.user_id = ?
          AND r.released_at IS NULL
@@ -159,6 +180,8 @@ export class ReservationRepository extends AbstractMysqlRepository {
       row.environment_name,
       row.service_name,
       row.user_id,
+      row.claimed_by_label,
+      Boolean(row.claimed_by_team),
       row.claimed_at,
       row.expires_at,
       row.released_at,

@@ -27,6 +27,7 @@ export class ServiceController {
             claimed_by_id: svc.claimedById,
             claimed_at: svc.claimedAt,
             expires_at: svc.expiresAt,
+            claimed_by_team: svc.claimedByTeam,
           })),
         });
       },

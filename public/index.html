@@ -8,38 +8,55 @@
 </head>
 <body>
   <div id="app" v-cloak>
-    <header class="top-bar">
-      <div>
-        <h1>Service Availability</h1>
-        <p v-if="user">Hello {{ user.nickname }}</p>
-      </div>
-      <div class="top-actions">
-        <label class="owner-filter">
-          <span>Owner</span>
-          <select v-model="ownerFilter">
-            <option value="all">All owners</option>
-            <option v-for="owner in owners" :key="owner.value" :value="owner.value">
-              {{ owner.label }}
-            </option>
-          </select>
-        </label>
-        <label class="name-filter">
-          <span>Service</span>
-          <input
-            v-model="serviceNameFilter"
-            type="text"
-            placeholder="Regex (e.g. ^order)"
-          />
-          <span v-if="serviceNameFilterError" class="muted filter-error">
-            {{ serviceNameFilterError }}
-          </span>
-        </label>
-        <button @click="refresh">Refresh</button>
-        <button @click="logout">Logout</button>
-      </div>
-    </header>
+    <div v-if="isLoading" class="loading-screen" role="status" aria-live="polite">
+      <div class="loading-spinner" aria-hidden="true"></div>
+      <div class="loading-text">Loading services...</div>
+    </div>
+    <div v-else>
+      <header class="top-bar">
+        <div>
+          <h1>Service Availability</h1>
+          <p v-if="user">Hello {{ user.nickname }}</p>
+          <div class="filters-row">
+            <label class="owner-filter">
+              <span>Owner</span>
+              <select v-model="ownerFilter">
+                <option value="all">All owners</option>
+                <option v-for="owner in owners" :key="owner.value" :value="owner.value">
+                  {{ owner.label }}
+                </option>
+              </select>
+            </label>
+            <label class="name-filter">
+              <span>Service</span>
+              <input
+                v-model="serviceNameFilter"
+                type="text"
+                placeholder="Regex (e.g. ^order)"
+              />
+              <span v-if="serviceNameFilterError" class="muted filter-error">
+                {{ serviceNameFilterError }}
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button
+            class="theme-toggle"
+            @click="toggleTheme"
+            :aria-pressed="theme === 'dark'"
+            :aria-label="themeLabel"
+            :title="themeLabel"
+          >
+            <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
+            <span v-else class="theme-icon moon" aria-hidden="true"></span>
+          </button>
+          <button @click="refresh">Refresh</button>
+          <button @click="logout">Logout</button>
+        </div>
+      </header>
 
-    <main>
+      <main>
       <section class="in-use">
         <h2>In Use</h2>
         <div class="in-use-list">
@@ -50,7 +67,7 @@
               <span class="muted">({{ service.environment }})</span>
             </div>
             <div class="muted">
-              Taken by {{ service.claimedBy }} · Ends at {{ formatTime(service.expiresAt) }}
+              Taken by {{ formatClaimedBy(service) }} · Ends at {{ formatTime(service.expiresAt) }}
             </div>
           </div>
         </div>
@@ -73,25 +90,73 @@
             >
               <div class="service-info">
                 <h3>{{ service.environment }}</h3>
-                <p>{{ service.active ? `Taken by ${service.claimedBy}` : 'Available' }}</p>
+                <p>{{ service.active ? `Taken by ${formatClaimedBy(service)}` : 'Available' }}</p>
                 <p class="muted">
                   {{ service.active ? `Ends at ${formatTime(service.expiresAt)}` : `Default ${service.defaultMinutes} minutes` }}
                 </p>
               </div>
               <div class="service-actions">
-                <button v-if="!service.active" @click="claim(service.key)">Claim</button>
-                <template v-else-if="user && service.claimedById === user.id">
-                  <button @click="extend(service.key)">Extend</button>
-                  <button class="secondary" @click="release(service.key)">Release</button>
+                <button v-if="!service.active" @click="openClaimModal(service.key)">Claim</button>
+                <template v-else>
+                  <button v-if="user && service.claimedById === user.id" @click="extend(service.key)">Extend</button>
+                  <button
+                    v-if="user && (service.claimedById === user.id || service.claimedByTeam)"
+                    class="secondary"
+                    @click="release(service.key)"
+                  >
+                    Release
+                  </button>
                 </template>
               </div>
             </div>
           </div>
         </section>
       </section>
-    </main>
+      </main>
 
-    <div id="toast" class="toast" :class="{ hidden: !toastVisible }">{{ toastMessage }}</div>
+      <div id="toast" class="toast" :class="{ hidden: !toastVisible }">{{ toastMessage }}</div>
+
+      <div v-if="claimModalOpen" class="modal-overlay" @click="closeClaimModal">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="claim-modal-title" @click.stop>
+          <div class="modal-header">
+            <h2 id="claim-modal-title">Claim service</h2>
+            <button class="modal-close" type="button" @click="closeClaimModal" aria-label="Close">
+              &times;
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Who should this claim be attributed to?</p>
+            <div class="claim-options">
+              <label class="claim-option">
+                <input type="radio" name="claim-type" value="self" v-model="claimType">
+                <span>Myself ({{ user?.nickname || 'you' }})</span>
+              </label>
+              <label class="claim-option">
+                <input type="radio" name="claim-type" value="team" v-model="claimType">
+                <span>Innersourcing team</span>
+              </label>
+            </div>
+            <div v-if="claimType === 'team'" class="team-name-field">
+              <label for="teamName">Team name</label>
+              <input
+                id="teamName"
+                v-model="teamName"
+                type="text"
+                placeholder="e.g. Platform Enablement"
+                maxlength="255"
+              />
+              <div v-if="teamNameError" class="error">{{ teamNameError }}</div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary" type="button" @click="closeClaimModal">Cancel</button>
+            <button type="button" @click="submitClaim" :disabled="claimSubmitting">
+              {{ claimSubmitting ? 'Claiming...' : 'Claim' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>

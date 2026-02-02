@@ -26,6 +26,8 @@ export class ReservationService {
     const asNullableNumber = (value: unknown): number | null =>
       typeof value === 'number' && !Number.isNaN(value) ? value : null;
 
+    const asBoolean = (value: unknown): boolean => Boolean(value);
+
     const services = data.services.map((svc) => {
       const id = asString(svc.id, 'unknown');
       const label = asString(svc.label, id);
@@ -42,6 +44,7 @@ export class ReservationService {
         asNullableNumber(svc.claimed_by_id),
         asNullableString(svc.claimed_at),
         asNullableString(svc.expires_at),
+        asBoolean(svc.claimed_by_team),
       );
     });
 
@@ -52,9 +55,11 @@ export class ReservationService {
     );
   }
 
-  static async claim(serviceKey: string): Promise<void> {
+  static async claim(serviceKey: string, teamName?: string | null): Promise<void> {
     const response = await ApiService.post('/api/claim', {
       service_key: serviceKey,
+      claimed_by_label: teamName || null,
+      claimed_by_team: Boolean(teamName),
     });
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
