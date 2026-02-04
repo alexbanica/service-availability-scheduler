@@ -1,334 +1,46 @@
 services:
-  - id: fcc69839-81bb-4188-9c69-991f521ece75
-    label: benthosorderissuesorderjusteatworker
-    default_minutes: 60
-    owner: order-issue-resolution
+  - id: 11111111-1111-1111-1111-111111111111
+    label: billing-api
+    default_minutes: 30
+    owner: payments
     environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: cd37b54a-379b-4ac0-ae10-ffc7293bbab8
-    label: benthosorderissuesorderworker
-    default_minutes: 60
-    owner: order-issue-resolution
+      - id: dev-us-1
+        name: dev-us-1
+      - id: staging-us-1
+        name: staging-us-1
+  - id: 22222222-2222-2222-2222-222222222222
+    label: user-profile
+    default_minutes: 45
+    owner: identity
     environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: 52c3adae-3ff8-4063-ad6e-36c070c8d20c
-    label: benthosorderstatusworker
+      - id: dev-eu-1
+        name: dev-eu-1
+      - id: staging-eu-1
+        name: staging-eu-1
+  - id: 33333333-3333-3333-3333-333333333333
+    label: inventory-worker
     default_minutes: 60
-    owner: order-issue-resolution
+    owner: supply
     environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: 79005290-de60-41a6-bb26-61adf16ed7b0
-    label: bookingsapi
-    default_minutes: 60
-    owner: order-issue-resolution
+      - id: qa-us-2
+        name: qa-us-2
+      - id: staging-us-2
+        name: staging-us-2
+  - id: 44444444-4444-4444-4444-444444444444
+    label: notifications-service
+    default_minutes: 20
+    owner: comms
     environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: ad3730d2-eab3-407c-a354-6c26116c0b62
-    label: consumerorderqueriesapi
-    default_minutes: 60
-    owner: order-issue-resolution
+      - id: dev-apac-1
+        name: dev-apac-1
+      - id: staging-apac-1
+        name: staging-apac-1
+  - id: 55555555-5555-5555-5555-555555555555
+    label: search-api
+    default_minutes: 25
+    owner: discovery
     environments:
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-      - id: qa9
-        name: qa9
-  - id: d9a175ef-a388-4a8d-846e-9a2b1370c03d
-    label: consumerorderquerieslambda
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-      - id: qa9
-        name: qa9
-  - id: 623db52f-d724-43a7-a715-63214b4d31b8
-    label: databasefetcherde
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: 74c749b4-c6a2-49cf-9f20-3b88d01d5636
-    label: databasefetchernl
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: cf4d067b-9029-4390-90ea-1cf28f89a0c1
-    label: databasefetcherothers
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: 2b333f62-90d3-4788-ae3b-b90c105e58ca
-    label: databaserepeater
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: 33ba981c-b2e2-4617-b3b7-8fc7d4f846e2
-    label: emailpresetsapi
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: 0b6389da-d585-4d03-9cc3-9015e8fb949b
-    label: gdprservice
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: 349152b4-7629-4098-80e8-27bbe12a8b60
-    label: globaldisputeapi
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: d94608e4-3f94-4689-9468-01e5cd01a101
-    label: globaldisputeworker
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: 1e4466d2-82b5-4d3c-8af8-0cd6bf662d1f
-    label: noteapi
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: d08446f3-f49f-4d2c-b135-0fc92c854186
-    label: oimaprocessing
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: a1f4f4fd-540e-4ea7-9d34-9f9c1ec960da
-    label: onetimepaymentrefundprocessing
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: 8439950c-96dd-42fc-a1ca-3cddc3794c24
-    label: orderissuesapi
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: d2ec22e8-bef2-4333-9fc6-7aa50a6051a6
-    label: orderissuesdelcodeliveryrejection
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: 5ab7ccf9-d950-4e7c-80f0-689248e73dbf
-    label: orderissuesdelcointegration
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: f44dd7d0-f660-49bd-b77c-1f6a0e5b03f0
-    label: orderissuesorderflowconfigworker
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-  - id: 67afa268-5068-43e1-b82c-46708136c965
-    label: ordermanagementapita
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: e667e42a-f8a5-4c97-a908-34a042de0bd4
-    label: ordermanagementprojectionworker
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: c5eff830-74c6-4de8-a2de-c22248646fea
-    label: orderqueriesfinancelambda
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-      - id: qa9
-        name: qa9
-  - id: b022842c-a140-460f-b701-82516bda0256
-    label: outofstockorderitems
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-      - id: qa9
-        name: qa9
-  - id: bdc33111-5090-42a9-a743-53c9a3a7d3ca
-    label: refundapi
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: bff50181-de92-4659-8760-001348763634
-    label: restaurantclaims
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: qa32
-        name: qa32
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-  - id: 35a8a953-faa7-42a8-b0b6-b2614b16a059
-    label: restaurantclaimsweb
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-      - id: qa9
-        name: qa9
-  - id: 2f36ba64-11dc-48ea-b720-d830c2d2545a
-    label: restaurantcompensationservice
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: qa32
-        name: qa32
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-  - id: 30080844-1074-44c8-8c26-f02ebcd82246
-    label: restaurantorderqueries
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: qa32
-        name: qa32
-      - id: ieng-staging
-        name: ieng-staging
-      - id: staging-uk
-        name: staging-uk
-      - id: qa55
-        name: qa55
-      - id: qa11
-        name: qa11
-  - id: 9dede0f1-bc94-4234-996e-aa10198da0a1
-    label: talkdeskcalleridservice
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: 658d1745-7ca3-4968-9721-97f193a913cd
-    label: tmsautomationworker
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: euw1-pdv-stg-5
-        name: euw1-pdv-stg-5
-      - id: euw1-pdv-stg-6
-        name: euw1-pdv-stg-6
-      - id: sre-eks-staging-1
-        name: sre-eks-staging-1
-  - id: tms-automation-infrastructure
-    label: Tms Automation Infrastructure
-    default_minutes: 60
-    owner: order-issue-resolution
-    environments:
-      - id: sdl-oomta-dev-sre
-        name: sdl-oomta-dev-sre
-      - id: sdl-oomta-dev-eu1
-        name: sdl-oomta-dev-eu1
-      - id: sdl-oomta-dev-eu2
-        name: sdl-oomta-dev-eu2
-      - id: sdlc-oomta-stage-sre
-        name: sdlc-oomta-stage-sre
-      - id: sdlc-oomta-stage-eu1
-        name: sdlc-oomta-stage-eu1
-      - id: sdlc-oomta-stage-eu2
-        name: sdlc-oomta-stage-eu2
+      - id: dev-us-3
+        name: dev-us-3
+      - id: staging-us-3
+        name: staging-us-3
