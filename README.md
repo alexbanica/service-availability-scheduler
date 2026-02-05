@@ -24,13 +24,7 @@ npm run build
 export DATABASE_URL='mysql://user:password@host:3306/database_name'
 ```
 
-5) (Optional) Seed users with a comma-separated list of `email:nickname`
-
-```bash
-export SEED_USERS='jane@example.com:Jane,alex@example.com:Alex'
-```
-
-6) Start the server
+5) Start the server
 
 ```bash
 npm start
@@ -43,8 +37,9 @@ Open `http://localhost:3000`.
 Edit `config/app.yml` for `expiry_warning_minutes` and `auto_refresh_minutes`.
 Edit `config/services.yml` to define services with owners and the environments they are deployed to.
 
-## Schema
+## Schema + seed data
 
-See `config/schema.sql` for the full schema. Tables:
-- `users`: pre-created emails + nicknames
-- `reservations`: service claims with expiry and release timestamps
+Schema files live in `config/schema` with one `<table>.sql` per table.
+Optional seed data lives in `config/seed` with one `<table>.sql` per table.
+On startup, any schema file whose table is missing is executed once, and its
+matching seed file (if present) is executed immediately afterward.

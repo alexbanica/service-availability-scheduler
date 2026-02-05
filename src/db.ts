@@ -1,9 +1,12 @@
+import fs from 'fs/promises';
+import path from 'path';
 import mysql, { Pool, RowDataPacket } from 'mysql2/promise';
 
 interface DbConfig {
   uri: string;
   dateStrings: boolean;
   timezone: string;
+  multipleStatements: boolean;
 }
 
 function getConnectionConfig(): DbConfig {
@@ -15,115 +18,96 @@ function getConnectionConfig(): DbConfig {
     uri: url,
     dateStrings: true,
     timezone: 'Z',
+    multipleStatements: true,
   };
 }
 
 export async function initDb(): Promise<Pool> {
   const db = await mysql.createPool(getConnectionConfig());
   await db.query('SELECT 1');
-  await ensureSchema(db);
-  await seedUsers(db);
+  await ensureSchemaAndSeed(db);
   return db;
 }
 
-async function ensureSchema(db: Pool): Promise<void> {
-  await db.query(
-    `CREATE TABLE IF NOT EXISTS users (
-      id INT PRIMARY KEY AUTO_INCREMENT,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      nickname VARCHAR(120) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB;`,
-  );
+const SCHEMA_DIR = path.join(process.cwd(), 'config', 'schema');
+const SEED_DIR = path.join(process.cwd(), 'config', 'seed');
 
-  await db.query(
-    `CREATE TABLE IF NOT EXISTS reservations (
-      id INT PRIMARY KEY AUTO_INCREMENT,
-      service_key VARCHAR(255) NOT NULL,
-      environment_name VARCHAR(120) NOT NULL,
-      service_name VARCHAR(255) NOT NULL,
-      user_id INT NOT NULL,
-      claimed_by_label VARCHAR(255) NULL,
-      claimed_by_team TINYINT(1) NOT NULL DEFAULT 0,
-      claimed_at DATETIME NOT NULL,
-      expires_at DATETIME NOT NULL,
-      released_at DATETIME NULL,
-      CONSTRAINT fk_reservations_user
-        FOREIGN KEY (user_id) REFERENCES users(id)
-    ) ENGINE=InnoDB;`,
-  );
+async function ensureSchemaAndSeed(db: Pool): Promise<void> {
+  const schemaFiles = await listSqlFiles(SCHEMA_DIR);
+  if (!schemaFiles.length) {
+    return;
+  }
 
-  await ensureIndex(
-    db,
-    'reservations',
-    'idx_reservations_service_key',
-    'service_key',
-  );
-  await ensureIndex(db, 'reservations', 'idx_reservations_user_id', 'user_id');
+  const tableNames = schemaFiles.map((file) => file.tableName);
+  const existingTables = await fetchExistingTables(db, tableNames);
+
+  for (const schemaFile of schemaFiles) {
+    if (existingTables.has(schemaFile.tableName)) {
+      continue;
+    }
+    await runSqlFile(db, schemaFile.path);
+
+    const seedPath = path.join(SEED_DIR, `${schemaFile.tableName}.sql`);
+    if (await fileExists(seedPath)) {
+      await runSqlFile(db, seedPath);
+    }
+  }
 }
 
-async function ensureIndex(
+async function listSqlFiles(
+  dirPath: string,
+): Promise<Array<{ tableName: string; path: string }>> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))
+      .map((entry) => {
+        const tableName = path.basename(entry.name, '.sql');
+        return { tableName, path: path.join(dirPath, entry.name) };
+      })
+      .sort((a, b) => a.tableName.localeCompare(b.tableName));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function fetchExistingTables(
   db: Pool,
-  tableName: string,
-  indexName: string,
-  columns: string,
-): Promise<void> {
+  tableNames: string[],
+): Promise<Set<string>> {
+  if (!tableNames.length) {
+    return new Set();
+  }
+  const placeholders = tableNames.map(() => '?').join(',');
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT 1
-     FROM INFORMATION_SCHEMA.STATISTICS
+    `SELECT TABLE_NAME
+     FROM INFORMATION_SCHEMA.TABLES
      WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = ?
-       AND INDEX_NAME = ?
-     LIMIT 1`,
-    [tableName, indexName],
+       AND TABLE_NAME IN (${placeholders})`,
+    tableNames,
   );
-  if (!rows.length) {
-    await db.query(
-      `CREATE INDEX ${indexName} ON ${tableName}(${columns})`,
-    );
-  }
+  return new Set(rows.map((row) => row.TABLE_NAME as string));
 }
 
-async function seedUsers(db: Pool): Promise<void> {
-  const raw = process.env.SEED_USERS;
-  if (!raw) {
+async function runSqlFile(db: Pool, filePath: string): Promise<void> {
+  const sql = (await fs.readFile(filePath, 'utf8')).trim();
+  if (!sql) {
     return;
   }
-  const entries = parseSeedUsers(raw);
-  if (!entries.length) {
-    return;
-  }
-  for (const entry of entries) {
-    await db.query(
-      `INSERT INTO users (email, nickname)
-       VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE nickname = VALUES(nickname)`,
-      [entry.email, entry.nickname],
-    );
-  }
+  await db.query(sql);
 }
 
-function parseSeedUsers(value: string): Array<{ email: string; nickname: string }> {
-  return value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .flatMap((entry) => {
-      const separatorIndex = entry.indexOf(':');
-      if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
-        console.warn(
-          `Skipping SEED_USERS entry "${entry}". Expected "email:nickname".`,
-        );
-        return [];
-      }
-      const email = entry.slice(0, separatorIndex).trim();
-      const nickname = entry.slice(separatorIndex + 1).trim();
-      if (!email || !nickname) {
-        console.warn(
-          `Skipping SEED_USERS entry "${entry}". Expected "email:nickname".`,
-        );
-        return [];
-      }
-      return [{ email, nickname }];
-    });
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
 }
