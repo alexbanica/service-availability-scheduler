@@ -1,3 +1,7 @@
+---
+apply: always
+---
+
 # AGENTS.md
 
 ## Project summary
