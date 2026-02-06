@@ -414,6 +414,53 @@ main {
   background: var(--surface);
 }
 
+.admin-service-tags {
+  grid-column: 1 / -1;
+}
+
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tag-input input {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.5rem;
+  min-width: 160px;
+  flex: 1 1 160px;
+}
+
+.tag-input input:focus {
+  outline: none;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: var(--highlight);
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.tag-remove {
+  border: none;
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0;
+  box-shadow: none;
+}
+
 .admin-service-select {
   display: grid;
   gap: 0.3rem;

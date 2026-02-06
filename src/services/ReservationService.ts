@@ -1,6 +1,9 @@
 import { DateTimeHelper } from '../helpers/DateTimeHelper';
 import { ServiceListDto } from '../dtos/ServiceListDto';
-import { ServiceStatusDto } from '../dtos/ServiceStatusDto';
+import {
+  ServiceEnvironmentStatusDto,
+  ServiceStatusDto,
+} from '../dtos/ServiceStatusDto';
 import { ServiceDefinition } from '../entities/ServiceDefinition';
 import { ReservationRepository } from '../repositories/ReservationRepository';
 import { ServiceRepository } from '../repositories/ServiceRepository';
@@ -23,8 +26,9 @@ export class ReservationService {
     userId: number,
     nowIso: string,
   ): Promise<ServiceListDto> {
-    const services = await this.serviceRepository.listByUser(userId);
-    const serviceKeys = services.map((svc) => svc.key);
+    const services =
+      await this.serviceRepository.listServiceEnvironmentsByUser(userId);
+    const serviceKeys = services.map((svc) => svc.serviceKey);
     const reservations =
       await this.reservationRepository.findActiveByServiceKeys(
         serviceKeys,
@@ -38,21 +42,16 @@ export class ReservationService {
     );
     const nicknameMap = await this.userService.getNicknamesByIds(userIds);
 
-    const results = services.map((svc) => {
-      const active = reservationMap.get(svc.key);
+    const grouped = new Map<string, ServiceStatusDto>();
+    services.forEach((svc) => {
+      const active = reservationMap.get(svc.serviceKey);
       const claimedBy =
         active?.claimedByLabel ||
         (active ? nicknameMap.get(active.userId) : null);
-      return new ServiceStatusDto(
-        svc.key,
+      const environment = new ServiceEnvironmentStatusDto(
+        svc.serviceKey,
         svc.environmentId,
         svc.environment,
-        svc.id,
-        svc.label,
-        svc.defaultMinutes,
-        svc.owner,
-        svc.workspaceId,
-        svc.workspaceName,
         Boolean(active),
         claimedBy || null,
         active ? active.userId : null,
@@ -60,12 +59,29 @@ export class ReservationService {
         active ? DateTimeHelper.mysqlDateTimeToIso(active.expiresAt) : null,
         Boolean(active?.claimedByTeam),
       );
+      const existing = grouped.get(svc.serviceId);
+      if (existing) {
+        existing.environments.push(environment);
+        return;
+      }
+      grouped.set(
+        svc.serviceId,
+        new ServiceStatusDto(
+          svc.serviceId,
+          svc.label,
+          svc.defaultMinutes,
+          svc.owner,
+          svc.workspaceId,
+          svc.workspaceName,
+          [environment],
+        ),
+      );
     });
 
     return new ServiceListDto(
       this.expiryWarningMinutes,
       this.autoRefreshMinutes,
-      results,
+      Array.from(grouped.values()),
     );
   }
 
@@ -101,7 +117,7 @@ export class ReservationService {
     );
 
     await this.reservationRepository.insertReservation(
-      service.key,
+      service.serviceKey,
       service.environment,
       service.label,
       userId,
@@ -225,7 +241,7 @@ export class ReservationService {
     serviceKey: string,
     userId: number,
   ): Promise<ServiceDefinition> {
-    const service = await this.serviceRepository.findByKeyForUser(
+    const service = await this.serviceRepository.findEnvironmentByKeyForUser(
       serviceKey,
       userId,
     );

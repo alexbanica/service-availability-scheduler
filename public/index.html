@@ -89,9 +89,9 @@
               <div class="stat">{{ claimedByUser.length }}</div>
               <p class="muted">Services currently claimed by you.</p>
               <div v-if="claimedByUser.length" class="overview-list">
-                <div v-for="service in claimedByUser" :key="service.key" class="overview-item">
-                  <span>{{ service.label }}</span>
-                  <span class="muted">{{ service.environment }}</span>
+                <div v-for="item in claimedByUser" :key="item.environment.serviceKey" class="overview-item">
+                  <span>{{ item.service.label }}</span>
+                  <span class="muted">{{ item.environment.environment }}</span>
                 </div>
               </div>
               <p v-else class="muted">No active claims right now.</p>
@@ -169,69 +169,69 @@
               </div>
             </div>
             <div class="in-use-list">
-              <div v-for="service in inUseServices" :key="service.key" class="in-use-item">
+              <div v-for="item in inUseServices" :key="item.environment.serviceKey" class="in-use-item">
                 <div>
-                  <strong>{{ service.label }}</strong>
-                  <span class="muted">{{ service.environment }}</span>
-                  <p class="muted">Workspace: {{ service.workspaceName }}</p>
+                  <strong>{{ item.service.label }}</strong>
+                  <span class="muted">{{ item.environment.environment }}</span>
+                  <p class="muted">Workspace: {{ item.service.workspaceName }}</p>
                   <p class="muted">
-                    Claimed by {{ formatClaimedBy(service) }} ·
-                    Expires {{ formatTime(service.expiresAt) }}
+                    Claimed by {{ formatClaimedBy(item.environment) }} ·
+                    Expires {{ formatTime(item.environment.expiresAt) }}
                   </p>
                 </div>
-                <div v-if="service.claimedById === user?.id" class="service-actions">
-                  <button class="secondary" type="button" @click="extend(service.key)">Extend</button>
-                  <button type="button" @click="release(service.key)">Release</button>
+                <div v-if="item.environment.claimedById === user?.id" class="service-actions">
+                  <button class="secondary" type="button" @click="extend(item.environment.serviceKey)">Extend</button>
+                  <button type="button" @click="release(item.environment.serviceKey)">Release</button>
                 </div>
               </div>
             </div>
           </section>
 
           <section class="services-grid">
-            <article v-for="group in groupedServices" :key="group.groupKey" class="env-card">
+            <article v-for="group in groupedServices" :key="group.serviceId" class="env-card">
               <header class="env-header">
                 <div>
                   <h3>{{ group.serviceLabel }}</h3>
                   <p class="muted">Workspace: {{ group.workspaceName }}</p>
                   <p class="muted">Owner: {{ group.ownerLabel }}</p>
                 </div>
-                <button class="secondary toggle-card" type="button" @click="toggleGroup(group.groupKey)">
+                <button class="secondary toggle-card" type="button" @click="toggleGroup(group.serviceId)">
                   {{ group.expanded ? 'Hide' : 'Show' }}
                 </button>
               </header>
               <div v-show="group.expanded" class="service-list">
                 <div
-                  v-for="service in group.services"
-                  :key="service.key"
+                  v-for="environment in group.environments"
+                  :key="environment.serviceKey"
                   class="service-item"
-                  :class="service.active ? 'claimed' : 'available'"
+                  :class="environment.active ? 'claimed' : 'available'"
                 >
                   <div class="service-info">
-                    <h3>{{ service.environment }}</h3>
+                    <h3>{{ environment.environment }}</h3>
                     <p class="muted">
-                      {{ service.active ? 'Claimed by ' + formatClaimedBy(service) : 'Available now' }}
+                      {{ environment.active ? 'Claimed by ' + formatClaimedBy(environment) : 'Available now' }}
                     </p>
-                    <p v-if="service.active" class="muted">
-                      Expires {{ formatTime(service.expiresAt) }}
+                    <p v-if="environment.active" class="muted">
+                      Expires {{ formatTime(environment.expiresAt) }}
                     </p>
                   </div>
                   <div class="service-actions">
                     <button
-                      v-if="!service.active"
+                      v-if="!environment.active"
                       type="button"
-                      @click="openClaimModal(service.key)"
+                      @click="openClaimModal(environment.serviceKey)"
                     >
                       Claim
                     </button>
-                    <template v-else-if="service.claimedById === user?.id">
+                    <template v-else-if="environment.claimedById === user?.id">
                       <button
                         class="secondary"
                         type="button"
-                        @click="extend(service.key)"
+                        @click="extend(environment.serviceKey)"
                       >
                         Extend
                       </button>
-                      <button type="button" @click="release(service.key)">
+                      <button type="button" @click="release(environment.serviceKey)">
                         Release
                       </button>
                     </template>
@@ -353,34 +353,36 @@
                       <strong>{{ workspace.name }}</strong>
                       <div class="admin-service-actions">
                         <button
+                          v-if="workspace.adminUserId === user?.id"
                           class="secondary"
                           type="button"
                           @click="toggleServiceForm(workspace.id)"
-                          :disabled="workspace.adminUserId !== user?.id"
                         >
                           {{ serviceFormVisible[workspace.id] ? 'Close' : 'Create service' }}
                         </button>
                       </div>
                     </div>
                     <div
-                      v-if="!serviceFormVisible[workspace.id] && (workspaceServices.get(workspace.id) || []).length"
+                      v-if="!serviceFormVisible[workspace.id] && (workspaceServiceCatalog[workspace.id] || []).length"
                       class="admin-service-list"
                     >
                       <div
-                        v-for="service in workspaceServices.get(workspace.id)"
-                        :key="service.key"
+                        v-for="service in workspaceServiceCatalog[workspace.id]"
+                        :key="service.serviceId"
                         class="admin-service-item"
                       >
                         <div>
                           <strong>{{ service.label }}</strong>
-                          <p class="muted">{{ service.environment }}</p>
                           <p class="muted">Owner: {{ service.owner || 'Unowned' }}</p>
+                          <p class="muted">
+                            Environments: {{ service.environments.map(env => env.environmentName).join(', ') }}
+                          </p>
                         </div>
                         <div class="admin-service-actions">
                           <button
+                            v-if="workspace.adminUserId === user?.id"
                             type="button"
-                            @click="deleteService(service)"
-                            :disabled="workspace.adminUserId !== user?.id"
+                            @click="deleteService(workspace.id, service.serviceId)"
                           >
                             Delete
                           </button>
@@ -403,88 +405,25 @@
                       @submit.prevent="createService(workspace.id)"
                     >
                       <label>
-                        Service source
-                        <select v-model="serviceForms[workspace.id].serviceMode">
-                          <option
-                            value="existing"
-                            :disabled="!(workspaceServiceCatalog[workspace.id] || []).length"
-                          >
-                            Existing service
-                          </option>
-                          <option value="new">Create new service</option>
-                        </select>
-                      </label>
-                      <label v-if="serviceForms[workspace.id].serviceMode === 'existing'">
                         Service
-                        <select
-                          v-model="serviceForms[workspace.id].existingServiceId"
-                          :disabled="!(workspaceServiceCatalog[workspace.id] || []).length"
+                        <input
+                          v-model="serviceForms[workspace.id].serviceLabel"
+                          type="text"
+                          placeholder="Search or create service"
+                          :list="`service-options-${workspace.id}`"
                         >
-                          <option
-                            v-if="!(workspaceServiceCatalog[workspace.id] || []).length"
-                            value=""
-                          >
-                            No services yet
-                          </option>
+                        <datalist :id="`service-options-${workspace.id}`">
                           <option
                             v-for="svc in workspaceServiceCatalog[workspace.id] || []"
                             :key="svc.serviceId"
-                            :value="svc.serviceId"
-                          >
-                            {{ svc.label }}
-                          </option>
-                        </select>
+                            :value="svc.label"
+                          ></option>
+                        </datalist>
                       </label>
-                      <label>
-                        Environment source
-                        <select v-model="serviceForms[workspace.id].environmentMode">
-                          <option
-                            value="existing"
-                            :disabled="!(workspaceEnvironments[workspace.id] || []).length"
-                          >
-                            Existing environment
-                          </option>
-                          <option value="new">Create new environment</option>
-                        </select>
-                      </label>
-                      <label v-if="serviceForms[workspace.id].environmentMode === 'existing'">
-                        Environment
-                        <select
-                          v-model="serviceForms[workspace.id].existingEnvironmentId"
-                          :disabled="!(workspaceEnvironments[workspace.id] || []).length"
-                        >
-                          <option
-                            v-if="!(workspaceEnvironments[workspace.id] || []).length"
-                            value=""
-                          >
-                            No environments yet
-                          </option>
-                          <option
-                            v-for="env in workspaceEnvironments[workspace.id] || []"
-                            :key="env.environmentId"
-                            :value="env.environmentId"
-                          >
-                            {{ env.environmentName }} ({{ env.environmentId }})
-                          </option>
-                        </select>
-                      </label>
-                      <label v-if="serviceForms[workspace.id].environmentMode === 'new'">
-                        Environment name
-                        <input
-                          v-model="serviceForms[workspace.id].environmentName"
-                          type="text"
-                          placeholder="Staging"
-                        >
-                      </label>
-                      <label v-if="serviceForms[workspace.id].serviceMode === 'new'">
-                        Service label
-                        <input
-                          v-model="serviceForms[workspace.id].label"
-                          type="text"
-                          placeholder="Billing API"
-                        >
-                      </label>
-                      <label v-if="serviceForms[workspace.id].serviceMode === 'new'">
+                      <p v-if="getServiceSelection(workspace.id)" class="muted">
+                        Existing service selected; add environments below.
+                      </p>
+                      <label v-if="!getServiceSelection(workspace.id)">
                         Default minutes
                         <input
                           v-model.number="serviceForms[workspace.id].defaultMinutes"
@@ -493,52 +432,51 @@
                           step="1"
                         >
                       </label>
-                      <label v-if="serviceForms[workspace.id].serviceMode === 'new'">
+                      <label v-if="!getServiceSelection(workspace.id)">
                         Owner
-                        <select v-model="serviceForms[workspace.id].ownerMode">
-                          <option
-                            value="existing"
-                            :disabled="!(workspaceOwners[workspace.id] || []).length"
-                          >
-                            Existing owner
-                          </option>
-                          <option value="new">Create new owner</option>
-                        </select>
-                      </label>
-                      <label v-if="serviceForms[workspace.id].serviceMode === 'new' && serviceForms[workspace.id].ownerMode === 'existing'">
-                        Owner selection
-                        <select
-                          v-model="serviceForms[workspace.id].existingOwner"
-                          :disabled="!(workspaceOwners[workspace.id] || []).length"
-                        >
-                          <option
-                            v-if="!(workspaceOwners[workspace.id] || []).length"
-                            value=""
-                          >
-                            No owners yet
-                          </option>
-                          <option
-                            v-for="owner in workspaceOwners[workspace.id] || []"
-                            :key="owner"
-                            :value="owner"
-                          >
-                            {{ owner }}
-                          </option>
-                        </select>
-                      </label>
-                      <label v-if="serviceForms[workspace.id].serviceMode === 'new' && serviceForms[workspace.id].ownerMode === 'new'">
-                        Owner name
                         <input
                           v-model="serviceForms[workspace.id].owner"
                           type="text"
                           placeholder="Payments"
+                          :list="`owner-options-${workspace.id}`"
                         >
+                        <datalist :id="`owner-options-${workspace.id}`">
+                          <option
+                            v-for="owner in workspaceOwners[workspace.id] || []"
+                            :key="owner"
+                            :value="owner"
+                          ></option>
+                        </datalist>
+                      </label>
+                      <label class="admin-service-tags">
+                        Environments
+                        <div class="tag-input">
+                          <div class="tag" v-for="tag in serviceForms[workspace.id].environmentTags" :key="tag">
+                            <span>{{ tag }}</span>
+                            <button type="button" class="tag-remove" @click="removeEnvironmentTag(workspace.id, tag)">×</button>
+                          </div>
+                          <input
+                            v-model="serviceForms[workspace.id].environmentInput"
+                            type="text"
+                            placeholder="staging, prod"
+                            :list="`environment-options-${workspace.id}`"
+                            @input="handleEnvironmentInput(workspace.id)"
+                            @keydown="onEnvironmentKeydown(workspace.id, $event)"
+                            @blur="commitEnvironmentInput(workspace.id)"
+                          >
+                          <datalist :id="`environment-options-${workspace.id}`">
+                            <option
+                              v-for="env in workspaceEnvironments[workspace.id] || []"
+                              :key="env.environmentId"
+                              :value="env.environmentName"
+                            ></option>
+                          </datalist>
+                        </div>
                       </label>
                       <div class="admin-service-actions">
                         <button
                           class="secondary"
                           type="submit"
-                          :disabled="serviceSubmitting[workspace.id]"
                         >
                           {{ serviceSubmitting[workspace.id] ? 'Creating...' : 'Create service' }}
                         </button>

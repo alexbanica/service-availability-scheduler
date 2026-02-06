@@ -76,6 +76,7 @@ export class AppController {
               label: string;
               owner: string | null;
               defaultMinutes: number;
+              environments: Array<{ environmentId: string; environmentName: string }>;
             }>
           >
         >({});
@@ -83,16 +84,11 @@ export class AppController {
           Record<
             number,
             {
-              environmentName: string;
-              environmentMode: 'existing' | 'new';
-              existingEnvironmentId: string;
-              serviceMode: 'existing' | 'new';
-              existingServiceId: string;
-              label: string;
+              environmentInput: string;
+              environmentTags: string[];
+              serviceLabel: string;
               defaultMinutes: number;
               owner: string;
-              ownerMode: 'existing' | 'new';
-              existingOwner: string;
             }
           >
         >({});
@@ -153,12 +149,16 @@ export class AppController {
               (svc) => String(svc.workspaceId) === workspaceFilter.value,
             );
           }
-          if (ownerFilter.value === 'all') {
+          if (ownerFilter.value !== 'all') {
+            list = list.filter(
+              (svc) => normalizeOwner(svc.owner) === ownerFilter.value,
+            );
+          }
+          const { regex } = parsedServiceRegex.value;
+          if (!regex) {
             return list;
           }
-          return list.filter(
-            (svc) => normalizeOwner(svc.owner) === ownerFilter.value,
-          );
+          return list.filter((svc) => regex.test(svc.label));
         });
 
         const getExpandedState = (label: string, matches: boolean): boolean => {
@@ -169,47 +169,35 @@ export class AppController {
           return matches;
         };
 
-        const inUseServices = computed(() =>
-          filteredServices.value
-            .filter((svc: Service) => svc.active)
-            .sort((a: Service, b: Service) =>
-              (a.expiresAt || '').localeCompare(b.expiresAt || ''),
-            ),
-        );
+        const inUseServices = computed(() => {
+          const envs = filteredServices.value.flatMap((svc) =>
+            svc.environments.map((env) => ({
+              service: svc,
+              environment: env,
+            })),
+          );
+          return envs
+            .filter((item) => item.environment.active)
+            .sort((a, b) =>
+              (a.environment.expiresAt || '').localeCompare(
+                b.environment.expiresAt || '',
+              ),
+            );
+        });
 
         const groupedServices = computed(() => {
-          const map = new Map<string, Service[]>();
-          filteredServices.value.forEach((svc: Service) => {
-            const serviceLabel = svc.label;
-            const groupKey = `${svc.workspaceId}:${serviceLabel}`;
-            if (!map.has(groupKey)) {
-              map.set(groupKey, []);
-            }
-            map.get(groupKey)?.push(svc);
-          });
-          const { regex } = parsedServiceRegex.value;
-          const groups = Array.from(map.entries()).map(([key, items]) => {
-            const serviceLabel = items[0]?.label || key;
-            const ownerLabel = normalizeOwner(items[0]?.owner ?? null);
-            const matches = regex ? regex.test(serviceLabel) : true;
-            return {
-              serviceLabel,
-              ownerLabel,
-              workspaceId: items[0]?.workspaceId ?? 0,
-              workspaceName: items[0]?.workspaceName ?? 'Unknown',
-              matches,
-              expanded: getExpandedState(key, matches),
-              services: items.sort((a, b) =>
-                a.environment.localeCompare(b.environment),
-              ),
-              groupKey: key,
-            };
-          });
-
-          const sortByOwner = (
-            a: (typeof groups)[number],
-            b: (typeof groups)[number],
-          ) => {
+          const groups = filteredServices.value.map((svc) => ({
+            serviceId: svc.serviceId,
+            serviceLabel: svc.label,
+            ownerLabel: normalizeOwner(svc.owner),
+            workspaceId: svc.workspaceId,
+            workspaceName: svc.workspaceName,
+            expanded: getExpandedState(svc.serviceId, true),
+            environments: [...svc.environments].sort((a, b) =>
+              a.environment.localeCompare(b.environment),
+            ),
+          }));
+          return groups.sort((a, b) => {
             const workspaceCompare =
               a.workspaceName.localeCompare(b.workspaceName);
             if (workspaceCompare !== 0) {
@@ -220,15 +208,7 @@ export class AppController {
               return ownerCompare;
             }
             return a.serviceLabel.localeCompare(b.serviceLabel);
-          };
-
-          const matched = groups
-            .filter((group) => group.matches)
-            .sort(sortByOwner);
-          const unmatched = groups
-            .filter((group) => !group.matches)
-            .sort(sortByOwner);
-          return matched.concat(unmatched);
+          });
         });
 
         const serviceNameFilterError = computed(
@@ -244,39 +224,36 @@ export class AppController {
           );
         });
 
-        const workspaceServices = computed(() => {
-          const map = new Map<number, Service[]>();
-          workspaces.value.forEach((workspace) => {
-            map.set(workspace.id, []);
-          });
-          services.value.forEach((service) => {
-            const list = map.get(service.workspaceId);
-            if (list) {
-              list.push(service);
-            }
-          });
-          map.forEach((list, id) => {
-            list.sort((a, b) => a.label.localeCompare(b.label));
-            map.set(id, list);
-          });
-          return map;
-        });
 
         const claimedByUser = computed(() => {
           if (!user.value) {
             return [];
           }
-          return services.value.filter(
-            (service) => service.claimedById === user.value?.id,
+          return services.value.flatMap((service) =>
+            service.environments
+              .filter((env) => env.claimedById === user.value?.id)
+              .map((env) => ({ service, environment: env })),
           );
         });
 
         const totalServicesCount = computed(() => services.value.length);
         const claimedServicesCount = computed(
-          () => services.value.filter((service) => service.active).length,
+          () =>
+            services.value.reduce(
+              (total, service) =>
+                total +
+                service.environments.filter((env) => env.active).length,
+              0,
+            ),
         );
         const availableServicesCount = computed(
-          () => services.value.filter((service) => !service.active).length,
+          () =>
+            services.value.reduce(
+              (total, service) =>
+                total +
+                service.environments.filter((env) => !env.active).length,
+              0,
+            ),
         );
 
         const showToast = (message: string) => {
@@ -311,9 +288,7 @@ export class AppController {
             ownerFilter.value = 'all';
           }
 
-          const labels = new Set(
-            data.services.map((svc) => `${svc.workspaceId}:${svc.label}`),
-          );
+          const labels = new Set(data.services.map((svc) => svc.serviceId));
           const nextOverrides: Record<string, boolean> = {};
           Object.entries(expandedOverrides.value).forEach(
             ([label, expanded]) => {
@@ -350,16 +325,11 @@ export class AppController {
             workspaces.value.forEach((workspace) => {
               if (!nextForms[workspace.id]) {
                 nextForms[workspace.id] = {
-                  environmentName: '',
-                  environmentMode: 'new',
-                  existingEnvironmentId: '',
-                  serviceMode: 'new',
-                  existingServiceId: '',
-                  label: '',
+                  environmentInput: '',
+                  environmentTags: [],
+                  serviceLabel: '',
                   defaultMinutes: 60,
                   owner: '',
-                  ownerMode: 'new',
-                  existingOwner: '',
                 };
               }
             });
@@ -409,15 +379,6 @@ export class AppController {
               ...workspaceEnvironments.value,
               [workspaceId]: environments,
             };
-            const form = serviceForms.value[workspaceId];
-            if (form && environments.length) {
-              if (!form.existingEnvironmentId) {
-                form.existingEnvironmentId = environments[0].environmentId;
-              }
-              if (form.environmentMode === 'new') {
-                form.environmentMode = 'existing';
-              }
-            }
           } catch (err) {
             showToast((err as Error).message);
           }
@@ -430,15 +391,6 @@ export class AppController {
               ...workspaceOwners.value,
               [workspaceId]: owners,
             };
-            const form = serviceForms.value[workspaceId];
-            if (form && owners.length) {
-              if (!form.existingOwner) {
-                form.existingOwner = owners[0];
-              }
-              if (form.ownerMode === 'new') {
-                form.ownerMode = 'existing';
-              }
-            }
           } catch (err) {
             showToast((err as Error).message);
           }
@@ -452,15 +404,6 @@ export class AppController {
               ...workspaceServiceCatalog.value,
               [workspaceId]: catalog,
             };
-            const form = serviceForms.value[workspaceId];
-            if (form && catalog.length) {
-              if (!form.existingServiceId) {
-                form.existingServiceId = catalog[0].serviceId;
-              }
-              if (form.serviceMode === 'new') {
-                form.serviceMode = 'existing';
-              }
-            }
           } catch (err) {
             showToast((err as Error).message);
           }
@@ -600,13 +543,33 @@ export class AppController {
             return;
           }
           serviceErrors.value = { ...serviceErrors.value, [workspaceId]: '' };
-          const resolvedEnvironment = resolveEnvironment(workspaceId);
-          if (!resolvedEnvironment) {
+          commitEnvironmentInput(workspaceId);
+          const environments = resolveEnvironments(workspaceId);
+          if (!environments.length) {
             serviceErrors.value = {
               ...serviceErrors.value,
-              [workspaceId]: 'Select or enter an environment.',
+              [workspaceId]: 'Add at least one environment.',
             };
             return;
+          }
+          const serviceLabel = form.serviceLabel.trim();
+          if (!serviceLabel) {
+            serviceErrors.value = {
+              ...serviceErrors.value,
+              [workspaceId]: 'Service name is required.',
+            };
+            return;
+          }
+          const selectedService = getServiceSelection(workspaceId);
+          if (!selectedService) {
+            const minutes = Number(form.defaultMinutes);
+            if (!Number.isFinite(minutes) || minutes <= 0) {
+              serviceErrors.value = {
+                ...serviceErrors.value,
+                [workspaceId]: 'Default minutes must be positive.',
+              };
+              return;
+            }
           }
           const resolvedService = resolveServiceBase(workspaceId);
           if (!resolvedService) {
@@ -622,8 +585,7 @@ export class AppController {
           };
           try {
             await WorkspaceService.createService(workspaceId, {
-              environmentId: resolvedEnvironment.environmentId,
-              environmentName: resolvedEnvironment.environmentName,
+              environmentNames: environments,
               serviceId: resolvedService.serviceId,
               label: resolvedService.label,
               defaultMinutes: resolvedService.defaultMinutes,
@@ -632,18 +594,11 @@ export class AppController {
             serviceForms.value = {
               ...serviceForms.value,
               [workspaceId]: {
-                environmentName: '',
-                environmentMode:
-                  form.environmentMode === 'existing' ? 'existing' : 'new',
-                existingEnvironmentId: form.existingEnvironmentId,
-                serviceMode:
-                  form.serviceMode === 'existing' ? 'existing' : 'new',
-                existingServiceId: form.existingServiceId,
-                label: '',
+                environmentInput: '',
+                environmentTags: [],
+                serviceLabel: '',
                 defaultMinutes: form.defaultMinutes || 60,
                 owner: '',
-                ownerMode: form.ownerMode === 'existing' ? 'existing' : 'new',
-                existingOwner: form.existingOwner,
               },
             };
             showToast('Service created.');
@@ -670,7 +625,7 @@ export class AppController {
 
         const toggleGroup = (key: string) => {
           const current = groupedServices.value.find(
-            (group) => group.groupKey === key,
+            (group) => group.serviceId === key,
           );
           if (!current) {
             return;
@@ -685,43 +640,131 @@ export class AppController {
           await loadServices();
         };
 
-        const resolveEnvironment = (
-          workspaceId: number,
-        ): { environmentId: string; environmentName: string } | null => {
+        const normalizeTag = (value: string): string => value.trim();
+
+        const extractEnvironmentTags = (
+          raw: string,
+        ): { tags: string[]; remainder: string } => {
+          if (!/[,\s]/.test(raw)) {
+            return { tags: [], remainder: raw };
+          }
+          const endsWithSeparator = /[,\s]$/.test(raw);
+          const parts = raw.split(/[,\s]+/);
+          const remainder = endsWithSeparator ? '' : parts.pop() || '';
+          const tags = parts
+            .map((part) => normalizeTag(part))
+            .filter((part) => part.length > 0);
+          return { tags, remainder };
+        };
+
+        const addEnvironmentTags = (workspaceId: number, raw: string) => {
           const form = serviceForms.value[workspaceId];
           if (!form) {
-            return null;
+            return;
           }
-          if (form.environmentMode === 'existing') {
-            const environments = workspaceEnvironments.value[workspaceId] || [];
-            const selected = environments.find(
-              (env) => env.environmentId === form.existingEnvironmentId,
-            );
-            if (!selected) {
-              return null;
+          const parts = raw
+            .split(/[,\s]+/)
+            .map((part) => normalizeTag(part))
+            .filter((part) => part.length > 0);
+          if (!parts.length) {
+            return;
+          }
+          const existing = new Set(
+            form.environmentTags.map((tag) => tag.toLowerCase()),
+          );
+          const nextTags = [...form.environmentTags];
+          parts.forEach((part) => {
+            if (!existing.has(part.toLowerCase())) {
+              existing.add(part.toLowerCase());
+              nextTags.push(part);
             }
-            return {
-              environmentId: selected.environmentId,
-              environmentName: selected.environmentName,
-            };
-          }
-          const environmentName = form.environmentName.trim();
-          if (!environmentName) {
-            return null;
-          }
-          return {
-            environmentId: '',
-            environmentName,
+          });
+          serviceForms.value = {
+            ...serviceForms.value,
+            [workspaceId]: {
+              ...form,
+              environmentTags: nextTags,
+            },
           };
+        };
+
+        const commitEnvironmentInput = (workspaceId: number) => {
+          const form = serviceForms.value[workspaceId];
+          if (!form) {
+            return;
+          }
+          const raw = form.environmentInput;
+          addEnvironmentTags(workspaceId, raw);
+          serviceForms.value = {
+            ...serviceForms.value,
+            [workspaceId]: {
+              ...form,
+              environmentInput: '',
+            },
+          };
+        };
+
+        const removeEnvironmentTag = (workspaceId: number, tag: string) => {
+          const form = serviceForms.value[workspaceId];
+          if (!form) {
+            return;
+          }
+          serviceForms.value = {
+            ...serviceForms.value,
+            [workspaceId]: {
+              ...form,
+              environmentTags: form.environmentTags.filter(
+                (existing) => existing !== tag,
+              ),
+            },
+          };
+        };
+
+        const handleEnvironmentInput = (workspaceId: number) => {
+          const form = serviceForms.value[workspaceId];
+          if (!form) {
+            return;
+          }
+          const raw = form.environmentInput;
+          const { tags, remainder } = extractEnvironmentTags(raw);
+          if (!tags.length) {
+            return;
+          }
+          addEnvironmentTags(workspaceId, tags.join(','));
+          serviceForms.value = {
+            ...serviceForms.value,
+            [workspaceId]: {
+              ...form,
+              environmentInput: remainder.trimStart(),
+            },
+          };
+        };
+
+        const onEnvironmentKeydown = (
+          workspaceId: number,
+          event: KeyboardEvent,
+        ) => {
+          if (event.key === 'Enter' || event.key === ',' || event.key === ' ') {
+            event.preventDefault();
+            commitEnvironmentInput(workspaceId);
+          }
+        };
+
+        const resolveEnvironments = (workspaceId: number): string[] => {
+          const form = serviceForms.value[workspaceId];
+          if (!form) {
+            return [];
+          }
+          const tags = form.environmentTags
+            .map((tag) => normalizeTag(tag))
+            .filter((tag) => tag.length > 0);
+          return Array.from(new Set(tags));
         };
 
         const resolveOwner = (workspaceId: number): string | null => {
           const form = serviceForms.value[workspaceId];
           if (!form) {
             return null;
-          }
-          if (form.ownerMode === 'existing') {
-            return form.existingOwner || null;
           }
           const owner = form.owner.trim();
           return owner.length ? owner : null;
@@ -730,7 +773,7 @@ export class AppController {
         const resolveServiceBase = (
           workspaceId: number,
         ): {
-          serviceId: string;
+          serviceId: string | null;
           label: string;
           owner: string | null;
           defaultMinutes: number;
@@ -739,14 +782,15 @@ export class AppController {
           if (!form) {
             return null;
           }
-          if (form.serviceMode === 'existing') {
-            const catalog = workspaceServiceCatalog.value[workspaceId] || [];
-            const selected = catalog.find(
-              (svc) => svc.serviceId === form.existingServiceId,
-            );
-            if (!selected) {
-              return null;
-            }
+          const label = form.serviceLabel.trim();
+          if (!label) {
+            return null;
+          }
+          const catalog = workspaceServiceCatalog.value[workspaceId] || [];
+          const selected = catalog.find(
+            (svc) => svc.label.toLowerCase() === label.toLowerCase(),
+          );
+          if (selected) {
             return {
               serviceId: selected.serviceId,
               label: selected.label,
@@ -756,11 +800,26 @@ export class AppController {
           }
           const resolvedOwner = resolveOwner(workspaceId);
           return {
-            serviceId: '',
-            label: form.label.trim(),
+            serviceId: null,
+            label,
             owner: resolvedOwner,
             defaultMinutes: Number(form.defaultMinutes),
           };
+        };
+
+        const getServiceSelection = (workspaceId: number) => {
+          const form = serviceForms.value[workspaceId];
+          if (!form) {
+            return null;
+          }
+          const label = form.serviceLabel.trim().toLowerCase();
+          if (!label) {
+            return null;
+          }
+          const catalog = workspaceServiceCatalog.value[workspaceId] || [];
+          return (
+            catalog.find((svc) => svc.label.toLowerCase() === label) || null
+          );
         };
 
         const setView = (view: 'overview' | 'availability' | 'admin') => {
@@ -785,29 +844,29 @@ export class AppController {
           }
         };
 
-        const deleteService = async (service: Service) => {
+        const deleteService = async (
+          workspaceId: number,
+          serviceId: string,
+        ) => {
           try {
-            await WorkspaceService.deleteService(
-              service.workspaceId,
-              service.key,
-            );
+            await WorkspaceService.deleteService(workspaceId, serviceId);
             showToast('Service deleted.');
             await loadServices();
-            await loadEnvironments(service.workspaceId);
-            await loadOwners(service.workspaceId);
-            await loadServiceCatalog(service.workspaceId);
+            await loadEnvironments(workspaceId);
+            await loadOwners(workspaceId);
+            await loadServiceCatalog(workspaceId);
           } catch (err) {
             showToast((err as Error).message);
           }
         };
 
-        const formatClaimedBy = (service: Service): string => {
-          if (!service.claimedBy) {
+        const formatClaimedBy = (environment: Service['environments'][number]): string => {
+          if (!environment.claimedBy) {
             return 'Unknown';
           }
-          return service.claimedByTeam
-            ? `${service.claimedBy} (team)`
-            : service.claimedBy;
+          return environment.claimedByTeam
+            ? `${environment.claimedBy} (team)`
+            : environment.claimedBy;
         };
 
         const scheduleAutoRefresh = () => {
@@ -858,6 +917,14 @@ export class AppController {
 
         watch(claimType, () => {
           teamNameError.value = '';
+        });
+
+        watch(adminSection, (value) => {
+          if (value === 'services') {
+            workspaces.value.forEach((workspace) => {
+              loadServiceCatalog(workspace.id);
+            });
+          }
         });
 
         return {
@@ -914,14 +981,19 @@ export class AppController {
           workspaceEnvironments,
           workspaceOwners,
           workspaceServiceCatalog,
-          workspaceServices,
           serviceFormVisible,
           serviceForms,
           serviceErrors,
           serviceSubmitting,
+          addEnvironmentTags,
+          commitEnvironmentInput,
+          removeEnvironmentTag,
           toggleServiceForm,
           deleteService,
           createService,
+          handleEnvironmentInput,
+          onEnvironmentKeydown,
+          getServiceSelection,
         };
       },
     }).mount('#app');

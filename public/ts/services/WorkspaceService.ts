@@ -58,22 +58,20 @@ export class WorkspaceService {
   static async createService(
     workspaceId: number,
     input: {
-      environmentId: string;
-      environmentName: string;
-      serviceId: string;
-      label: string;
-      defaultMinutes: number;
-      owner: string;
+      environmentNames: string[];
+      serviceId?: string | null;
+      label?: string;
+      defaultMinutes?: number;
+      owner?: string;
     },
   ): Promise<void> {
     const response = await ApiService.post(
       `/api/workspaces/${workspaceId}/services`,
       {
-        environment_id: input.environmentId,
-        environment_name: input.environmentName,
-        service_id: input.serviceId,
+        environment_names: input.environmentNames,
+        service_id: input.serviceId || null,
         label: input.label || null,
-        default_minutes: input.defaultMinutes,
+        default_minutes: input.defaultMinutes || null,
         owner: input.owner || null,
       },
     );
@@ -87,11 +85,11 @@ export class WorkspaceService {
 
   static async deleteService(
     workspaceId: number,
-    serviceKey: string,
+    serviceId: string,
   ): Promise<void> {
     const response = await ApiService.delete(
       `/api/workspaces/${workspaceId}/services/${encodeURIComponent(
-        serviceKey,
+        serviceId,
       )}`,
     );
     if (!response.ok) {
@@ -155,6 +153,7 @@ export class WorkspaceService {
       label: string;
       owner: string | null;
       defaultMinutes: number;
+      environments: Array<{ environmentId: string; environmentName: string }>;
     }>
   > {
     const response = await ApiService.get(
@@ -182,6 +181,12 @@ export class WorkspaceService {
       label: asString(svc.label, ''),
       owner: asNullableString(svc.owner),
       defaultMinutes: asNumber(svc.default_minutes, 0),
+      environments: Array.isArray(svc.environments)
+        ? svc.environments.map((env) => ({
+            environmentId: asString(env.environment_id, ''),
+            environmentName: asString(env.environment_name, ''),
+          }))
+        : [],
     }));
   }
 }

@@ -10,11 +10,10 @@ import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
 import { WorkspaceUserRepository } from '../repositories/WorkspaceUserRepository';
 
 type ServiceInput = {
-  environmentId: string;
-  environmentName: string;
-  serviceId: string;
+  environmentNames: string[];
+  serviceId?: string | null;
   label?: string | null;
-  defaultMinutes: number;
+  defaultMinutes?: number | null;
   owner?: string | null;
 };
 
@@ -74,40 +73,95 @@ export class WorkspaceService {
     workspaceId: number,
     userId: number,
     input: ServiceInput,
-  ): Promise<{ id: number; serviceKey: string }> {
-    if (!input.environmentName.trim()) {
-      throw new Error('Environment name required');
-    }
-    if (!Number.isFinite(input.defaultMinutes) || input.defaultMinutes <= 0) {
-      throw new Error('Default minutes must be positive');
+  ): Promise<{ serviceId: string; createdEnvironments: number }> {
+    const environments = input.environmentNames
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0);
+    if (!environments.length) {
+      throw new Error('At least one environment is required');
     }
 
     await this.assertWorkspaceAdmin(workspaceId, userId);
 
-    const environmentId = input.environmentId.trim() || randomUUID();
-    const serviceId = input.serviceId.trim() || randomUUID();
-    const serviceKey = `${environmentId}:${serviceId}`;
-    const label = (input.label || serviceId).trim();
-    const owner = input.owner ? input.owner.trim() : null;
-
+    const connection = await this.db.getConnection();
     try {
-      const id = await this.serviceRepository.insertService({
-        workspaceId,
-        serviceKey,
-        environmentId,
-        environmentName: input.environmentName.trim(),
-        serviceId,
-        label,
-        defaultMinutes: input.defaultMinutes,
-        owner: owner && owner.length ? owner : null,
-      });
-      return { id, serviceKey };
-    } catch (error) {
-      const err = error as { code?: string };
-      if (err.code === 'ER_DUP_ENTRY') {
-        throw new Error('Service already exists');
+      await connection.beginTransaction();
+      const serviceRepo = new ServiceRepository(connection);
+
+      let serviceDbId: number;
+      let serviceUuid: string;
+
+      const providedServiceId = (input.serviceId || '').trim();
+      if (providedServiceId) {
+        const existing = await serviceRepo.findServiceByUuid(
+          workspaceId,
+          providedServiceId,
+        );
+        if (!existing) {
+          throw new Error('Service not found');
+        }
+        serviceDbId = existing.id;
+        serviceUuid = existing.serviceId;
+      } else {
+        const label = (input.label || '').trim();
+        if (!label) {
+          throw new Error('Service label required');
+        }
+        const defaultMinutes = Number(input.defaultMinutes || 0);
+        if (!Number.isFinite(defaultMinutes) || defaultMinutes <= 0) {
+          throw new Error('Default minutes must be positive');
+        }
+        serviceUuid = randomUUID();
+        serviceDbId = await serviceRepo.insertService({
+          workspaceId,
+          serviceId: serviceUuid,
+          label,
+          defaultMinutes,
+          owner: input.owner ? input.owner.trim() || null : null,
+        });
       }
+
+      let createdEnvironments = 0;
+      for (const name of environments) {
+        const existingEnv = await serviceRepo.findEnvironmentByName(
+          workspaceId,
+          name,
+        );
+        let environmentDbId: number;
+        let environmentUuid: string;
+        if (existingEnv) {
+          environmentDbId = existingEnv.id;
+          environmentUuid = existingEnv.environmentId;
+        } else {
+          environmentUuid = randomUUID();
+          environmentDbId = await serviceRepo.insertEnvironment({
+            workspaceId,
+            environmentId: environmentUuid,
+            name,
+          });
+        }
+        try {
+          await serviceRepo.insertServiceEnvironment({
+            serviceDbId,
+            environmentDbId,
+            serviceKey: `${serviceUuid}:${environmentUuid}`,
+          });
+          createdEnvironments += 1;
+        } catch (error) {
+          const err = error as { code?: string };
+          if (err.code !== 'ER_DUP_ENTRY') {
+            throw error;
+          }
+        }
+      }
+
+      await connection.commit();
+      return { serviceId: serviceUuid, createdEnvironments };
+    } catch (error) {
+      await connection.rollback();
       throw error;
+    } finally {
+      connection.release();
     }
   }
 
@@ -139,21 +193,52 @@ export class WorkspaceService {
       label: string;
       owner: string | null;
       defaultMinutes: number;
+      environments: Array<{ environmentId: string; environmentName: string }>;
     }>
   > {
-    await this.assertWorkspaceAdmin(workspaceId, userId);
-    return this.serviceRepository.listServiceCatalogByWorkspace(workspaceId);
+    await this.assertWorkspaceMember(workspaceId, userId);
+    const rows =
+      await this.serviceRepository.listServiceCatalogByWorkspace(workspaceId);
+    const map = new Map<
+      string,
+      {
+        serviceId: string;
+        label: string;
+        owner: string | null;
+        defaultMinutes: number;
+        environments: Array<{ environmentId: string; environmentName: string }>;
+      }
+    >();
+    rows.forEach((row) => {
+      const existing = map.get(row.serviceId);
+      const env = {
+        environmentId: row.environmentId,
+        environmentName: row.environmentName,
+      };
+      if (existing) {
+        existing.environments.push(env);
+        return;
+      }
+      map.set(row.serviceId, {
+        serviceId: row.serviceId,
+        label: row.label,
+        owner: row.owner,
+        defaultMinutes: row.defaultMinutes,
+        environments: [env],
+      });
+    });
+    return Array.from(map.values());
   }
 
   async deleteService(
     workspaceId: number,
     userId: number,
-    serviceKey: string,
+    serviceId: string,
   ): Promise<void> {
     await this.assertWorkspaceAdmin(workspaceId, userId);
-    const affected = await this.serviceRepository.deleteByWorkspaceAndKey(
+    const affected = await this.serviceRepository.deleteServiceByWorkspaceAndId(
       workspaceId,
-      serviceKey,
+      serviceId,
     );
     if (!affected) {
       throw new Error('Service not found');
@@ -213,6 +298,23 @@ export class WorkspaceService {
       userId,
     );
     if (!isAdmin) {
+      throw new Error('Not authorized for workspace');
+    }
+  }
+
+  private async assertWorkspaceMember(
+    workspaceId: number,
+    userId: number,
+  ): Promise<void> {
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
+    const isMember = await this.workspaceUserRepository.isMember(
+      workspaceId,
+      userId,
+    );
+    if (!isMember) {
       throw new Error('Not authorized for workspace');
     }
   }

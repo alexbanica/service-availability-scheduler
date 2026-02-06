@@ -32,6 +32,8 @@ async function ensureSchema(db: mysql.Pool): Promise<void> {
 async function truncateAll(db: mysql.Pool): Promise<void> {
   const tables = [
     'workspace_invitations',
+    'service_environments',
+    'environments',
     'services',
     'workspace_users',
     'workspaces',
@@ -92,16 +94,17 @@ test(
       assert.equal(workspaceUsers[0].role, 'admin');
 
       await workspaceService.createService(workspace.id, adminUserId, {
-        environmentId: 'dev',
-        environmentName: 'Development',
-        serviceId: 'api',
+        environmentNames: ['Development'],
+        label: 'API',
         defaultMinutes: 15,
       });
 
       const serviceRepo = new ServiceRepository(db);
-      const services = await serviceRepo.listByUser(adminUserId);
+      const services = await serviceRepo.listServiceEnvironmentsByUser(
+        adminUserId,
+      );
       assert.equal(services.length, 1);
-      assert.equal(services[0].key, 'dev:api');
+      assert.ok(services[0].serviceKey);
     } finally {
       if (ALLOW_TRUNCATE) {
         await truncateAll(db);

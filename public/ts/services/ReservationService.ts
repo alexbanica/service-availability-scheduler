@@ -1,5 +1,5 @@
 import { ApiService } from './ApiService.js';
-import { Service } from '../entities/Service.js';
+import { Service, ServiceEnvironment } from '../entities/Service.js';
 import { ServicesResponseDto } from '../dtos/ServicesResponseDto.js';
 
 export class ReservationService {
@@ -29,24 +29,32 @@ export class ReservationService {
     const asBoolean = (value: unknown): boolean => Boolean(value);
 
     const services = data.services.map((svc) => {
-      const id = asString(svc.id, 'unknown');
-      const label = asString(svc.label, id);
+      const serviceId = asString(svc.service_id, 'unknown');
+      const label = asString(svc.label, serviceId);
+      const environments = Array.isArray(svc.environments)
+        ? svc.environments.map((env) => {
+            const envId = asString(env.environment_id, 'unknown');
+            return new ServiceEnvironment(
+              asString(env.service_key, `${serviceId}:${envId}`),
+              envId,
+              asString(env.environment, 'Unknown'),
+              asBoolean(env.active),
+              asNullableString(env.claimed_by),
+              asNullableNumber(env.claimed_by_id),
+              asNullableString(env.claimed_at),
+              asNullableString(env.expires_at),
+              asBoolean(env.claimed_by_team),
+            );
+          })
+        : [];
       return new Service(
-        asString(svc.key, id),
-        asString(svc.environment_id, 'unknown'),
-        asString(svc.environment, 'Unknown'),
-        id,
+        serviceId,
         label,
         asNumber(svc.default_minutes, 0),
         asNullableString(svc.owner),
         asNumber(svc.workspace_id, 0),
         asString(svc.workspace_name, 'Unknown'),
-        Boolean(svc.active),
-        asNullableString(svc.claimed_by),
-        asNullableNumber(svc.claimed_by_id),
-        asNullableString(svc.claimed_at),
-        asNullableString(svc.expires_at),
-        asBoolean(svc.claimed_by_team),
+        environments,
       );
     });
 

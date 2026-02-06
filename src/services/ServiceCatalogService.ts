@@ -8,11 +8,11 @@ export class ServiceCatalogService {
       svc.environments.forEach((env) => {
         services.push(
           new ServiceDefinition(
-            `${env.id}:${svc.id}`,
-            env.id,
-            env.name,
+            `${svc.id}:${env.id}`,
             svc.id,
             svc.label || svc.id,
+            env.id,
+            env.name,
             svc.defaultMinutes,
             svc.owner,
             0,

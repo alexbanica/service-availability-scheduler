@@ -53,11 +53,11 @@ class FakeServiceRepository {
     private readonly allowClaim: boolean,
   ) {}
 
-  async listByUser(): Promise<ServiceDefinition[]> {
+  async listServiceEnvironmentsByUser(): Promise<ServiceDefinition[]> {
     return this.services;
   }
 
-  async findByKeyForUser(): Promise<ServiceDefinition | null> {
+  async findEnvironmentByKeyForUser(): Promise<ServiceDefinition | null> {
     return this.allowClaim ? this.services[0] : null;
   }
 }
@@ -65,11 +65,11 @@ class FakeServiceRepository {
 test('getServiceList only returns member services', async () => {
   const services = [
     new ServiceDefinition(
-      'env:svc',
-      'env',
-      'Env',
+      'svc:env',
       'svc',
       'Svc',
+      'env',
+      'Env',
       30,
       null,
       1,
@@ -86,17 +86,18 @@ test('getServiceList only returns member services', async () => {
 
   const list = await reservationService.getServiceList(10, new Date());
   assert.equal(list.services.length, 1);
-  assert.equal(list.services[0].key, 'env:svc');
+  assert.equal(list.services[0].environments.length, 1);
+  assert.equal(list.services[0].environments[0].serviceKey, 'svc:env');
 });
 
 test('claim rejects when service not in user workspace', async () => {
   const services = [
     new ServiceDefinition(
-      'env:svc',
-      'env',
-      'Env',
+      'svc:env',
       'svc',
       'Svc',
+      'env',
+      'Env',
       30,
       null,
       1,
@@ -112,7 +113,7 @@ test('claim rejects when service not in user workspace', async () => {
   );
 
   await assert.rejects(
-    () => reservationService.claim('env:svc', 3, new Date()),
+    () => reservationService.claim('svc:env', 3, new Date()),
     /Service not found/,
   );
 });
