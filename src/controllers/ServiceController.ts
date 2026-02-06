@@ -10,7 +10,10 @@ export class ServiceController {
       '/api/services',
       requireAuth,
       async (req: Request, res: Response) => {
-        const list = await this.reservationService.getServiceList(new Date());
+        const list = await this.reservationService.getServiceList(
+          req.session.userId as number,
+          new Date(),
+        );
         res.json({
           expiry_warning_minutes: list.expiryWarningMinutes,
           auto_refresh_minutes: list.autoRefreshMinutes,
@@ -22,6 +25,8 @@ export class ServiceController {
             label: svc.label,
             default_minutes: svc.defaultMinutes,
             owner: svc.owner,
+            workspace_id: svc.workspaceId,
+            workspace_name: svc.workspaceName,
             active: svc.active,
             claimed_by: svc.claimedBy,
             claimed_by_id: svc.claimedById,

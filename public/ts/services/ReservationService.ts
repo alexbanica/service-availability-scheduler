@@ -39,6 +39,8 @@ export class ReservationService {
         label,
         asNumber(svc.default_minutes, 0),
         asNullableString(svc.owner),
+        asNumber(svc.workspace_id, 0),
+        asString(svc.workspace_name, 'Unknown'),
         Boolean(svc.active),
         asNullableString(svc.claimed_by),
         asNullableNumber(svc.claimed_by_id),

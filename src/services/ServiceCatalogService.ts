@@ -15,6 +15,8 @@ export class ServiceCatalogService {
             svc.label || svc.id,
             svc.defaultMinutes,
             svc.owner,
+            0,
+            'Unassigned',
           ),
         );
       });

@@ -1,6 +1,9 @@
-import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { RowDataPacket } from 'mysql2/promise';
 import { User } from '../entities/User';
-import { AbstractMysqlRepository } from './AbstractMysqlRepository';
+import {
+  AbstractMysqlRepository,
+  MysqlConnection,
+} from './AbstractMysqlRepository';
 
 type UserRow = RowDataPacket & {
   id: number;
@@ -9,7 +12,7 @@ type UserRow = RowDataPacket & {
 };
 
 export class UserRepository extends AbstractMysqlRepository {
-  constructor(db: Pool) {
+  constructor(db: MysqlConnection) {
     super(db);
   }
 
@@ -22,6 +25,14 @@ export class UserRepository extends AbstractMysqlRepository {
       return null;
     }
     return new User(row.id, row.email, row.nickname);
+  }
+
+  async findById(id: number): Promise<User | null> {
+    const row = await this.get<UserRow>(
+      'SELECT id, email, nickname FROM users WHERE id = ?',
+      [id],
+    );
+    return row ? new User(row.id, row.email, row.nickname) : null;
   }
 
   async findByIds(ids: number[]): Promise<User[]> {

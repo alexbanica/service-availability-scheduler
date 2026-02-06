@@ -1,6 +1,9 @@
-import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { Reservation } from '../entities/Reservation';
-import { AbstractMysqlRepository } from './AbstractMysqlRepository';
+import {
+  AbstractMysqlRepository,
+  MysqlConnection,
+} from './AbstractMysqlRepository';
 
 type ReservationRow = RowDataPacket & {
   id: number;
@@ -16,7 +19,7 @@ type ReservationRow = RowDataPacket & {
 };
 
 export class ReservationRepository extends AbstractMysqlRepository {
-  constructor(db: Pool) {
+  constructor(db: MysqlConnection) {
     super(db);
   }
 
@@ -42,6 +45,27 @@ export class ReservationRepository extends AbstractMysqlRepository {
        FROM reservations r
        WHERE r.released_at IS NULL AND r.expires_at > ?`,
       [now],
+    );
+    return rows.map((row) => this.mapRow(row));
+  }
+
+  async findActiveByServiceKeys(
+    serviceKeys: string[],
+    now: string,
+  ): Promise<Reservation[]> {
+    if (!serviceKeys.length) {
+      return [];
+    }
+    const placeholders = serviceKeys.map(() => '?').join(',');
+    const rows = await this.all<ReservationRow>(
+      `SELECT r.service_key, r.environment_name, r.service_name, r.user_id,
+              r.claimed_by_label, r.claimed_by_team,
+              r.claimed_at, r.expires_at, r.released_at, r.id
+       FROM reservations r
+       WHERE r.released_at IS NULL
+         AND r.expires_at > ?
+         AND r.service_key IN (${placeholders})`,
+      [now, ...serviceKeys],
     );
     return rows.map((row) => this.mapRow(row));
   }

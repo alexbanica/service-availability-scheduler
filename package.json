@@ -6,11 +6,12 @@
   "main": "dist/service-availability-scheduler.js",
   "scripts": {
     "postinstall": "npm install typescript",
-    "build": "npm install && tsc -p tsconfig.json && tsc -p tsconfig.client.json",
+    "build": "npm run clean && npm install && tsc -p tsconfig.json && tsc -p tsconfig.client.json",
     "start": "node dist/service-availability-scheduler.js",
     "dev": "ts-node src/service-availability-scheduler.ts",
+    "test": "node -r ts-node/register --test src/tests/**/*.test.ts",
     "lint": "eslint 'src/**/*.{js,ts}' --fix",
-    "clean": "rm -rf dist && rm -rf public/js",
+    "clean": "rm -rf dist && rm -rf public/js && rm -rf node_modules",
     "format": "prettier --write 'src/**/*.{js,ts}' && prettier --write 'public/ts/**/*.ts'"
   },
   "dependencies": {

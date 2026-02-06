@@ -8,152 +8,601 @@
 </head>
 <body>
   <div id="app" v-cloak>
-    <div v-if="isLoading" class="loading-screen" role="status" aria-live="polite">
+    <div v-if="isLoading" class="loading-screen">
       <div class="loading-spinner" aria-hidden="true"></div>
-      <div class="loading-text">Loading services...</div>
+      <div class="loading-text">Loading service availability...</div>
     </div>
-    <div v-else>
+
+    <div v-else class="app-shell">
       <header class="top-bar">
-        <div>
-          <h1>Service Availability</h1>
-          <p v-if="user">Hello {{ user.nickname }}</p>
+        <div class="top-bar-inner page-shell">
+          <div class="brand-block">
+            <div>
+              <h1>Service Availability</h1>
+              <p class="muted">Your control center for claims and workspaces.</p>
+            </div>
+            <div v-if="user" class="user-info">
+              <span class="muted">Signed in as</span>
+              <span>{{ user.email }}</span>
+            </div>
+          </div>
+
+          <nav class="top-menu" aria-label="Primary">
+            <button
+              class="menu-tab"
+              :class="{ active: currentView === 'overview' }"
+              type="button"
+              @click="setView('overview')"
+            >
+              Overview
+            </button>
+            <button
+              class="menu-tab"
+              :class="{ active: currentView === 'availability' }"
+              type="button"
+              @click="setView('availability')"
+            >
+              Service Availability
+            </button>
+            <button
+              class="menu-tab"
+              :class="{ active: currentView === 'admin' }"
+              type="button"
+              @click="setView('admin')"
+            >
+              Administration
+            </button>
+          </nav>
+
+          <div class="top-actions">
+            <button class="secondary" type="button" @click="refresh">Refresh</button>
+            <button
+              class="theme-toggle"
+              type="button"
+              @click="toggleTheme"
+              :aria-label="themeLabel"
+              :title="themeLabel"
+            >
+              <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
+              <span v-else class="theme-icon moon" aria-hidden="true"></span>
+            </button>
+            <button type="button" @click="logout">Log out</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        <section v-if="currentView === 'overview'">
+          <div class="overview-hero">
+            <div>
+              <h2>Overview</h2>
+              <p class="muted">Summary of what you control right now.</p>
+            </div>
+            <button class="secondary" type="button" @click="setView('availability')">
+              Go to Service Availability
+            </button>
+          </div>
+
+          <div class="overview-grid">
+            <div class="overview-card">
+              <h3>Your active claims</h3>
+              <div class="stat">{{ claimedByUser.length }}</div>
+              <p class="muted">Services currently claimed by you.</p>
+              <div v-if="claimedByUser.length" class="overview-list">
+                <div v-for="service in claimedByUser" :key="service.key" class="overview-item">
+                  <span>{{ service.label }}</span>
+                  <span class="muted">{{ service.environment }}</span>
+                </div>
+              </div>
+              <p v-else class="muted">No active claims right now.</p>
+            </div>
+
+            <div class="overview-card">
+              <h3>Service inventory</h3>
+              <div class="stat">{{ totalServicesCount }}</div>
+              <p class="muted">{{ claimedServicesCount }} claimed · {{ availableServicesCount }} available</p>
+              <button class="secondary" type="button" @click="setView('availability')">
+                Review services
+              </button>
+            </div>
+
+            <div class="overview-card">
+              <h3>Workspaces you administer</h3>
+              <div class="stat">{{ adminWorkspaces.length }}</div>
+              <p class="muted">Invite teammates and manage access.</p>
+              <div v-if="adminWorkspaces.length" class="overview-list">
+                <div v-for="workspace in adminWorkspaces" :key="workspace.id" class="overview-item">
+                  <span>{{ workspace.name }}</span>
+                  <span class="muted">ID {{ workspace.id }}</span>
+                </div>
+              </div>
+              <p v-else class="muted">No workspaces yet.</p>
+              <button type="button" @click="setView('admin')">Go to admin</button>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="currentView === 'availability'">
+          <div class="section-header">
+            <div>
+              <h2>Service Availability</h2>
+              <p class="muted">Claim, extend, and release services per environment.</p>
+            </div>
+          </div>
+
           <div class="filters-row">
-            <label class="owner-filter">
-              <span>Owner</span>
-              <select v-model="ownerFilter">
+            <div class="owner-filter">
+              <label for="workspace-filter">Workspace</label>
+              <select id="workspace-filter" v-model="workspaceFilter">
+                <option value="all">All workspaces</option>
+                <option v-for="workspace in workspaceOptions" :key="workspace.value" :value="workspace.value">
+                  {{ workspace.label }}
+                </option>
+              </select>
+            </div>
+            <div class="owner-filter">
+              <label for="owner-filter">Owner</label>
+              <select id="owner-filter" v-model="ownerFilter">
                 <option value="all">All owners</option>
                 <option v-for="owner in owners" :key="owner.value" :value="owner.value">
                   {{ owner.label }}
                 </option>
               </select>
-            </label>
-            <label class="name-filter">
-              <span>Service</span>
+            </div>
+            <div class="name-filter">
+              <label for="service-filter">Search</label>
               <input
+                id="service-filter"
                 v-model="serviceNameFilter"
                 type="text"
-                placeholder="Regex (e.g. ^order)"
-              />
-              <span v-if="serviceNameFilterError" class="muted filter-error">
-                {{ serviceNameFilterError }}
-              </span>
-            </label>
-          </div>
-        </div>
-        <div class="top-actions">
-          <button
-            class="theme-toggle"
-            @click="toggleTheme"
-            :aria-pressed="theme === 'dark'"
-            :aria-label="themeLabel"
-            :title="themeLabel"
-          >
-            <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
-            <span v-else class="theme-icon moon" aria-hidden="true"></span>
-          </button>
-          <button @click="refresh">Refresh</button>
-          <button @click="logout">Logout</button>
-        </div>
-      </header>
-
-      <main>
-      <section class="in-use">
-        <h2>In Use</h2>
-        <div class="in-use-list">
-          <p v-if="inUseServices.length === 0" class="muted">No services are currently claimed.</p>
-            <div v-for="service in inUseServices" :key="service.key" class="in-use-item">
-            <div>
-              <strong>{{ service.label }}</strong>
-              <span class="muted">({{ service.environment }})</span>
+                placeholder="Filter by service name"
+              >
             </div>
-            <div class="muted">
-              Taken by {{ formatClaimedBy(service) }} · Ends at {{ formatTime(service.expiresAt) }}
-            </div>
+            <div class="filter-error error">{{ serviceNameFilterError }}</div>
           </div>
-        </div>
-      </section>
 
-      <section class="services-grid">
-        <section v-for="group in groupedServices" :key="group.serviceLabel" class="env-card">
-          <div class="env-header">
-            <h2>{{ group.serviceLabel }}</h2>
-            <button class="secondary toggle-card" @click="toggleGroup(group.serviceLabel)">
-              {{ group.expanded ? '−' : '+' }}
-            </button>
-          </div>
-          <div v-if="group.expanded" class="service-list">
-            <div
-              v-for="service in group.services"
-              :key="service.key"
-              class="service-item"
-              :class="service.active ? 'claimed' : 'available'"
-            >
-              <div class="service-info">
-                <h3>{{ service.environment }}</h3>
-                <p>{{ service.active ? `Taken by ${formatClaimedBy(service)}` : 'Available' }}</p>
-                <p class="muted">
-                  {{ service.active ? `Ends at ${formatTime(service.expiresAt)}` : `Default ${service.defaultMinutes} minutes` }}
-                </p>
+          <section v-if="inUseServices.length" class="in-use">
+            <div class="section-header">
+              <div>
+                <h2>Services in use</h2>
+                <p class="muted">Active claims across the catalog.</p>
               </div>
-              <div class="service-actions">
-                <button v-if="!service.active" @click="openClaimModal(service.key)">Claim</button>
-                <template v-else>
-                  <button v-if="user && service.claimedById === user.id" @click="extend(service.key)">Extend</button>
-                  <button
-                    v-if="user && (service.claimedById === user.id || service.claimedByTeam)"
-                    class="secondary"
-                    @click="release(service.key)"
-                  >
-                    Release
-                  </button>
-                </template>
+            </div>
+            <div class="in-use-list">
+              <div v-for="service in inUseServices" :key="service.key" class="in-use-item">
+                <div>
+                  <strong>{{ service.label }}</strong>
+                  <span class="muted">{{ service.environment }}</span>
+                  <p class="muted">Workspace: {{ service.workspaceName }}</p>
+                  <p class="muted">
+                    Claimed by {{ formatClaimedBy(service) }} ·
+                    Expires {{ formatTime(service.expiresAt) }}
+                  </p>
+                </div>
+                <div v-if="service.claimedById === user?.id" class="service-actions">
+                  <button class="secondary" type="button" @click="extend(service.key)">Extend</button>
+                  <button type="button" @click="release(service.key)">Release</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="services-grid">
+            <article v-for="group in groupedServices" :key="group.groupKey" class="env-card">
+              <header class="env-header">
+                <div>
+                  <h3>{{ group.serviceLabel }}</h3>
+                  <p class="muted">Workspace: {{ group.workspaceName }}</p>
+                  <p class="muted">Owner: {{ group.ownerLabel }}</p>
+                </div>
+                <button class="secondary toggle-card" type="button" @click="toggleGroup(group.groupKey)">
+                  {{ group.expanded ? 'Hide' : 'Show' }}
+                </button>
+              </header>
+              <div v-show="group.expanded" class="service-list">
+                <div
+                  v-for="service in group.services"
+                  :key="service.key"
+                  class="service-item"
+                  :class="service.active ? 'claimed' : 'available'"
+                >
+                  <div class="service-info">
+                    <h3>{{ service.environment }}</h3>
+                    <p class="muted">
+                      {{ service.active ? 'Claimed by ' + formatClaimedBy(service) : 'Available now' }}
+                    </p>
+                    <p v-if="service.active" class="muted">
+                      Expires {{ formatTime(service.expiresAt) }}
+                    </p>
+                  </div>
+                  <div class="service-actions">
+                    <button
+                      v-if="!service.active"
+                      type="button"
+                      @click="openClaimModal(service.key)"
+                    >
+                      Claim
+                    </button>
+                    <template v-else-if="service.claimedById === user?.id">
+                      <button
+                        class="secondary"
+                        type="button"
+                        @click="extend(service.key)"
+                      >
+                        Extend
+                      </button>
+                      <button type="button" @click="release(service.key)">
+                        Release
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+        </section>
+
+        <section v-if="currentView === 'admin'">
+          <div class="section-header">
+            <div>
+              <h2>Administration</h2>
+              <p class="muted">Manage workspace access and user administration.</p>
+            </div>
+          </div>
+
+          <div class="admin-layout">
+            <aside class="admin-menu" aria-label="Administration sections">
+              <button
+                class="admin-tab"
+                :class="{ active: adminSection === 'workspace' }"
+                type="button"
+                @click="setAdminSection('workspace')"
+              >
+                Workspace management
+              </button>
+              <button
+                class="admin-tab"
+                :class="{ active: adminSection === 'services' }"
+                type="button"
+                @click="setAdminSection('services')"
+              >
+                Service Management
+              </button>
+              <button
+                class="admin-tab"
+                :class="{ active: adminSection === 'users' }"
+                type="button"
+                @click="setAdminSection('users')"
+              >
+                User management
+              </button>
+            </aside>
+
+            <div class="admin-content">
+              <div v-if="adminSection === 'workspace'" class="admin-panel">
+                <div class="admin-header">
+                  <div>
+                    <h3>Workspace management</h3>
+                    <p class="muted">Create new workspaces and invite teammates.</p>
+                  </div>
+                </div>
+                <div class="admin-grid">
+                  <div class="admin-card">
+                    <h4>Create a workspace</h4>
+                    <form class="admin-form" @submit.prevent="createWorkspace">
+                      <label for="workspace-name">Workspace name</label>
+                      <input
+                        id="workspace-name"
+                        v-model="workspaceName"
+                        type="text"
+                        placeholder="Payments, Observability, Data"
+                      >
+                      <div class="error">{{ workspaceError }}</div>
+                      <button type="submit" :disabled="workspaceSubmitting">
+                        {{ workspaceSubmitting ? 'Creating...' : 'Create workspace' }}
+                      </button>
+                    </form>
+                  </div>
+
+                  <div class="admin-card">
+                    <h4>Your workspaces</h4>
+                    <div v-if="!adminWorkspaces.length" class="muted">
+                      You are not an admin on any workspaces yet.
+                    </div>
+                    <div v-else class="admin-list">
+                      <div v-for="workspace in adminWorkspaces" :key="workspace.id" class="admin-workspace">
+                        <div class="admin-workspace-info">
+                          <strong>{{ workspace.name }}</strong>
+                          <span class="muted">ID {{ workspace.id }}</span>
+                        </div>
+                        <div class="admin-invite">
+                          <input
+                            type="email"
+                            :placeholder="`Invite user to ${workspace.name}`"
+                            v-model="inviteEmails[workspace.id]"
+                          >
+                          <button
+                            class="secondary"
+                            type="button"
+                            :disabled="inviteSubmitting[workspace.id]"
+                            @click="inviteUser(workspace.id)"
+                          >
+                            {{ inviteSubmitting[workspace.id] ? 'Sending...' : 'Invite' }}
+                          </button>
+                        </div>
+                        <div class="error">{{ inviteErrors[workspace.id] }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="adminSection === 'services'" class="admin-panel">
+                <div class="admin-header">
+                  <div>
+                    <h3>Service Management</h3>
+                    <p class="muted">Review, remove, and add services per workspace.</p>
+                  </div>
+                </div>
+                <div v-if="!workspaces.length" class="muted">
+                  You are not in any workspaces yet.
+                </div>
+                <div v-else class="admin-list">
+                  <div v-for="workspace in workspaces" :key="workspace.id" class="admin-workspace">
+                    <div class="admin-workspace-info">
+                      <strong>{{ workspace.name }}</strong>
+                      <div class="admin-service-actions">
+                        <button
+                          class="secondary"
+                          type="button"
+                          @click="toggleServiceForm(workspace.id)"
+                          :disabled="workspace.adminUserId !== user?.id"
+                        >
+                          {{ serviceFormVisible[workspace.id] ? 'Close' : 'Create service' }}
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      v-if="!serviceFormVisible[workspace.id] && (workspaceServices.get(workspace.id) || []).length"
+                      class="admin-service-list"
+                    >
+                      <div
+                        v-for="service in workspaceServices.get(workspace.id)"
+                        :key="service.key"
+                        class="admin-service-item"
+                      >
+                        <div>
+                          <strong>{{ service.label }}</strong>
+                          <p class="muted">{{ service.environment }}</p>
+                          <p class="muted">Owner: {{ service.owner || 'Unowned' }}</p>
+                        </div>
+                        <div class="admin-service-actions">
+                          <button
+                            type="button"
+                            @click="deleteService(service)"
+                            :disabled="workspace.adminUserId !== user?.id"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      v-else-if="!serviceFormVisible[workspace.id]"
+                      class="muted"
+                    >
+                      No services in this workspace yet.
+                    </div>
+                    <p v-if="workspace.adminUserId !== user?.id" class="muted">
+                      You need admin access to manage services in this workspace.
+                    </p>
+
+                    <form
+                      v-if="serviceFormVisible[workspace.id] && serviceForms[workspace.id]"
+                      class="admin-service-fields"
+                      @submit.prevent="createService(workspace.id)"
+                    >
+                      <label>
+                        Service source
+                        <select v-model="serviceForms[workspace.id].serviceMode">
+                          <option
+                            value="existing"
+                            :disabled="!(workspaceServiceCatalog[workspace.id] || []).length"
+                          >
+                            Existing service
+                          </option>
+                          <option value="new">Create new service</option>
+                        </select>
+                      </label>
+                      <label v-if="serviceForms[workspace.id].serviceMode === 'existing'">
+                        Service
+                        <select
+                          v-model="serviceForms[workspace.id].existingServiceId"
+                          :disabled="!(workspaceServiceCatalog[workspace.id] || []).length"
+                        >
+                          <option
+                            v-if="!(workspaceServiceCatalog[workspace.id] || []).length"
+                            value=""
+                          >
+                            No services yet
+                          </option>
+                          <option
+                            v-for="svc in workspaceServiceCatalog[workspace.id] || []"
+                            :key="svc.serviceId"
+                            :value="svc.serviceId"
+                          >
+                            {{ svc.label }}
+                          </option>
+                        </select>
+                      </label>
+                      <label>
+                        Environment source
+                        <select v-model="serviceForms[workspace.id].environmentMode">
+                          <option
+                            value="existing"
+                            :disabled="!(workspaceEnvironments[workspace.id] || []).length"
+                          >
+                            Existing environment
+                          </option>
+                          <option value="new">Create new environment</option>
+                        </select>
+                      </label>
+                      <label v-if="serviceForms[workspace.id].environmentMode === 'existing'">
+                        Environment
+                        <select
+                          v-model="serviceForms[workspace.id].existingEnvironmentId"
+                          :disabled="!(workspaceEnvironments[workspace.id] || []).length"
+                        >
+                          <option
+                            v-if="!(workspaceEnvironments[workspace.id] || []).length"
+                            value=""
+                          >
+                            No environments yet
+                          </option>
+                          <option
+                            v-for="env in workspaceEnvironments[workspace.id] || []"
+                            :key="env.environmentId"
+                            :value="env.environmentId"
+                          >
+                            {{ env.environmentName }} ({{ env.environmentId }})
+                          </option>
+                        </select>
+                      </label>
+                      <label v-if="serviceForms[workspace.id].environmentMode === 'new'">
+                        Environment name
+                        <input
+                          v-model="serviceForms[workspace.id].environmentName"
+                          type="text"
+                          placeholder="Staging"
+                        >
+                      </label>
+                      <label v-if="serviceForms[workspace.id].serviceMode === 'new'">
+                        Service label
+                        <input
+                          v-model="serviceForms[workspace.id].label"
+                          type="text"
+                          placeholder="Billing API"
+                        >
+                      </label>
+                      <label v-if="serviceForms[workspace.id].serviceMode === 'new'">
+                        Default minutes
+                        <input
+                          v-model.number="serviceForms[workspace.id].defaultMinutes"
+                          type="number"
+                          min="1"
+                          step="1"
+                        >
+                      </label>
+                      <label v-if="serviceForms[workspace.id].serviceMode === 'new'">
+                        Owner
+                        <select v-model="serviceForms[workspace.id].ownerMode">
+                          <option
+                            value="existing"
+                            :disabled="!(workspaceOwners[workspace.id] || []).length"
+                          >
+                            Existing owner
+                          </option>
+                          <option value="new">Create new owner</option>
+                        </select>
+                      </label>
+                      <label v-if="serviceForms[workspace.id].serviceMode === 'new' && serviceForms[workspace.id].ownerMode === 'existing'">
+                        Owner selection
+                        <select
+                          v-model="serviceForms[workspace.id].existingOwner"
+                          :disabled="!(workspaceOwners[workspace.id] || []).length"
+                        >
+                          <option
+                            v-if="!(workspaceOwners[workspace.id] || []).length"
+                            value=""
+                          >
+                            No owners yet
+                          </option>
+                          <option
+                            v-for="owner in workspaceOwners[workspace.id] || []"
+                            :key="owner"
+                            :value="owner"
+                          >
+                            {{ owner }}
+                          </option>
+                        </select>
+                      </label>
+                      <label v-if="serviceForms[workspace.id].serviceMode === 'new' && serviceForms[workspace.id].ownerMode === 'new'">
+                        Owner name
+                        <input
+                          v-model="serviceForms[workspace.id].owner"
+                          type="text"
+                          placeholder="Payments"
+                        >
+                      </label>
+                      <div class="admin-service-actions">
+                        <button
+                          class="secondary"
+                          type="submit"
+                          :disabled="serviceSubmitting[workspace.id]"
+                        >
+                          {{ serviceSubmitting[workspace.id] ? 'Creating...' : 'Create service' }}
+                        </button>
+                      </div>
+                      <div class="error">{{ serviceErrors[workspace.id] }}</div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="admin-panel">
+                <div class="admin-header">
+                  <div>
+                    <h3>User management</h3>
+                    <p class="muted">Review roles and access assignments.</p>
+                  </div>
+                </div>
+                <div class="admin-card">
+                  <p class="muted">User management tools will live here.</p>
+                  <button type="button">Request access changes</button>
+                </div>
               </div>
             </div>
           </div>
         </section>
-      </section>
       </main>
 
-      <div id="toast" class="toast" :class="{ hidden: !toastVisible }">{{ toastMessage }}</div>
+      <footer class="site-footer">
+        <span>Service Availability Scheduler</span>
+        <span class="muted">Claims: {{ claimedServicesCount }} · Available: {{ availableServicesCount }}</span>
+        <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
+      </footer>
+    </div>
 
-      <div v-if="claimModalOpen" class="modal-overlay" @click="closeClaimModal">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="claim-modal-title" @click.stop>
-          <div class="modal-header">
-            <h2 id="claim-modal-title">Claim service</h2>
-            <button class="modal-close" type="button" @click="closeClaimModal" aria-label="Close">
-              &times;
-            </button>
+    <div class="toast" :class="{ hidden: !toastVisible }">{{ toastMessage }}</div>
+
+    <div v-if="claimModalOpen" class="modal-overlay" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Claim service</h3>
+          <button class="modal-close" type="button" @click="closeClaimModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="claim-options">
+            <label class="claim-option">
+              <input type="radio" value="self" v-model="claimType">
+              Claim for myself
+            </label>
+            <label class="claim-option">
+              <input type="radio" value="team" v-model="claimType">
+              Claim for a team
+            </label>
           </div>
-          <div class="modal-body">
-            <p>Who should this claim be attributed to?</p>
-            <div class="claim-options">
-              <label class="claim-option">
-                <input type="radio" name="claim-type" value="self" v-model="claimType">
-                <span>Myself ({{ user?.nickname || 'you' }})</span>
-              </label>
-              <label class="claim-option">
-                <input type="radio" name="claim-type" value="team" v-model="claimType">
-                <span>Innersourcing team</span>
-              </label>
-            </div>
-            <div v-if="claimType === 'team'" class="team-name-field">
-              <label for="teamName">Team name</label>
-              <input
-                id="teamName"
-                v-model="teamName"
-                type="text"
-                placeholder="e.g. Platform Enablement"
-                maxlength="255"
-              />
-              <div v-if="teamNameError" class="error">{{ teamNameError }}</div>
-            </div>
+          <div v-if="claimType === 'team'" class="team-name-field">
+            <label for="team-name">Team name</label>
+            <input id="team-name" v-model="teamName" type="text" placeholder="e.g. Observability">
+            <div class="error">{{ teamNameError }}</div>
           </div>
-          <div class="modal-actions">
-            <button class="secondary" type="button" @click="closeClaimModal">Cancel</button>
-            <button type="button" @click="submitClaim" :disabled="claimSubmitting">
-              {{ claimSubmitting ? 'Claiming...' : 'Claim' }}
-            </button>
-          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" type="button" @click="closeClaimModal">Cancel</button>
+          <button type="button" :disabled="claimSubmitting" @click="submitClaim">
+            {{ claimSubmitting ? 'Claiming...' : 'Claim service' }}
+          </button>
         </div>
       </div>
     </div>

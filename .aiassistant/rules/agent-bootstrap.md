@@ -19,3 +19,9 @@ When responding:
 2. Identify ambiguities
 3. Propose solution
 4. Generate code
+5. Build project and solve any found errors
+
+## AI Constraints
+- Do not generate code without validated specs
+- All behavior must be spec-covered
+- All files need to be versioned and added to git

@@ -7,6 +7,8 @@ export class ServiceStatusDto {
     public readonly label: string,
     public readonly defaultMinutes: number,
     public readonly owner: string | null,
+    public readonly workspaceId: number,
+    public readonly workspaceName: string,
     public readonly active: boolean,
     public readonly claimedBy: string | null,
     public readonly claimedById: number | null,

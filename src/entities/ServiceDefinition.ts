@@ -7,5 +7,7 @@ export class ServiceDefinition {
     public readonly label: string,
     public readonly defaultMinutes: number,
     public readonly owner: string | null,
+    public readonly workspaceId: number,
+    public readonly workspaceName: string,
   ) {}
 }

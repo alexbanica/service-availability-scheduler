@@ -3,24 +3,33 @@ import { ServiceListDto } from '../dtos/ServiceListDto';
 import { ServiceStatusDto } from '../dtos/ServiceStatusDto';
 import { ServiceDefinition } from '../entities/ServiceDefinition';
 import { ReservationRepository } from '../repositories/ReservationRepository';
+import { ServiceRepository } from '../repositories/ServiceRepository';
 import { UserService } from './UserService';
 
 export class ReservationService {
   constructor(
     private readonly reservationRepository: ReservationRepository,
     private readonly userService: UserService,
-    private readonly services: ServiceDefinition[],
+    private readonly serviceRepository: ServiceRepository,
     private readonly expiryWarningMinutes: number,
     private readonly autoRefreshMinutes: number,
   ) {}
 
-  getServiceList(now: Date): Promise<ServiceListDto> {
-    return this.buildServiceList(DateTimeHelper.toMysqlDateTime(now));
+  getServiceList(userId: number, now: Date): Promise<ServiceListDto> {
+    return this.buildServiceList(userId, DateTimeHelper.toMysqlDateTime(now));
   }
 
-  private async buildServiceList(nowIso: string): Promise<ServiceListDto> {
+  private async buildServiceList(
+    userId: number,
+    nowIso: string,
+  ): Promise<ServiceListDto> {
+    const services = await this.serviceRepository.listByUser(userId);
+    const serviceKeys = services.map((svc) => svc.key);
     const reservations =
-      await this.reservationRepository.findActiveByServiceKey(nowIso);
+      await this.reservationRepository.findActiveByServiceKeys(
+        serviceKeys,
+        nowIso,
+      );
     const reservationMap = new Map(
       reservations.map((reservation) => [reservation.serviceKey, reservation]),
     );
@@ -29,7 +38,7 @@ export class ReservationService {
     );
     const nicknameMap = await this.userService.getNicknamesByIds(userIds);
 
-    const results = this.services.map((svc) => {
+    const results = services.map((svc) => {
       const active = reservationMap.get(svc.key);
       const claimedBy =
         active?.claimedByLabel ||
@@ -42,6 +51,8 @@ export class ReservationService {
         svc.label,
         svc.defaultMinutes,
         svc.owner,
+        svc.workspaceId,
+        svc.workspaceName,
         Boolean(active),
         claimedBy || null,
         active ? active.userId : null,
@@ -65,7 +76,7 @@ export class ReservationService {
     claimedByLabel?: string | null,
     claimedByTeam?: boolean,
   ): Promise<string> {
-    const service = this.findService(serviceKey);
+    const service = await this.findService(serviceKey, userId);
     const nowIso = DateTimeHelper.toMysqlDateTime(now);
 
     const existing = await this.reservationRepository.findActiveByService(
@@ -104,6 +115,7 @@ export class ReservationService {
   }
 
   async release(serviceKey: string, userId: number, now: Date): Promise<void> {
+    await this.findService(serviceKey, userId);
     const nowIso = DateTimeHelper.toMysqlDateTime(now);
     const reservation = await this.reservationRepository.findActiveByService(
       serviceKey,
@@ -123,7 +135,7 @@ export class ReservationService {
   }
 
   async extend(serviceKey: string, userId: number, now: Date): Promise<string> {
-    const service = this.findService(serviceKey);
+    const service = await this.findService(serviceKey, userId);
     const nowIso = DateTimeHelper.toMysqlDateTime(now);
     const reservation = await this.reservationRepository.findActiveByService(
       serviceKey,
@@ -209,8 +221,14 @@ export class ReservationService {
     return this.reservationRepository.releaseExpired(nowIso);
   }
 
-  private findService(serviceKey: string): ServiceDefinition {
-    const service = this.services.find((svc) => svc.key === serviceKey);
+  private async findService(
+    serviceKey: string,
+    userId: number,
+  ): Promise<ServiceDefinition> {
+    const service = await this.serviceRepository.findByKeyForUser(
+      serviceKey,
+      userId,
+    );
     if (!service) {
       throw new Error('Service not found');
     }

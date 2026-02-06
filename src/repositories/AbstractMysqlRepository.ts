@@ -1,7 +1,9 @@
-import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+
+export type MysqlConnection = Pool | PoolConnection;
 
 export abstract class AbstractMysqlRepository {
-  constructor(protected readonly db: Pool) {}
+  constructor(protected readonly db: MysqlConnection) {}
 
   protected async get<T extends RowDataPacket>(
     sql: string,
