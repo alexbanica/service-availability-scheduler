@@ -163,16 +163,15 @@ test('createService requires workspace admin', async () => {
   await assert.rejects(
     () =>
       service.createService(3, 2, {
-        environmentId: 'env',
-        environmentName: 'Env',
-        serviceId: 'svc',
+        environmentNames: ['Env'],
+        label: 'svc',
         defaultMinutes: 10,
       }),
     /Not authorized for workspace/,
   );
 });
 
-test('createService reports duplicates', async () => {
+test('createService requires at least one environment', async () => {
   const workspaces = new Map<number, Workspace>([
     [3, new Workspace(3, 'A', 1)],
   ]);
@@ -192,12 +191,11 @@ test('createService reports duplicates', async () => {
   await assert.rejects(
     () =>
       service.createService(3, 1, {
-        environmentId: 'env',
-        environmentName: 'Env',
-        serviceId: 'svc',
+        environmentNames: [],
+        label: 'svc',
         defaultMinutes: 10,
       }),
-    /Service already exists/,
+    /At least one environment is required/,
   );
 });
 
