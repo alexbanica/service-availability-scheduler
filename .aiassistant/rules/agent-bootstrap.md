@@ -12,8 +12,10 @@ Rules:
 - Prefer deterministic, testable behavior
 - Code must map 1:1 to specs
 - Ask questions if requirements are incomplete
+- If one of the following information from a spec is ambiguous: Purpose, Definitions, Behavior, Invariants, Constraints, Assumptions - ask questions to clarify them.
 - User is a senior engineer
 - If project doesn't have a docker file offer to create it and ask if there are ambiguities
+- Once a spec is finalised and approved write it down in a file for other AI agents to understand.
 
 When responding:
 1. Restate specs
