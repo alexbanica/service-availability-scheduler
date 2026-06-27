@@ -4,6 +4,46 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { Workspace } from '../../entities/Workspace';
 import { WorkspaceInvitation } from '../../entities/WorkspaceInvitation';
 
+type WorkspaceStats = {
+  userCount?: number;
+  serviceCount?: number;
+  user_count?: number;
+  service_count?: number;
+};
+
+function workspaceFixture(
+  value: Omit<Workspace, keyof WorkspaceStats> & WorkspaceStats,
+): Workspace {
+  return value as Workspace;
+}
+
+function getWorkspaceUserCount(workspace: Workspace): number {
+  const workspaceStats = workspace as Workspace & WorkspaceStats;
+  const count = workspaceStats.userCount ?? workspaceStats.user_count;
+  if (count === undefined) {
+    throw new Error('Workspace summary is missing userCount');
+  }
+  return count;
+}
+
+function getWorkspaceServiceCount(workspace: Workspace): number {
+  const workspaceStats = workspace as Workspace & WorkspaceStats;
+  const count = workspaceStats.serviceCount ?? workspaceStats.service_count;
+  if (count === undefined) {
+    throw new Error('Workspace summary is missing serviceCount');
+  }
+  return count;
+}
+
+function assertWorkspaceSummaryCounts(
+  workspace: Workspace,
+  expectedUserCount: number,
+  expectedServiceCount: number,
+): void {
+  assert.equal(getWorkspaceUserCount(workspace), expectedUserCount);
+  assert.equal(getWorkspaceServiceCount(workspace), expectedServiceCount);
+}
+
 class FakeUserRoleRepository {
   constructor(private readonly admins: Set<number>) {}
 
@@ -13,13 +53,19 @@ class FakeUserRoleRepository {
 }
 
 class FakeWorkspaceRepository {
-  constructor(private readonly workspaces: Map<number, Workspace>) {}
+  constructor(
+    private readonly workspaces: Map<number, Workspace>,
+    private readonly listByUserImpl?: (userId: number) => Promise<Workspace[]>,
+  ) {}
 
   async findById(id: number): Promise<Workspace | null> {
     return this.workspaces.get(id) || null;
   }
 
-  async listByUser(): Promise<Workspace[]> {
+  async listByUser(userId: number): Promise<Workspace[]> {
+    if (this.listByUserImpl) {
+      return this.listByUserImpl(userId);
+    }
     return Array.from(this.workspaces.values());
   }
 }
@@ -147,7 +193,7 @@ test('createWorkspace enforces max per admin', async () => {
 
 test('createService requires workspace admin', async () => {
   const workspaces = new Map<number, Workspace>([
-    [3, new Workspace(3, 'A', 1)],
+    [3, workspaceFixture({ id: 3, name: 'A', adminUserId: 1 })],
   ]);
   const workspaceUsers = new FakeWorkspaceUserRepository();
   const service = new WorkspaceService(
@@ -173,7 +219,7 @@ test('createService requires workspace admin', async () => {
 
 test('createService requires at least one environment', async () => {
   const workspaces = new Map<number, Workspace>([
-    [3, new Workspace(3, 'A', 1)],
+    [3, workspaceFixture({ id: 3, name: 'A', adminUserId: 1 })],
   ]);
   const workspaceUsers = new FakeWorkspaceUserRepository();
   workspaceUsers.setAdmin(3, 1);
@@ -201,7 +247,7 @@ test('createService requires at least one environment', async () => {
 
 test('inviteUser fails when user already member', async () => {
   const workspaces = new Map<number, Workspace>([
-    [7, new Workspace(7, 'A', 1)],
+    [7, workspaceFixture({ id: 7, name: 'A', adminUserId: 1 })],
   ]);
   const workspaceUsers = new FakeWorkspaceUserRepository();
   workspaceUsers.setAdmin(7, 1);
@@ -221,4 +267,80 @@ test('inviteUser fails when user already member', async () => {
     () => service.inviteUser(7, 1, 'user@example.com'),
     /User already in workspace/,
   );
+});
+
+test('listWorkspaces exposes user and service counts', async () => {
+  let requestedByUserId: number | undefined;
+  const workspaces = new Map<number, Workspace>([
+    [
+      3,
+      workspaceFixture({
+        id: 3,
+        name: 'Admin workspace',
+        adminUserId: 1,
+        userCount: 1,
+        serviceCount: 4,
+      }),
+    ],
+    [
+      7,
+      workspaceFixture({
+        id: 7,
+        name: 'Member workspace',
+        adminUserId: 9,
+        user_count: 3,
+        service_count: 2,
+      }),
+    ],
+  ]);
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin(3, 5);
+  workspaceUsers.setMember(7, 5);
+
+  const fakeRepository = new FakeWorkspaceRepository(
+    workspaces,
+    async (userId: number) => {
+      requestedByUserId = userId;
+      return Array.from(workspaces.values());
+    },
+  );
+
+  const service = new WorkspaceService(
+    new FakePool(0) as never,
+    fakeRepository as never,
+    workspaceUsers as never,
+    new FakeServiceRepository(false) as never,
+    new FakeInvitationRepository() as never,
+    new FakeUserRepository(new Map()) as never,
+    new FakeUserRoleRepository(new Set([1])) as never,
+  );
+
+  const summaries = await service.listWorkspaces(5);
+
+  assert.equal(summaries.length, 2);
+  const adminWorkspace = summaries.find((workspace) => workspace.id === 3);
+  const memberWorkspace = summaries.find((workspace) => workspace.id === 7);
+  assert.ok(adminWorkspace);
+  assert.ok(memberWorkspace);
+
+  assert.equal(requestedByUserId, 5);
+
+  assertWorkspaceSummaryCounts(adminWorkspace, 1, 4);
+  assertWorkspaceSummaryCounts(memberWorkspace, 3, 2);
+});
+
+test('createWorkspace returns userCount/serviceCount in summary shape', async () => {
+  const service = new WorkspaceService(
+    new FakePool(0) as never,
+    new FakeWorkspaceRepository(new Map()) as never,
+    new FakeWorkspaceUserRepository() as never,
+    new FakeServiceRepository(false) as never,
+    new FakeInvitationRepository() as never,
+    new FakeUserRepository(new Map()) as never,
+    new FakeUserRoleRepository(new Set([1])) as never,
+  );
+
+  const workspace = await service.createWorkspace(1, 'Team Alpha');
+
+  assertWorkspaceSummaryCounts(workspace, 1, 0);
 });

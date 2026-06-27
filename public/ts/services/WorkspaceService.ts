@@ -12,7 +12,13 @@ export class WorkspaceService {
     };
 
     const asNumber = (value: unknown, fallback = 0): number =>
-      typeof value === 'number' && !Number.isNaN(value) ? value : fallback;
+      typeof value === 'number' && !Number.isNaN(value)
+        ? value
+        : typeof value === 'string'
+          ? Number.isFinite(Number(value))
+            ? Number(value)
+            : fallback
+          : fallback;
 
     const asString = (value: unknown, fallback = ''): string =>
       typeof value === 'string' ? value : fallback;
@@ -23,6 +29,8 @@ export class WorkspaceService {
           asNumber(workspace.id, 0),
           asString(workspace.name, 'Untitled'),
           asNumber(workspace.admin_user_id, 0),
+          asNumber(workspace.user_count, 0),
+          asNumber(workspace.service_count, 0),
         ),
     );
   }
@@ -35,10 +43,20 @@ export class WorkspaceService {
         typeof data.error === 'string' ? data.error : 'Failed to create workspace',
       );
     }
+    const asNumber = (value: unknown, fallback = 0): number =>
+      typeof value === 'number' && !Number.isNaN(value)
+        ? value
+        : typeof value === 'string'
+          ? Number.isFinite(Number(value))
+            ? Number(value)
+            : fallback
+          : fallback;
     return new Workspace(
-      Number(data.id),
+      asNumber(data.id, 0),
       String(data.name || ''),
-      Number(data.admin_user_id),
+      asNumber(data.admin_user_id, 0),
+      asNumber(data.user_count, 0),
+      asNumber(data.service_count, 0),
     );
   }
 

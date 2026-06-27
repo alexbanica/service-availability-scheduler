@@ -18,6 +18,8 @@ export class WorkspaceController {
             id: workspace.id,
             name: workspace.name,
             admin_user_id: workspace.adminUserId,
+            user_count: workspace.userCount,
+            service_count: workspace.serviceCount,
           })),
         });
       },

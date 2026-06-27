@@ -58,9 +58,16 @@ export class WorkspaceService {
 
       const workspace = await workspaceRepo.insert(trimmedName, userId);
       await workspaceUserRepo.insert(workspace.id, userId, 'admin');
+      const workspaceWithCounts = new Workspace(
+        workspace.id,
+        workspace.name,
+        workspace.adminUserId,
+        1,
+        0,
+      );
 
       await connection.commit();
-      return workspace;
+      return workspaceWithCounts;
     } catch (error) {
       await connection.rollback();
       throw error;

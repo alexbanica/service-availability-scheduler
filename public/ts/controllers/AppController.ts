@@ -58,12 +58,15 @@ export class AppController {
           'workspace',
         );
         const workspaces = ref<Workspace[]>([]);
+        const isCreateWorkspaceModalOpen = ref(false);
         const workspaceName = ref('');
         const workspaceError = ref('');
         const workspaceSubmitting = ref(false);
-        const inviteEmails = ref<Record<number, string>>({});
-        const inviteErrors = ref<Record<number, string>>({});
-        const inviteSubmitting = ref<Record<number, boolean>>({});
+        const isInviteModalOpen = ref(false);
+        const inviteWorkspaceId = ref<number | null>(null);
+        const inviteEmail = ref('');
+        const inviteError = ref('');
+        const inviteSubmitting = ref(false);
         const workspaceEnvironments = ref<
           Record<number, Array<{ environmentId: string; environmentName: string }>>
         >({});
@@ -223,6 +226,13 @@ export class AppController {
             (workspace) => workspace.adminUserId === user.value?.id,
           );
         });
+        const selectedInviteWorkspace = computed(() =>
+          inviteWorkspaceId.value === null
+            ? null
+            : adminWorkspaces.value.find(
+                (workspace) => workspace.id === inviteWorkspaceId.value,
+              ) || null,
+        );
 
 
         const claimedByUser = computed(() => {
@@ -417,6 +427,46 @@ export class AppController {
           claimServiceKey.value = null;
         };
 
+        const resetCreateWorkspaceModal = () => {
+          isCreateWorkspaceModalOpen.value = false;
+          workspaceName.value = '';
+          workspaceError.value = '';
+          workspaceSubmitting.value = false;
+        };
+
+        const resetInviteModal = () => {
+          inviteWorkspaceId.value = null;
+          inviteEmail.value = '';
+          inviteError.value = '';
+          inviteSubmitting.value = false;
+          isInviteModalOpen.value = false;
+        };
+
+        const openInviteModal = (workspaceId: number) => {
+          inviteWorkspaceId.value = workspaceId;
+          inviteEmail.value = '';
+          inviteError.value = '';
+          inviteSubmitting.value = false;
+          isInviteModalOpen.value = true;
+        };
+
+        const closeInviteModal = () => {
+          resetInviteModal();
+        };
+
+        const openCreateWorkspaceModal = () => {
+          resetCreateWorkspaceModal();
+          isCreateWorkspaceModalOpen.value = true;
+        };
+
+        const closeCreateWorkspaceModal = () => {
+          resetCreateWorkspaceModal();
+        };
+
+        const cancelCreateWorkspace = () => {
+          closeCreateWorkspaceModal();
+        };
+
         const openClaimModal = (serviceKey: string) => {
           claimServiceKey.value = serviceKey;
           claimModalOpen.value = true;
@@ -493,9 +543,9 @@ export class AppController {
           workspaceSubmitting.value = true;
           try {
             await WorkspaceService.create(trimmed);
-            workspaceName.value = '';
             await loadWorkspaces();
             showToast('Workspace created.');
+            closeCreateWorkspaceModal();
           } catch (err) {
             workspaceError.value = (err as Error).message;
           } finally {
@@ -503,35 +553,30 @@ export class AppController {
           }
         };
 
-        const inviteUser = async (workspaceId: number) => {
-          const email = (inviteEmails.value[workspaceId] || '').trim();
-          inviteErrors.value = { ...inviteErrors.value, [workspaceId]: '' };
-          if (!email) {
-            inviteErrors.value = {
-              ...inviteErrors.value,
-              [workspaceId]: 'Email is required.',
-            };
+        const submitInvite = async () => {
+          const workspaceId = inviteWorkspaceId.value;
+          if (!workspaceId) {
             return;
           }
-          inviteSubmitting.value = {
-            ...inviteSubmitting.value,
-            [workspaceId]: true,
-          };
+          const email = inviteEmail.value.trim();
+          inviteError.value = '';
+          if (!email) {
+            inviteError.value = 'Email is required.';
+            return;
+          }
+          inviteSubmitting.value = true;
           try {
             await WorkspaceService.invite(workspaceId, email);
-            inviteEmails.value = { ...inviteEmails.value, [workspaceId]: '' };
+            closeInviteModal();
             showToast('Invitation sent.');
           } catch (err) {
-            inviteErrors.value = {
-              ...inviteErrors.value,
-              [workspaceId]: (err as Error).message,
-            };
-          } finally {
-            inviteSubmitting.value = {
-              ...inviteSubmitting.value,
-              [workspaceId]: false,
-            };
+            inviteError.value = (err as Error).message;
+            inviteSubmitting.value = false;
           }
+        };
+
+        const cancelInvite = () => {
+          closeInviteModal();
         };
 
         const createService = async (workspaceId: number | null) => {
@@ -971,13 +1016,23 @@ export class AppController {
           claimedServicesCount,
           availableServicesCount,
           workspaceName,
+          isCreateWorkspaceModalOpen,
           workspaceError,
           workspaceSubmitting,
-          inviteEmails,
-          inviteErrors,
+          openCreateWorkspaceModal,
+          closeCreateWorkspaceModal,
+          cancelCreateWorkspace,
+          isInviteModalOpen,
+          inviteWorkspaceId,
+          inviteEmail,
+          inviteError,
           inviteSubmitting,
+          selectedInviteWorkspace,
+          openInviteModal,
+          closeInviteModal,
+          cancelInvite,
+          submitInvite,
           createWorkspace,
-          inviteUser,
           workspaceEnvironments,
           workspaceOwners,
           workspaceServiceCatalog,

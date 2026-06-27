@@ -285,52 +285,37 @@
                     <h3>Workspace management</h3>
                     <p class="muted">Create new workspaces and invite teammates.</p>
                   </div>
+                  <button
+                    type="button"
+                    class="secondary"
+                    @click="openCreateWorkspaceModal"
+                  >
+                    Create workspace
+                  </button>
                 </div>
-                <div class="admin-grid">
-                  <div class="admin-card">
-                    <h4>Create a workspace</h4>
-                    <form class="admin-form" @submit.prevent="createWorkspace">
-                      <label for="workspace-name">Workspace name</label>
-                      <input
-                        id="workspace-name"
-                        v-model="workspaceName"
-                        type="text"
-                        placeholder="Payments, Observability, Data"
-                      >
-                      <div class="error">{{ workspaceError }}</div>
-                      <button type="submit" :disabled="workspaceSubmitting">
-                        {{ workspaceSubmitting ? 'Creating...' : 'Create workspace' }}
-                      </button>
-                    </form>
+                <div class="admin-card">
+                  <h4>Your workspaces</h4>
+                  <div v-if="!adminWorkspaces.length" class="muted">
+                    You are not an admin on any workspaces yet.
                   </div>
-
-                  <div class="admin-card">
-                    <h4>Your workspaces</h4>
-                    <div v-if="!adminWorkspaces.length" class="muted">
-                      You are not an admin on any workspaces yet.
-                    </div>
-                    <div v-else class="admin-list">
-                      <div v-for="workspace in adminWorkspaces" :key="workspace.id" class="admin-workspace">
-                        <div class="admin-workspace-info">
-                          <strong>{{ workspace.name }}</strong>
-                          <span class="muted">ID {{ workspace.id }}</span>
-                        </div>
-                        <div class="admin-invite">
-                          <input
-                            type="email"
-                            :placeholder="`Invite user to ${workspace.name}`"
-                            v-model="inviteEmails[workspace.id]"
-                          >
-                          <button
-                            class="secondary"
-                            type="button"
-                            :disabled="inviteSubmitting[workspace.id]"
-                            @click="inviteUser(workspace.id)"
-                          >
-                            {{ inviteSubmitting[workspace.id] ? 'Sending...' : 'Invite' }}
-                          </button>
-                        </div>
-                        <div class="error">{{ inviteErrors[workspace.id] }}</div>
+                  <div v-else class="admin-list">
+                    <div v-for="workspace in adminWorkspaces" :key="workspace.id" class="admin-workspace">
+                      <div class="admin-workspace-info">
+                        <strong>{{ workspace.name }}</strong>
+                        <span class="muted">ID {{ workspace.id }}</span>
+                      </div>
+                      <div class="admin-workspace-stats">
+                        <span>Users: {{ workspace.userCount }}</span>
+                        <span>Services: {{ workspace.serviceCount }}</span>
+                      </div>
+                      <div class="admin-workspace-action">
+                        <button
+                          class="secondary"
+                          type="button"
+                          @click="openInviteModal(workspace.id)"
+                        >
+                          Invite user
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -542,6 +527,91 @@
             {{ claimSubmitting ? 'Claiming...' : 'Claim service' }}
           </button>
         </div>
+      </div>
+    </div>
+    <div
+      v-if="isInviteModalOpen"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="invite-workspace-title"
+    >
+      <div class="modal-card admin-invite-modal">
+        <form class="modal-form" @submit.prevent="submitInvite">
+          <div class="modal-header">
+            <h3 id="invite-workspace-title">
+              Invite user to {{ selectedInviteWorkspace?.name || 'this workspace' }}
+            </h3>
+            <button
+              class="modal-close"
+              type="button"
+              @click="closeInviteModal"
+              aria-label="Close invite modal"
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="muted">
+              Invite a user to
+              <strong>{{ selectedInviteWorkspace?.name || 'this workspace' }}</strong>
+              (ID {{ selectedInviteWorkspace?.id || '-' }}).
+            </p>
+            <label for="invite-email">Email</label>
+            <input
+              id="invite-email"
+              v-model="inviteEmail"
+              type="email"
+              placeholder="user@example.com"
+            >
+            <div class="error" role="status" aria-live="polite">{{ inviteError }}</div>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary" type="button" @click="cancelInvite">Cancel</button>
+            <button type="submit" :disabled="inviteSubmitting">
+              {{ inviteSubmitting ? 'Sending...' : 'Send invitation' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div
+      v-if="isCreateWorkspaceModalOpen"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-workspace-title"
+    >
+      <div class="modal-card admin-create-workspace-modal">
+        <form class="modal-form" @submit.prevent="createWorkspace">
+          <div class="modal-header">
+            <h3 id="create-workspace-title">Create workspace</h3>
+            <button
+              class="modal-close"
+              type="button"
+              @click="closeCreateWorkspaceModal"
+              aria-label="Close create workspace modal"
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <label for="workspace-name">Workspace name</label>
+            <input
+              id="workspace-name"
+              v-model="workspaceName"
+              type="text"
+              placeholder="Payments, Observability, Data"
+            >
+            <div class="error" role="status" aria-live="polite">{{ workspaceError }}</div>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary" type="button" @click="cancelCreateWorkspace">Cancel</button>
+            <button type="submit" :disabled="workspaceSubmitting">
+              {{ workspaceSubmitting ? 'Creating...' : 'Create workspace' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

@@ -304,6 +304,10 @@ main {
   gap: 1.5rem;
 }
 
+.admin-content > .admin-panel {
+  width: 100%;
+}
+
 .site-footer {
   position: fixed;
   bottom: 0;
@@ -338,12 +342,7 @@ main {
   align-items: flex-start;
   gap: 1rem;
   margin-bottom: 1.25rem;
-}
-
-.admin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.25rem;
+  flex-wrap: wrap;
 }
 
 .admin-card {
@@ -363,15 +362,26 @@ main {
 .admin-list {
   display: grid;
   gap: 1rem;
+  width: 100%;
 }
 
 .admin-workspace {
   display: grid;
   gap: 0.6rem;
+  width: 100%;
   padding: 0.75rem;
   border-radius: 12px;
   border: 1px dashed var(--border);
   background: var(--highlight);
+  min-width: 0;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-workspace:hover,
+.admin-workspace:focus-within {
+  border-color: color-mix(in srgb, var(--accent-2), var(--border) 70%);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(31, 31, 31, 0.12);
 }
 
 .admin-workspace-info {
@@ -379,6 +389,38 @@ main {
   justify-content: space-between;
   align-items: baseline;
   gap: 0.5rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.admin-workspace-info > div {
+  min-width: 0;
+}
+
+.admin-workspace-info strong,
+.admin-workspace-info .muted {
+  overflow-wrap: anywhere;
+}
+
+.admin-workspace-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-workspace-stats span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  background: var(--surface);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin-workspace-action {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .admin-invite {
@@ -679,6 +721,13 @@ button:hover {
   filter: brightness(1.05);
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent), #fff 20%);
+  outline-offset: 2px;
+}
+
 .login-body {
   display: flex;
   align-items: center;
@@ -820,6 +869,22 @@ input {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
+}
+
+.admin-invite-modal .modal-body {
+  overflow-wrap: anywhere;
+}
+
+.admin-invite-modal .error {
+  min-height: 1.1rem;
+}
+
+.admin-create-workspace-modal .modal-body {
+  overflow-wrap: anywhere;
+}
+
+.admin-create-workspace-modal .error {
+  min-height: 1.1rem;
 }
 
 .loading-screen {
