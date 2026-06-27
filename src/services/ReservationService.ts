@@ -18,12 +18,12 @@ export class ReservationService {
     private readonly autoRefreshMinutes: number,
   ) {}
 
-  getServiceList(userId: number, now: Date): Promise<ServiceListDto> {
+  getServiceList(userId: string, now: Date): Promise<ServiceListDto> {
     return this.buildServiceList(userId, DateTimeHelper.toMysqlDateTime(now));
   }
 
   private async buildServiceList(
-    userId: number,
+    userId: string,
     nowIso: string,
   ): Promise<ServiceListDto> {
     const services =
@@ -70,6 +70,7 @@ export class ReservationService {
           svc.serviceId,
           svc.label,
           svc.defaultMinutes,
+          svc.ownerId,
           svc.owner,
           svc.workspaceId,
           svc.workspaceName,
@@ -87,7 +88,7 @@ export class ReservationService {
 
   async claim(
     serviceKey: string,
-    userId: number,
+    userId: string,
     now: Date,
     claimedByLabel?: string | null,
     claimedByTeam?: boolean,
@@ -130,7 +131,7 @@ export class ReservationService {
     return expires;
   }
 
-  async release(serviceKey: string, userId: number, now: Date): Promise<void> {
+  async release(serviceKey: string, userId: string, now: Date): Promise<void> {
     await this.findService(serviceKey, userId);
     const nowIso = DateTimeHelper.toMysqlDateTime(now);
     const reservation = await this.reservationRepository.findActiveByService(
@@ -150,7 +151,7 @@ export class ReservationService {
     await this.reservationRepository.releaseReservation(reservation, nowIso);
   }
 
-  async extend(serviceKey: string, userId: number, now: Date): Promise<string> {
+  async extend(serviceKey: string, userId: string, now: Date): Promise<string> {
     const service = await this.findService(serviceKey, userId);
     const nowIso = DateTimeHelper.toMysqlDateTime(now);
     const reservation = await this.reservationRepository.findActiveByService(
@@ -180,7 +181,7 @@ export class ReservationService {
   }
 
   async listExpiring(
-    userId: number,
+    userId: string,
     now: Date,
   ): Promise<
     Array<{
@@ -239,7 +240,7 @@ export class ReservationService {
 
   private async findService(
     serviceKey: string,
-    userId: number,
+    userId: string,
   ): Promise<ServiceDefinition> {
     const service = await this.serviceRepository.findEnvironmentByKeyForUser(
       serviceKey,

@@ -13,7 +13,7 @@ export class ReservationController {
       try {
         const expires = await this.reservationService.claim(
           serviceKey,
-          req.session.userId as number,
+          req.session.userId as string,
           new Date(),
           claimedByLabel || null,
           claimedByTeam,
@@ -40,8 +40,8 @@ export class ReservationController {
         const serviceKey = String(req.body.service_key || '').trim();
         try {
           await this.reservationService.release(
-            serviceKey,
-            req.session.userId as number,
+          serviceKey,
+          req.session.userId as string,
             new Date(),
           );
           res.json({ ok: true });
@@ -67,8 +67,8 @@ export class ReservationController {
         const serviceKey = String(req.body.service_key || '').trim();
         try {
           const expires = await this.reservationService.extend(
-            serviceKey,
-            req.session.userId as number,
+          serviceKey,
+          req.session.userId as string,
             new Date(),
           );
           res.json({ ok: true, expires_at: expires });
@@ -113,7 +113,7 @@ export class ReservationController {
         }
 
         const expiring = await this.reservationService.listExpiring(
-          req.session.userId as number,
+          req.session.userId as string,
           new Date(),
         );
 

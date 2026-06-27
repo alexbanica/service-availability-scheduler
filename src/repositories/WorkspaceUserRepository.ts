@@ -5,8 +5,8 @@ import {
 } from './AbstractMysqlRepository';
 
 type WorkspaceUserRow = RowDataPacket & {
-  workspace_id: number;
-  user_id: number;
+  workspace_id: string;
+  user_id: string;
   role: 'admin' | 'member';
 };
 
@@ -15,9 +15,13 @@ export class WorkspaceUserRepository extends AbstractMysqlRepository {
     super(db);
   }
 
+  withConnection(connection: MysqlConnection): WorkspaceUserRepository {
+    return new WorkspaceUserRepository(connection);
+  }
+
   async insert(
-    workspaceId: number,
-    userId: number,
+    workspaceId: string,
+    userId: string,
     role: 'admin' | 'member',
   ): Promise<void> {
     await this.run(
@@ -26,7 +30,7 @@ export class WorkspaceUserRepository extends AbstractMysqlRepository {
     );
   }
 
-  async isMember(workspaceId: number, userId: number): Promise<boolean> {
+  async isMember(workspaceId: string, userId: string): Promise<boolean> {
     const row = await this.get<WorkspaceUserRow>(
       'SELECT workspace_id, user_id, role FROM workspace_users WHERE workspace_id = ? AND user_id = ?',
       [workspaceId, userId],
@@ -34,7 +38,7 @@ export class WorkspaceUserRepository extends AbstractMysqlRepository {
     return Boolean(row);
   }
 
-  async isAdmin(workspaceId: number, userId: number): Promise<boolean> {
+  async isAdmin(workspaceId: string, userId: string): Promise<boolean> {
     const row = await this.get<WorkspaceUserRow>(
       `SELECT workspace_id, user_id, role
        FROM workspace_users

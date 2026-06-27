@@ -8,10 +8,10 @@ export class UserService {
     return this.userRepository.findByEmail(email);
   }
 
-  async getNicknamesByIds(ids: number[]): Promise<Map<number, string>> {
+  async getNicknamesByIds(ids: string[]): Promise<Map<string, string>> {
     const users = await this.userRepository.findByIds(ids);
-    const map = new Map<number, string>();
-    users.forEach((user) => map.set(user.id, user.nickname));
+    const map = new Map<string, string>();
+    users.forEach((user) => map.set(user.userId, user.nickname));
     return map;
   }
 }

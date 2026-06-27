@@ -11,7 +11,7 @@ export class ServiceController {
       requireAuth,
       async (req: Request, res: Response) => {
         const list = await this.reservationService.getServiceList(
-          req.session.userId as number,
+          req.session.userId as string,
           new Date(),
         );
         res.json({

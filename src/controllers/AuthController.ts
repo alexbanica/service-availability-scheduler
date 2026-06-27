@@ -21,7 +21,7 @@ export class AuthController {
         return;
       }
 
-      req.session.userId = user.id;
+      req.session.userId = user.userId;
       req.session.email = user.email;
       req.session.nickname = user.nickname;
       res.json({ ok: true, user });

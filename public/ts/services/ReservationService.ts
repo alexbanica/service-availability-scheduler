@@ -23,9 +23,6 @@ export class ReservationService {
     const asNullableString = (value: unknown): string | null =>
       typeof value === 'string' ? value : null;
 
-    const asNullableNumber = (value: unknown): number | null =>
-      typeof value === 'number' && !Number.isNaN(value) ? value : null;
-
     const asBoolean = (value: unknown): boolean => Boolean(value);
 
     const services = data.services.map((svc) => {
@@ -40,7 +37,7 @@ export class ReservationService {
               asString(env.environment, 'Unknown'),
               asBoolean(env.active),
               asNullableString(env.claimed_by),
-              asNullableNumber(env.claimed_by_id),
+              asNullableString(env.claimed_by_id),
               asNullableString(env.claimed_at),
               asNullableString(env.expires_at),
               asBoolean(env.claimed_by_team),
@@ -52,7 +49,7 @@ export class ReservationService {
         label,
         asNumber(svc.default_minutes, 0),
         asNullableString(svc.owner),
-        asNumber(svc.workspace_id, 0),
+        asString(svc.workspace_id, ''),
         asString(svc.workspace_name, 'Unknown'),
         environments,
       );

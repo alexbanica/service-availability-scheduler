@@ -6,8 +6,9 @@ export class ServiceDefinition {
     public readonly environmentId: string,
     public readonly environment: string,
     public readonly defaultMinutes: number,
+    public readonly ownerId: string | null,
     public readonly owner: string | null,
-    public readonly workspaceId: number,
+    public readonly workspaceId: string,
     public readonly workspaceName: string,
   ) {}
 }

@@ -6,7 +6,7 @@ import {
 } from './AbstractMysqlRepository';
 
 type UserRow = RowDataPacket & {
-  id: number;
+  user_id: string;
   email: string;
   nickname: string;
 };
@@ -18,32 +18,40 @@ export class UserRepository extends AbstractMysqlRepository {
 
   async findByEmail(email: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT id, email, nickname FROM users WHERE email = ?',
+      'SELECT user_id, email, nickname FROM users WHERE email = ?',
       [email],
     );
     if (!row) {
       return null;
     }
-    return new User(row.id, row.email, row.nickname);
+    return new User(row.user_id, row.email, row.nickname);
   }
 
-  async findById(id: number): Promise<User | null> {
+  async findById(id: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT id, email, nickname FROM users WHERE id = ?',
+      'SELECT user_id, email, nickname FROM users WHERE user_id = ?',
       [id],
     );
-    return row ? new User(row.id, row.email, row.nickname) : null;
+    return row ? new User(row.user_id, row.email, row.nickname) : null;
   }
 
-  async findByIds(ids: number[]): Promise<User[]> {
+  async findByIds(ids: string[]): Promise<User[]> {
     if (!ids.length) {
       return [];
     }
     const placeholders = ids.map(() => '?').join(',');
     const rows = await this.all<UserRow>(
-      `SELECT id, email, nickname FROM users WHERE id IN (${placeholders})`,
+      `SELECT user_id, email, nickname FROM users WHERE user_id IN (${placeholders})`,
       ids,
     );
-    return rows.map((row) => new User(row.id, row.email, row.nickname));
+    return rows.map((row) => new User(row.user_id, row.email, row.nickname));
+  }
+
+  async insert(id: string, email: string, nickname: string): Promise<void> {
+    await this.run('INSERT INTO users (user_id, email, nickname) VALUES (?, ?, ?)', [
+      id,
+      email,
+      nickname,
+    ]);
   }
 }

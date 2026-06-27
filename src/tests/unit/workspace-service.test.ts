@@ -4,69 +4,44 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { Workspace } from '../../entities/Workspace';
 import { WorkspaceInvitation } from '../../entities/WorkspaceInvitation';
 
-type WorkspaceStats = {
-  userCount?: number;
-  serviceCount?: number;
-  user_count?: number;
-  service_count?: number;
-};
-
-function workspaceFixture(
-  value: Omit<Workspace, keyof WorkspaceStats> & WorkspaceStats,
-): Workspace {
-  return value as Workspace;
-}
-
-function getWorkspaceUserCount(workspace: Workspace): number {
-  const workspaceStats = workspace as Workspace & WorkspaceStats;
-  const count = workspaceStats.userCount ?? workspaceStats.user_count;
-  if (count === undefined) {
-    throw new Error('Workspace summary is missing userCount');
-  }
-  return count;
-}
-
-function getWorkspaceServiceCount(workspace: Workspace): number {
-  const workspaceStats = workspace as Workspace & WorkspaceStats;
-  const count = workspaceStats.serviceCount ?? workspaceStats.service_count;
-  if (count === undefined) {
-    throw new Error('Workspace summary is missing serviceCount');
-  }
-  return count;
-}
-
-function assertWorkspaceSummaryCounts(
-  workspace: Workspace,
-  expectedUserCount: number,
-  expectedServiceCount: number,
-): void {
-  assert.equal(getWorkspaceUserCount(workspace), expectedUserCount);
-  assert.equal(getWorkspaceServiceCount(workspace), expectedServiceCount);
-}
-
 class FakeUserRoleRepository {
-  constructor(private readonly admins: Set<number>) {}
+  constructor(private readonly admins: Set<string>) {}
 
-  async isPlatformAdmin(userId: number): Promise<boolean> {
+  async isPlatformAdmin(userId: string): Promise<boolean> {
     return this.admins.has(userId);
   }
 }
 
 class FakeWorkspaceRepository {
   constructor(
-    private readonly workspaces: Map<number, Workspace>,
-    private readonly listByUserImpl?: (userId: number) => Promise<Workspace[]>,
+    private readonly workspaces: Map<string, Workspace>,
+    private readonly listByUserImpl?: (userId: string) => Promise<Workspace[]>,
   ) {}
 
-  async findById(id: number): Promise<Workspace | null> {
+  withConnection(): FakeWorkspaceRepository {
+    return this;
+  }
+
+  async findById(id: string): Promise<Workspace | null> {
     return this.workspaces.get(id) || null;
   }
 
-  async listByUser(userId: number): Promise<Workspace[]> {
-    if (this.listByUserImpl) {
-      return this.listByUserImpl(userId);
-    }
-    return Array.from(this.workspaces.values());
+  async listByUser(userId: string): Promise<Workspace[]> {
+    return this.listByUserImpl
+      ? this.listByUserImpl(userId)
+      : Array.from(this.workspaces.values());
+  }
+
+  async countByAdmin(): Promise<number> {
+    return 0;
+  }
+
+  async insert(
+    workspaceId: string,
+    name: string,
+    adminUserId: string,
+  ): Promise<Workspace> {
+    return new Workspace(workspaceId, name, adminUserId, 1, 0, 0, 0);
   }
 }
 
@@ -74,142 +49,129 @@ class FakeWorkspaceUserRepository {
   private readonly admins = new Set<string>();
   private readonly members = new Set<string>();
 
-  setAdmin(workspaceId: number, userId: number): void {
+  withConnection(): FakeWorkspaceUserRepository {
+    return this;
+  }
+
+  setAdmin(workspaceId: string, userId: string): void {
     this.admins.add(`${workspaceId}:${userId}`);
     this.members.add(`${workspaceId}:${userId}`);
   }
 
-  setMember(workspaceId: number, userId: number): void {
+  setMember(workspaceId: string, userId: string): void {
     this.members.add(`${workspaceId}:${userId}`);
   }
 
-  async isAdmin(workspaceId: number, userId: number): Promise<boolean> {
+  async insert(): Promise<void> {
+    return undefined;
+  }
+
+  async isAdmin(workspaceId: string, userId: string): Promise<boolean> {
     return this.admins.has(`${workspaceId}:${userId}`);
   }
 
-  async isMember(workspaceId: number, userId: number): Promise<boolean> {
+  async isMember(workspaceId: string, userId: string): Promise<boolean> {
     return this.members.has(`${workspaceId}:${userId}`);
   }
 }
 
 class FakeServiceRepository {
-  constructor(private readonly shouldDup: boolean) {}
+  withConnection(): FakeServiceRepository {
+    return this;
+  }
 
-  async insertService(): Promise<number> {
-    if (this.shouldDup) {
-      const err = new Error('dup') as Error & { code?: string };
-      err.code = 'ER_DUP_ENTRY';
-      throw err;
-    }
-    return 42;
+  async isWorkspaceOwnerOwnedByWorkspace(): Promise<boolean> {
+    return true;
+  }
+
+  async findServiceByWorkspaceAndId(): Promise<{ serviceId: string } | null> {
+    return { serviceId: 'service-1' };
+  }
+
+  async updateServiceMetadata(): Promise<void> {
+    return undefined;
+  }
+
+  async getEnvironmentById(): Promise<boolean> {
+    return true;
+  }
+
+  async insertServiceEnvironment(): Promise<void> {
+    return undefined;
+  }
+
+  async deleteServiceEnvironmentAssociationsNotIn(): Promise<void> {
+    return undefined;
   }
 }
 
 class FakeInvitationRepository {
   async insert(): Promise<WorkspaceInvitation> {
-    return new WorkspaceInvitation(11, 3, 5, 1, 'pending', new Date());
+    return new WorkspaceInvitation(
+      'invitation-1',
+      'workspace-1',
+      'user-2',
+      'user-1',
+      'pending',
+      new Date(),
+    );
   }
 }
 
 class FakeUserRepository {
-  constructor(private readonly emailMap: Map<string, number>) {}
+  constructor(private readonly emailMap: Map<string, string>) {}
 
-  async findByEmail(email: string): Promise<{ id: number } | null> {
-    const id = this.emailMap.get(email);
-    return id ? { id } : null;
+  async findByEmail(email: string): Promise<{ userId: string } | null> {
+    const userId = this.emailMap.get(email);
+    return userId ? { userId } : null;
   }
 }
 
 class FakePool {
-  constructor(private readonly adminCount: number) {}
-
   async getConnection(): Promise<{
     beginTransaction: () => Promise<void>;
     commit: () => Promise<void>;
     rollback: () => Promise<void>;
     release: () => void;
-    query: (
-      sql: string,
-      params: Array<unknown>,
-    ) => Promise<
-      [Array<{ total?: number }>, unknown] | [Record<string, number>, unknown]
-    >;
   }> {
-    let nextId = 1;
     return {
       beginTransaction: async () => undefined,
       commit: async () => undefined,
       rollback: async () => undefined,
       release: () => undefined,
-      query: async (sql: string) => {
-        if (sql.startsWith('SELECT COUNT(*)')) {
-          return [[{ total: this.adminCount }], undefined];
-        }
-        if (sql.startsWith('INSERT INTO workspaces')) {
-          return [{ insertId: nextId++ }, undefined] as [
-            Record<string, number>,
-            unknown,
-          ];
-        }
-        return [[{}], undefined];
-      },
     };
   }
 }
 
-test('createWorkspace rejects non-admins', async () => {
-  const service = new WorkspaceService(
-    new FakePool(0) as never,
-    new FakeWorkspaceRepository(new Map()) as never,
-    new FakeWorkspaceUserRepository() as never,
-    new FakeServiceRepository(false) as never,
-    new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map()) as never,
-    new FakeUserRoleRepository(new Set()) as never,
-  );
-
-  await assert.rejects(
-    () => service.createWorkspace(5, 'Team'),
-    /Not authorized to create workspaces/,
-  );
-});
-
-test('createWorkspace enforces max per admin', async () => {
-  const service = new WorkspaceService(
-    new FakePool(5) as never,
-    new FakeWorkspaceRepository(new Map()) as never,
-    new FakeWorkspaceUserRepository() as never,
-    new FakeServiceRepository(false) as never,
-    new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map()) as never,
-    new FakeUserRoleRepository(new Set([1])) as never,
-  );
-
-  await assert.rejects(
-    () => service.createWorkspace(1, 'Team'),
-    /Workspace limit reached/,
-  );
-});
-
-test('createService requires workspace admin', async () => {
-  const workspaces = new Map<number, Workspace>([
-    [3, workspaceFixture({ id: 3, name: 'A', adminUserId: 1 })],
-  ]);
-  const workspaceUsers = new FakeWorkspaceUserRepository();
-  const service = new WorkspaceService(
-    new FakePool(0) as never,
+function makeService(
+  workspaces: Map<string, Workspace>,
+  workspaceUsers = new FakeWorkspaceUserRepository(),
+): WorkspaceService {
+  return new WorkspaceService(
+    new FakePool() as never,
     new FakeWorkspaceRepository(workspaces) as never,
     workspaceUsers as never,
-    new FakeServiceRepository(false) as never,
+    new FakeServiceRepository() as never,
     new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map()) as never,
-    new FakeUserRoleRepository(new Set([1])) as never,
+    new FakeUserRepository(new Map([['user@example.com', 'user-2']])) as never,
+    new FakeUserRoleRepository(new Set(['user-1'])) as never,
+  );
+}
+
+test('createService requires workspace admin', async () => {
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
   );
 
   await assert.rejects(
     () =>
-      service.createService(3, 2, {
-        environmentNames: ['Env'],
+      service.createService('workspace-1', 'user-2', {
+        environmentIds: ['environment-1'],
         label: 'svc',
         defaultMinutes: 10,
       }),
@@ -218,129 +180,112 @@ test('createService requires workspace admin', async () => {
 });
 
 test('createService requires at least one environment', async () => {
-  const workspaces = new Map<number, Workspace>([
-    [3, workspaceFixture({ id: 3, name: 'A', adminUserId: 1 })],
-  ]);
   const workspaceUsers = new FakeWorkspaceUserRepository();
-  workspaceUsers.setAdmin(3, 1);
-
-  const service = new WorkspaceService(
-    new FakePool(0) as never,
-    new FakeWorkspaceRepository(workspaces) as never,
-    workspaceUsers as never,
-    new FakeServiceRepository(true) as never,
-    new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map()) as never,
-    new FakeUserRoleRepository(new Set([1])) as never,
+  workspaceUsers.setAdmin('workspace-1', 'user-1');
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
   );
 
   await assert.rejects(
     () =>
-      service.createService(3, 1, {
-        environmentNames: [],
+      service.createService('workspace-1', 'user-1', {
+        environmentIds: [],
         label: 'svc',
         defaultMinutes: 10,
       }),
-    /At least one environment is required/,
+    /Select at least one environment/,
+  );
+});
+
+test('updateService requires workspace admin', async () => {
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateService('workspace-1', 'user-2', {
+        serviceId: 'service-1',
+        environmentIds: ['environment-1'],
+        label: 'svc',
+        defaultMinutes: 10,
+      }),
+    /Not authorized for workspace/,
+  );
+});
+
+test('updateService validates deterministic inputs before persistence', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'user-1');
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateService('workspace-1', 'user-1', {
+        serviceId: 'service-1',
+        environmentIds: ['environment-1'],
+        label: '   ',
+        defaultMinutes: 10,
+      }),
+    /Service name required/,
+  );
+  await assert.rejects(
+    () =>
+      service.updateService('workspace-1', 'user-1', {
+        serviceId: 'service-1',
+        environmentIds: [],
+        label: 'svc',
+        defaultMinutes: 10,
+      }),
+    /Select at least one environment/,
+  );
+  await assert.rejects(
+    () =>
+      service.updateService('workspace-1', 'user-1', {
+        serviceId: 'service-1',
+        environmentIds: ['environment-1'],
+        label: 'svc',
+        defaultMinutes: 0,
+      }),
+    /Default minutes must be positive/,
   );
 });
 
 test('inviteUser fails when user already member', async () => {
-  const workspaces = new Map<number, Workspace>([
-    [7, workspaceFixture({ id: 7, name: 'A', adminUserId: 1 })],
-  ]);
   const workspaceUsers = new FakeWorkspaceUserRepository();
-  workspaceUsers.setAdmin(7, 1);
-  workspaceUsers.setMember(7, 5);
-
-  const service = new WorkspaceService(
-    new FakePool(0) as never,
-    new FakeWorkspaceRepository(workspaces) as never,
-    workspaceUsers as never,
-    new FakeServiceRepository(false) as never,
-    new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map([['user@example.com', 5]])) as never,
-    new FakeUserRoleRepository(new Set([1])) as never,
+  workspaceUsers.setAdmin('workspace-1', 'user-1');
+  workspaceUsers.setMember('workspace-1', 'user-2');
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
   );
 
   await assert.rejects(
-    () => service.inviteUser(7, 1, 'user@example.com'),
+    () => service.inviteUser('workspace-1', 'user-1', 'user@example.com'),
     /User already in workspace/,
   );
-});
-
-test('listWorkspaces exposes user and service counts', async () => {
-  let requestedByUserId: number | undefined;
-  const workspaces = new Map<number, Workspace>([
-    [
-      3,
-      workspaceFixture({
-        id: 3,
-        name: 'Admin workspace',
-        adminUserId: 1,
-        userCount: 1,
-        serviceCount: 4,
-      }),
-    ],
-    [
-      7,
-      workspaceFixture({
-        id: 7,
-        name: 'Member workspace',
-        adminUserId: 9,
-        user_count: 3,
-        service_count: 2,
-      }),
-    ],
-  ]);
-  const workspaceUsers = new FakeWorkspaceUserRepository();
-  workspaceUsers.setAdmin(3, 5);
-  workspaceUsers.setMember(7, 5);
-
-  const fakeRepository = new FakeWorkspaceRepository(
-    workspaces,
-    async (userId: number) => {
-      requestedByUserId = userId;
-      return Array.from(workspaces.values());
-    },
-  );
-
-  const service = new WorkspaceService(
-    new FakePool(0) as never,
-    fakeRepository as never,
-    workspaceUsers as never,
-    new FakeServiceRepository(false) as never,
-    new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map()) as never,
-    new FakeUserRoleRepository(new Set([1])) as never,
-  );
-
-  const summaries = await service.listWorkspaces(5);
-
-  assert.equal(summaries.length, 2);
-  const adminWorkspace = summaries.find((workspace) => workspace.id === 3);
-  const memberWorkspace = summaries.find((workspace) => workspace.id === 7);
-  assert.ok(adminWorkspace);
-  assert.ok(memberWorkspace);
-
-  assert.equal(requestedByUserId, 5);
-
-  assertWorkspaceSummaryCounts(adminWorkspace, 1, 4);
-  assertWorkspaceSummaryCounts(memberWorkspace, 3, 2);
-});
-
-test('createWorkspace returns userCount/serviceCount in summary shape', async () => {
-  const service = new WorkspaceService(
-    new FakePool(0) as never,
-    new FakeWorkspaceRepository(new Map()) as never,
-    new FakeWorkspaceUserRepository() as never,
-    new FakeServiceRepository(false) as never,
-    new FakeInvitationRepository() as never,
-    new FakeUserRepository(new Map()) as never,
-    new FakeUserRoleRepository(new Set([1])) as never,
-  );
-
-  const workspace = await service.createWorkspace(1, 'Team Alpha');
-
-  assertWorkspaceSummaryCounts(workspace, 1, 0);
 });

@@ -65,8 +65,11 @@ async function listSqlFiles(
       ['workspaces', 30],
       ['workspace_users', 40],
       ['workspace_invitations', 50],
-      ['services', 60],
-      ['reservations', 70],
+      ['owners', 60],
+      ['services', 70],
+      ['environments', 80],
+      ['service_environments', 90],
+      ['reservations', 100],
     ]);
     return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))

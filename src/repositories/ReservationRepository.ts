@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { Reservation } from '../entities/Reservation';
 import {
@@ -6,11 +7,11 @@ import {
 } from './AbstractMysqlRepository';
 
 type ReservationRow = RowDataPacket & {
-  id: number;
+  reservation_id: string;
   service_key: string;
   environment_name: string;
   service_name: string;
-  user_id: number;
+  user_id: string;
   claimed_by_label: string | null;
   claimed_by_team: number;
   claimed_at: string | Date;
@@ -28,7 +29,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
     now: string,
   ): Promise<Reservation | null> {
     const row = await this.get<ReservationRow>(
-      `SELECT id, user_id, expires_at, service_key, environment_name, service_name,
+      `SELECT reservation_id, user_id, expires_at, service_key, environment_name, service_name,
               claimed_by_label, claimed_by_team, claimed_at, released_at
        FROM reservations
        WHERE service_key = ? AND released_at IS NULL AND expires_at > ?`,
@@ -41,7 +42,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
     const rows = await this.all<ReservationRow>(
       `SELECT r.service_key, r.environment_name, r.service_name, r.user_id,
               r.claimed_by_label, r.claimed_by_team,
-              r.claimed_at, r.expires_at, r.released_at, r.id
+              r.claimed_at, r.expires_at, r.released_at, r.reservation_id
        FROM reservations r
        WHERE r.released_at IS NULL AND r.expires_at > ?`,
       [now],
@@ -60,7 +61,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
     const rows = await this.all<ReservationRow>(
       `SELECT r.service_key, r.environment_name, r.service_name, r.user_id,
               r.claimed_by_label, r.claimed_by_team,
-              r.claimed_at, r.expires_at, r.released_at, r.id
+              r.claimed_at, r.expires_at, r.released_at, r.reservation_id
        FROM reservations r
        WHERE r.released_at IS NULL
          AND r.expires_at > ?
@@ -74,17 +75,19 @@ export class ReservationRepository extends AbstractMysqlRepository {
     serviceKey: string,
     environmentName: string,
     serviceName: string,
-    userId: number,
+    userId: string,
     claimedByLabel: string | null,
     claimedByTeam: boolean,
     claimedAt: string,
     expiresAt: string,
   ): Promise<Reservation> {
-    const [result] = await this.db.query<ResultSetHeader>(
+    const reservationId = randomUUID();
+    await this.db.query<ResultSetHeader>(
       `INSERT INTO reservations
-       (service_key, environment_name, service_name, user_id, claimed_by_label, claimed_by_team, claimed_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (reservation_id, service_key, environment_name, service_name, user_id, claimed_by_label, claimed_by_team, claimed_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        reservationId,
         serviceKey,
         environmentName,
         serviceName,
@@ -96,7 +99,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
       ],
     );
     return new Reservation(
-      result.insertId || null,
+      reservationId,
       serviceKey,
       environmentName,
       serviceName,
@@ -113,7 +116,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
     reservation: Reservation,
     releasedAt: string,
   ): Promise<Reservation> {
-    await this.run('UPDATE reservations SET released_at = ? WHERE id = ?', [
+    await this.run('UPDATE reservations SET released_at = ? WHERE reservation_id = ?', [
       releasedAt,
       reservation.id,
     ]);
@@ -135,7 +138,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
     reservation: Reservation,
     expiresAt: string,
   ): Promise<Reservation> {
-    await this.run('UPDATE reservations SET expires_at = ? WHERE id = ?', [
+    await this.run('UPDATE reservations SET expires_at = ? WHERE reservation_id = ?', [
       expiresAt,
       reservation.id,
     ]);
@@ -154,12 +157,12 @@ export class ReservationRepository extends AbstractMysqlRepository {
   }
 
   async findExpiringByUser(
-    userId: number,
+    userId: string,
     now: string,
     warningCutoff: string,
   ): Promise<Reservation[]> {
     const rows = await this.all<ReservationRow>(
-      `SELECT r.id, r.user_id, r.service_key, r.environment_name, r.service_name,
+      `SELECT r.reservation_id, r.user_id, r.service_key, r.environment_name, r.service_name,
               r.claimed_by_label, r.claimed_by_team, r.claimed_at, r.expires_at, r.released_at
        FROM reservations r
        WHERE r.user_id = ?
@@ -183,7 +186,7 @@ export class ReservationRepository extends AbstractMysqlRepository {
 
   private mapRow(row: ReservationRow): Reservation {
     return new Reservation(
-      row.id,
+      row.reservation_id,
       row.service_key,
       row.environment_name,
       row.service_name,

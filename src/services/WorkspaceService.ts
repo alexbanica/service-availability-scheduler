@@ -1,20 +1,44 @@
-import type { Pool } from 'mysql2/promise';
 import { randomUUID } from 'crypto';
-import { Workspace } from '../entities/Workspace';
-import { WorkspaceInvitation } from '../entities/WorkspaceInvitation';
+import type { Pool } from 'mysql2/promise';
 import { ServiceRepository } from '../repositories/ServiceRepository';
 import { UserRepository } from '../repositories/UserRepository';
 import { UserRoleRepository } from '../repositories/UserRoleRepository';
 import { WorkspaceInvitationRepository } from '../repositories/WorkspaceInvitationRepository';
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
 import { WorkspaceUserRepository } from '../repositories/WorkspaceUserRepository';
+import { Workspace } from '../entities/Workspace';
+import { WorkspaceInvitation } from '../entities/WorkspaceInvitation';
 
-type ServiceInput = {
-  environmentNames: string[];
+export type WorkspaceResourceType = 'users' | 'services' | 'owners' | 'environments';
+
+type WorkspaceResourceRow =
+  | { type: 'users'; userId: string; email: string }
+  | { type: 'services'; serviceId: string; serviceName: string }
+  | { type: 'owners'; ownerId: string; ownerName: string }
+  | { type: 'environments'; environmentId: string; environmentName: string };
+
+type CreateServiceInput = {
   serviceId?: string | null;
   label?: string | null;
   defaultMinutes?: number | null;
-  owner?: string | null;
+  environmentIds?: string[];
+  environment_ids?: string[];
+  ownerId?: string | null;
+  owner_id?: string | null;
+};
+
+type UpdateServiceInput = {
+  serviceId: string;
+  label: string;
+  defaultMinutes: number;
+  environmentIds?: string[];
+  environment_ids?: string[];
+  ownerId?: string | null;
+  owner_id?: string | null;
+};
+
+type OwnerOrEnvironmentInput = {
+  name: string;
 };
 
 export class WorkspaceService {
@@ -30,11 +54,11 @@ export class WorkspaceService {
     private readonly userRoleRepository: UserRoleRepository,
   ) {}
 
-  async listWorkspaces(userId: number): Promise<Workspace[]> {
+  async listWorkspaces(userId: string): Promise<Workspace[]> {
     return this.workspaceRepository.listByUser(userId);
   }
 
-  async createWorkspace(userId: number, name: string): Promise<Workspace> {
+  async createWorkspace(userId: string, name: string): Promise<Workspace> {
     const trimmedName = name.trim();
     if (!trimmedName) {
       throw new Error('Workspace name required');
@@ -48,26 +72,22 @@ export class WorkspaceService {
     const connection = await this.db.getConnection();
     try {
       await connection.beginTransaction();
-      const workspaceRepo = new WorkspaceRepository(connection);
-      const workspaceUserRepo = new WorkspaceUserRepository(connection);
+      const workspaceRepo = this.workspaceRepository.withConnection(connection);
+      const workspaceUserRepo = this.workspaceUserRepository.withConnection(
+        connection,
+      );
 
       const total = await workspaceRepo.countByAdmin(userId);
       if (total >= WorkspaceService.MAX_WORKSPACES_PER_ADMIN) {
         throw new Error('Workspace limit reached');
       }
 
-      const workspace = await workspaceRepo.insert(trimmedName, userId);
+      const workspaceId = randomUUID();
+      const workspace = await workspaceRepo.insert(workspaceId, trimmedName, userId);
       await workspaceUserRepo.insert(workspace.id, userId, 'admin');
-      const workspaceWithCounts = new Workspace(
-        workspace.id,
-        workspace.name,
-        workspace.adminUserId,
-        1,
-        0,
-      );
 
       await connection.commit();
-      return workspaceWithCounts;
+      return new Workspace(workspace.id, workspace.name, workspace.adminUserId, 1, 0, 0, 0);
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -76,94 +96,135 @@ export class WorkspaceService {
     }
   }
 
-  async createService(
-    workspaceId: number,
-    userId: number,
-    input: ServiceInput,
-  ): Promise<{ serviceId: string; createdEnvironments: number }> {
-    const environments = input.environmentNames
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
-    if (!environments.length) {
-      throw new Error('At least one environment is required');
+  async createEnvironment(
+    workspaceId: string,
+    userId: string,
+    input: OwnerOrEnvironmentInput,
+  ): Promise<{ environmentId: string }> {
+    const trimmedName = (input.name || '').trim();
+    if (!trimmedName) {
+      throw new Error('Environment name is required');
     }
 
     await this.assertWorkspaceAdmin(workspaceId, userId);
 
+    const existing = await this.serviceRepository.findEnvironmentByName(
+      workspaceId,
+      trimmedName,
+    );
+    if (existing) {
+      throw new Error('Environment already exists');
+    }
+
+    const environmentId = randomUUID();
+    await this.serviceRepository.insertEnvironment({
+      workspaceId,
+      environmentId,
+      name: trimmedName,
+    });
+
+    return { environmentId };
+  }
+
+  async createOwner(
+    workspaceId: string,
+    userId: string,
+    input: OwnerOrEnvironmentInput,
+  ): Promise<{ ownerId: string }> {
+    const trimmedName = (input.name || '').trim();
+    if (!trimmedName) {
+      throw new Error('Owner name is required');
+    }
+
+    await this.assertWorkspaceAdmin(workspaceId, userId);
+
+    const existing = await this.serviceRepository.findOwnerByWorkspaceAndName(
+      workspaceId,
+      trimmedName,
+    );
+    if (existing) {
+      throw new Error('Owner already exists');
+    }
+
+    const ownerId = randomUUID();
+    await this.serviceRepository.insertOwner({
+      workspaceId,
+      ownerId,
+      name: trimmedName,
+    });
+    return { ownerId };
+  }
+
+  async createService(
+    workspaceId: string,
+    userId: string,
+    input: CreateServiceInput,
+  ): Promise<{ serviceId: string; createdEnvironments: number }> {
+    const environmentIds = this.normalizeIds(
+      input.environmentIds ?? input.environment_ids,
+    );
+    if (!environmentIds.length) {
+      throw new Error('Select at least one environment.');
+    }
+
+    await this.assertWorkspaceAdmin(workspaceId, userId);
+
+    const label = (input.label || '').trim();
+    if (!label) {
+      throw new Error('Service name required');
+    }
+
+    const defaultMinutes = Number(input.defaultMinutes || 0);
+    if (!Number.isFinite(defaultMinutes) || defaultMinutes <= 0) {
+      throw new Error('Default minutes must be positive');
+    }
+
+    const ownerId = this.normalizeOptionalId(input.ownerId ?? input.owner_id);
+    if (ownerId) {
+      const ownerExists = await this.serviceRepository.isWorkspaceOwnerOwnedByWorkspace(
+        workspaceId,
+        ownerId,
+      );
+      if (!ownerExists) {
+        throw new Error('Owner not found in workspace');
+      }
+    }
+
+    const serviceId = randomUUID();
+
     const connection = await this.db.getConnection();
     try {
       await connection.beginTransaction();
-      const serviceRepo = new ServiceRepository(connection);
+      const serviceRepo = this.serviceRepository.withConnection(connection);
 
-      let serviceDbId: number;
-      let serviceUuid: string;
-
-      const providedServiceId = (input.serviceId || '').trim();
-      if (providedServiceId) {
-        const existing = await serviceRepo.findServiceByUuid(
-          workspaceId,
-          providedServiceId,
-        );
-        if (!existing) {
-          throw new Error('Service not found');
-        }
-        serviceDbId = existing.id;
-        serviceUuid = existing.serviceId;
-      } else {
-        const label = (input.label || '').trim();
-        if (!label) {
-          throw new Error('Service label required');
-        }
-        const defaultMinutes = Number(input.defaultMinutes || 0);
-        if (!Number.isFinite(defaultMinutes) || defaultMinutes <= 0) {
-          throw new Error('Default minutes must be positive');
-        }
-        serviceUuid = randomUUID();
-        serviceDbId = await serviceRepo.insertService({
-          workspaceId,
-          serviceId: serviceUuid,
-          label,
-          defaultMinutes,
-          owner: input.owner ? input.owner.trim() || null : null,
-        });
-      }
+      const createdServiceId = await serviceRepo.insertService({
+        workspaceId,
+        serviceId,
+        label,
+        defaultMinutes,
+        ownerId,
+      });
 
       let createdEnvironments = 0;
-      for (const name of environments) {
-        const existingEnv = await serviceRepo.findEnvironmentByName(
+      const uniqueEnvironmentIds = Array.from(new Set(environmentIds));
+      for (const environmentId of uniqueEnvironmentIds) {
+        const belongsToWorkspace = await serviceRepo.getEnvironmentById(
           workspaceId,
-          name,
+          environmentId,
         );
-        let environmentDbId: number;
-        let environmentUuid: string;
-        if (existingEnv) {
-          environmentDbId = existingEnv.id;
-          environmentUuid = existingEnv.environmentId;
-        } else {
-          environmentUuid = randomUUID();
-          environmentDbId = await serviceRepo.insertEnvironment({
-            workspaceId,
-            environmentId: environmentUuid,
-            name,
-          });
+        if (!belongsToWorkspace) {
+          throw new Error('Environment not found in workspace');
         }
-        try {
-          await serviceRepo.insertServiceEnvironment({
-            serviceDbId,
-            environmentDbId,
-            serviceKey: `${serviceUuid}:${environmentUuid}`,
-          });
-          createdEnvironments += 1;
-        } catch (error) {
-          const err = error as { code?: string };
-          if (err.code !== 'ER_DUP_ENTRY') {
-            throw error;
-          }
-        }
+        await serviceRepo.insertServiceEnvironment({
+          serviceId,
+          environmentId,
+          serviceKey: `${serviceId}:${environmentId}`,
+        });
+        createdEnvironments += 1;
       }
 
       await connection.commit();
-      return { serviceId: serviceUuid, createdEnvironments };
+      return { serviceId: createdServiceId, createdEnvironments };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -173,73 +234,122 @@ export class WorkspaceService {
   }
 
   async listEnvironments(
-    workspaceId: number,
-    userId: number,
+    workspaceId: string,
+    userId: string,
   ): Promise<Array<{ environmentId: string; environmentName: string }>> {
     await this.assertWorkspaceAdmin(workspaceId, userId);
     return this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
   }
 
   async listOwners(
-    workspaceId: number,
-    userId: number,
-  ): Promise<Array<{ owner: string }>> {
+    workspaceId: string,
+    userId: string,
+  ): Promise<Array<{ ownerId: string; name: string }>> {
     await this.assertWorkspaceAdmin(workspaceId, userId);
-    const owners = await this.serviceRepository.listOwnersByWorkspace(
-      workspaceId,
-    );
-    return owners.map((owner) => ({ owner }));
+    return this.serviceRepository.listOwnersByWorkspace(workspaceId);
   }
 
   async listServiceCatalog(
-    workspaceId: number,
-    userId: number,
+    workspaceId: string,
+    userId: string,
   ): Promise<
     Array<{
       serviceId: string;
       label: string;
       owner: string | null;
+      ownerId: string | null;
       defaultMinutes: number;
       environments: Array<{ environmentId: string; environmentName: string }>;
     }>
   > {
     await this.assertWorkspaceMember(workspaceId, userId);
-    const rows =
-      await this.serviceRepository.listServiceCatalogByWorkspace(workspaceId);
+
+    const rows = await this.serviceRepository.listServiceCatalogByWorkspace(workspaceId);
     const map = new Map<
       string,
       {
         serviceId: string;
         label: string;
         owner: string | null;
+        ownerId: string | null;
         defaultMinutes: number;
         environments: Array<{ environmentId: string; environmentName: string }>;
       }
     >();
+
     rows.forEach((row) => {
-      const existing = map.get(row.serviceId);
+      const current = map.get(row.serviceId);
       const env = {
         environmentId: row.environmentId,
         environmentName: row.environmentName,
       };
-      if (existing) {
-        existing.environments.push(env);
+      if (current) {
+        current.environments.push(env);
         return;
       }
       map.set(row.serviceId, {
         serviceId: row.serviceId,
         label: row.label,
-        owner: row.owner,
+        owner: row.ownerName,
+        ownerId: row.ownerId,
         defaultMinutes: row.defaultMinutes,
         environments: [env],
       });
     });
+
     return Array.from(map.values());
   }
 
+  async listWorkspacePopupRows(
+    workspaceId: string,
+    userId: string,
+    resourceType: WorkspaceResourceType,
+  ): Promise<WorkspaceResourceRow[]> {
+    await this.assertWorkspaceMember(workspaceId, userId);
+
+    if (resourceType === 'users') {
+      return this.workspaceRepository
+        .listUsersByWorkspace(workspaceId)
+        .then((rows) =>
+          rows.map((row) => ({
+            type: 'users',
+            userId: row.userId,
+            email: row.email,
+          })),
+        );
+    }
+
+    if (resourceType === 'services') {
+      const services = await this.serviceRepository.listServiceSummariesByWorkspace(
+        workspaceId,
+      );
+      return services.map((service) => ({
+        type: 'services',
+        serviceId: service.serviceId,
+        serviceName: service.label,
+      }));
+    }
+
+    if (resourceType === 'owners') {
+      const owners = await this.serviceRepository.listOwnersByWorkspace(workspaceId);
+      return owners.map((owner) => ({
+        type: 'owners',
+        ownerId: owner.ownerId,
+        ownerName: owner.name,
+      }));
+    }
+
+    const environments = await this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
+    return environments.map((environment) => ({
+      type: 'environments',
+      environmentId: environment.environmentId,
+      environmentName: environment.environmentName,
+    }));
+  }
+
   async deleteService(
-    workspaceId: number,
-    userId: number,
+    workspaceId: string,
+    userId: string,
     serviceId: string,
   ): Promise<void> {
     await this.assertWorkspaceAdmin(workspaceId, userId);
@@ -252,9 +362,106 @@ export class WorkspaceService {
     }
   }
 
+  async updateService(
+    workspaceId: string,
+    userId: string,
+    input: UpdateServiceInput,
+  ): Promise<{ serviceId: string }> {
+    const serviceId = this.normalizeRequiredId(input.serviceId);
+    const label = (input.label || '').trim();
+    if (!label) {
+      throw new Error('Service name required');
+    }
+
+    const defaultMinutes = Number(input.defaultMinutes || 0);
+    if (!Number.isFinite(defaultMinutes) || defaultMinutes <= 0) {
+      throw new Error('Default minutes must be positive');
+    }
+
+    const environmentIds = this.normalizeIds(
+      input.environmentIds ?? input.environment_ids,
+    );
+    if (!environmentIds.length) {
+      throw new Error('Select at least one environment.');
+    }
+
+    await this.assertWorkspaceAdmin(workspaceId, userId);
+
+    const normalizedOwnerId = this.normalizeOptionalId(input.ownerId ?? input.owner_id);
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const serviceRepo = this.serviceRepository.withConnection(connection);
+
+      const existingService = await serviceRepo.findServiceByWorkspaceAndId(
+        workspaceId,
+        serviceId,
+      );
+      if (!existingService) {
+        throw new Error('Service not found');
+      }
+
+      if (normalizedOwnerId) {
+        const ownerExists = await serviceRepo.isWorkspaceOwnerOwnedByWorkspace(
+          workspaceId,
+          normalizedOwnerId,
+        );
+        if (!ownerExists) {
+          throw new Error('Owner not found in workspace');
+        }
+      }
+
+      const uniqueEnvironmentIds = Array.from(new Set(environmentIds));
+
+      await serviceRepo.updateServiceMetadata(
+        workspaceId,
+        serviceId,
+        label,
+        defaultMinutes,
+        normalizedOwnerId,
+      );
+
+      for (const environmentId of uniqueEnvironmentIds) {
+        const belongsToWorkspace = await serviceRepo.getEnvironmentById(
+          workspaceId,
+          environmentId,
+        );
+        if (!belongsToWorkspace) {
+          throw new Error('Environment not found in workspace');
+        }
+        try {
+          await serviceRepo.insertServiceEnvironment({
+            serviceId,
+            environmentId,
+            serviceKey: `${serviceId}:${environmentId}`,
+          });
+        } catch (error) {
+          const err = error as { code?: string };
+          if (err.code !== 'ER_DUP_ENTRY') {
+            throw error;
+          }
+        }
+      }
+
+      await serviceRepo.deleteServiceEnvironmentAssociationsNotIn(
+        serviceId,
+        uniqueEnvironmentIds,
+      );
+
+      await connection.commit();
+      return { serviceId };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
   async inviteUser(
-    workspaceId: number,
-    userId: number,
+    workspaceId: string,
+    userId: string,
     inviteeEmail: string,
   ): Promise<WorkspaceInvitation> {
     const trimmedEmail = inviteeEmail.trim().toLowerCase();
@@ -271,7 +478,7 @@ export class WorkspaceService {
 
     const isMember = await this.workspaceUserRepository.isMember(
       workspaceId,
-      invitee.id,
+      invitee.userId,
     );
     if (isMember) {
       throw new Error('User already in workspace');
@@ -279,8 +486,9 @@ export class WorkspaceService {
 
     try {
       return await this.invitationRepository.insert(
+        randomUUID(),
         workspaceId,
-        invitee.id,
+        invitee.userId,
         userId,
       );
     } catch (error) {
@@ -292,37 +500,58 @@ export class WorkspaceService {
     }
   }
 
-  private async assertWorkspaceAdmin(
-    workspaceId: number,
-    userId: number,
-  ): Promise<void> {
+  private async assertWorkspaceAdmin(workspaceId: string, userId: string): Promise<void> {
     const workspace = await this.workspaceRepository.findById(workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
     }
-    const isAdmin = await this.workspaceUserRepository.isAdmin(
-      workspaceId,
-      userId,
-    );
+    const isAdmin = await this.workspaceUserRepository.isAdmin(workspace.id, userId);
     if (!isAdmin) {
       throw new Error('Not authorized for workspace');
     }
   }
 
   private async assertWorkspaceMember(
-    workspaceId: number,
-    userId: number,
+    workspaceId: string,
+    userId: string,
   ): Promise<void> {
     const workspace = await this.workspaceRepository.findById(workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
     }
     const isMember = await this.workspaceUserRepository.isMember(
-      workspaceId,
+      workspace.id,
       userId,
     );
     if (!isMember) {
       throw new Error('Not authorized for workspace');
     }
+  }
+
+  private normalizeIds(values: string[] | undefined): string[] {
+    return Array.isArray(values)
+      ? values
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter((value) => value.length > 0)
+      : [];
+  }
+
+  private normalizeOptionalId(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private normalizeRequiredId(value: unknown): string {
+    if (typeof value !== 'string') {
+      throw new Error('Service not found');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error('Service not found');
+    }
+    return trimmed;
   }
 }

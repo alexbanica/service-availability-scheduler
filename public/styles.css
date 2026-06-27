@@ -365,6 +365,11 @@ main {
   width: 100%;
 }
 
+.admin-service-management-section {
+  display: grid;
+  gap: 1rem;
+}
+
 .admin-workspace {
   display: grid;
   gap: 0.6rem;
@@ -387,7 +392,6 @@ main {
 .admin-workspace-info {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
   gap: 0.5rem;
   align-items: flex-start;
   min-width: 0;
@@ -408,18 +412,26 @@ main {
   gap: 0.5rem;
 }
 
-.admin-workspace-stats span {
+.admin-workspace-stats .stat-tag {
   border: 1px solid var(--border);
-  border-radius: 999px;
   padding: 0.2rem 0.65rem;
   background: var(--surface);
+  color: var(--ink);
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
+  box-shadow: none;
+}
+
+.admin-workspace-stats .stat-tag:hover,
+.admin-workspace-stats .stat-tag:focus-visible {
+  background: var(--highlight);
 }
 
 .admin-workspace-action {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   justify-content: flex-end;
 }
 
@@ -443,17 +455,20 @@ main {
   display: grid;
   gap: 0.75rem;
   margin-top: 0.75rem;
+  width: 100%;
 }
 
 .admin-service-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   padding: 0.75rem 1rem;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
 }
 
 .admin-service-tags {
@@ -480,6 +495,33 @@ main {
 
 .tag-input input:focus {
   outline: none;
+}
+
+.checkbox-list {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.modal-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.25rem;
 }
 
 .tag {
@@ -545,6 +587,11 @@ main {
   display: flex;
   justify-content: flex-start;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-service-actions button {
+  min-width: 5.5rem;
 }
 
 .in-use {

@@ -5,7 +5,7 @@ import {
 } from './AbstractMysqlRepository';
 
 type UserRoleRow = RowDataPacket & {
-  user_id: number;
+  user_id: string;
   role: string;
 };
 
@@ -14,7 +14,7 @@ export class UserRoleRepository extends AbstractMysqlRepository {
     super(db);
   }
 
-  async isPlatformAdmin(userId: number): Promise<boolean> {
+  async isPlatformAdmin(userId: string): Promise<boolean> {
     const row = await this.get<UserRoleRow>(
       'SELECT user_id, role FROM user_roles WHERE user_id = ? AND role = ?',
       [userId, 'platform_admin'],

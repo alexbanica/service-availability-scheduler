@@ -6,16 +6,34 @@ import {
 } from './AbstractMysqlRepository';
 
 type ServiceEnvironmentRow = RowDataPacket & {
-  service_id: number;
-  service_uuid: string;
-  workspace_id: number;
-  workspace_name: string;
   service_key: string;
-  environment_id: string;
-  environment_name: string;
+  service_id: string;
   label: string;
   default_minutes: number;
-  owner: string | null;
+  owner_id: string | null;
+  owner_name: string | null;
+  workspace_id: string;
+  workspace_name: string;
+  environment_id: string;
+  environment_name: string;
+};
+
+type OwnerSummaryRow = RowDataPacket & {
+  owner_id: string;
+  name: string;
+};
+
+type ServiceScopeRow = RowDataPacket & {
+  service_id: string;
+  workspace_id: string;
+  label: string;
+  default_minutes: number;
+  owner_id: string | null;
+};
+
+type ServiceRow = RowDataPacket & {
+  service_id: string;
+  workspace_id: string;
 };
 
 export class ServiceRepository extends AbstractMysqlRepository {
@@ -23,20 +41,30 @@ export class ServiceRepository extends AbstractMysqlRepository {
     super(db);
   }
 
+  withConnection(connection: MysqlConnection): ServiceRepository {
+    return new ServiceRepository(connection);
+  }
+
   async listServiceEnvironmentsByUser(
-    userId: number,
+    userId: string,
   ): Promise<ServiceDefinition[]> {
     const rows = await this.all<ServiceEnvironmentRow>(
-      `SELECT s.id AS service_id, s.service_id AS service_uuid, s.label,
-              s.default_minutes, s.owner, s.workspace_id,
+      `SELECT s.service_id AS service_id,
+              s.label,
+              s.default_minutes,
+              s.owner_id,
+              o.name AS owner_name,
+              s.workspace_id,
               w.name AS workspace_name,
-              e.environment_id, e.name AS environment_name,
+              e.environment_id,
+              e.name AS environment_name,
               se.service_key
        FROM services s
-       INNER JOIN service_environments se ON se.service_id = s.id
-       INNER JOIN environments e ON e.id = se.environment_id
-       INNER JOIN workspaces w ON w.id = s.workspace_id
+       INNER JOIN service_environments se ON se.service_id = s.service_id
+       INNER JOIN environments e ON e.environment_id = se.environment_id
+       INNER JOIN workspaces w ON w.workspace_id = s.workspace_id
        INNER JOIN workspace_users wu ON wu.workspace_id = s.workspace_id
+       LEFT JOIN owners o ON o.owner_id = s.owner_id
        WHERE wu.user_id = ?
        ORDER BY s.label, e.name`,
       [userId],
@@ -45,12 +73,13 @@ export class ServiceRepository extends AbstractMysqlRepository {
       (row) =>
         new ServiceDefinition(
           row.service_key,
-          row.service_uuid,
+          row.service_id,
           row.label,
           row.environment_id,
           row.environment_name,
           row.default_minutes,
-          row.owner,
+          row.owner_id,
+          row.owner_name,
           row.workspace_id,
           row.workspace_name,
         ),
@@ -59,19 +88,25 @@ export class ServiceRepository extends AbstractMysqlRepository {
 
   async findEnvironmentByKeyForUser(
     serviceKey: string,
-    userId: number,
+    userId: string,
   ): Promise<ServiceDefinition | null> {
     const row = await this.get<ServiceEnvironmentRow>(
-      `SELECT s.id AS service_id, s.service_id AS service_uuid, s.label,
-              s.default_minutes, s.owner, s.workspace_id,
+      `SELECT s.service_id AS service_id,
+              s.label,
+              s.default_minutes,
+              s.owner_id,
+              o.name AS owner_name,
+              s.workspace_id,
               w.name AS workspace_name,
-              e.environment_id, e.name AS environment_name,
+              e.environment_id,
+              e.name AS environment_name,
               se.service_key
        FROM services s
-       INNER JOIN service_environments se ON se.service_id = s.id
-       INNER JOIN environments e ON e.id = se.environment_id
-       INNER JOIN workspaces w ON w.id = s.workspace_id
+       INNER JOIN service_environments se ON se.service_id = s.service_id
+       INNER JOIN environments e ON e.environment_id = se.environment_id
+       INNER JOIN workspaces w ON w.workspace_id = s.workspace_id
        INNER JOIN workspace_users wu ON wu.workspace_id = s.workspace_id
+       LEFT JOIN owners o ON o.owner_id = s.owner_id
        WHERE se.service_key = ? AND wu.user_id = ?
        LIMIT 1`,
       [serviceKey, userId],
@@ -81,45 +116,46 @@ export class ServiceRepository extends AbstractMysqlRepository {
     }
     return new ServiceDefinition(
       row.service_key,
-      row.service_uuid,
+      row.service_id,
       row.label,
       row.environment_id,
       row.environment_name,
       row.default_minutes,
-      row.owner,
+      row.owner_id,
+      row.owner_name,
       row.workspace_id,
       row.workspace_name,
     );
   }
 
   async insertService(input: {
-    workspaceId: number;
+    workspaceId: string;
     serviceId: string;
     label: string;
     defaultMinutes: number;
-    owner: string | null;
-  }): Promise<number> {
-    const [result] = await this.db.query<ResultSetHeader>(
+    ownerId: string | null;
+  }): Promise<string> {
+    await this.run(
       `INSERT INTO services
-       (workspace_id, service_id, label, default_minutes, owner)
+       (workspace_id, service_id, label, default_minutes, owner_id)
        VALUES (?, ?, ?, ?, ?)`,
       [
         input.workspaceId,
         input.serviceId,
         input.label,
         input.defaultMinutes,
-        input.owner,
+        input.ownerId,
       ],
     );
-    return result.insertId;
+    return input.serviceId;
   }
 
-  async findServiceByUuid(
-    workspaceId: number,
+  async findServiceByWorkspaceAndId(
+    workspaceId: string,
     serviceId: string,
-  ): Promise<{ id: number; serviceId: string } | null> {
-    const row = await this.get<RowDataPacket & { id: number; service_id: string }>(
-      `SELECT id, service_id
+  ): Promise<{ serviceId: string; workspaceId: string; label: string; defaultMinutes: number; ownerId: string | null } | null> {
+    const row = await this.get<ServiceScopeRow>(
+      `SELECT service_id, workspace_id, label, default_minutes, owner_id
        FROM services
        WHERE workspace_id = ? AND service_id = ?
        LIMIT 1`,
@@ -128,63 +164,150 @@ export class ServiceRepository extends AbstractMysqlRepository {
     if (!row) {
       return null;
     }
-    return { id: row.id, serviceId: row.service_id };
+    return {
+      serviceId: row.service_id,
+      workspaceId: row.workspace_id,
+      label: row.label,
+      defaultMinutes: row.default_minutes,
+      ownerId: row.owner_id,
+    };
+  }
+
+  async isWorkspaceOwnerOwnedByWorkspace(
+    workspaceId: string,
+    ownerId: string,
+  ): Promise<boolean> {
+    const row = await this.get<RowDataPacket>(
+      `SELECT owner_id
+       FROM owners
+       WHERE owner_id = ? AND workspace_id = ?
+       LIMIT 1`,
+      [ownerId, workspaceId],
+    );
+    return Boolean(row);
+  }
+
+  async findOwnerByWorkspaceAndName(
+    workspaceId: string,
+    name: string,
+  ): Promise<{ ownerId: string } | null> {
+    const row = await this.get<RowDataPacket & { owner_id: string }>(
+      `SELECT owner_id
+       FROM owners
+       WHERE workspace_id = ? AND LOWER(name) = LOWER(?)
+       LIMIT 1`,
+      [workspaceId, name],
+    );
+    return row ? { ownerId: row.owner_id } : null;
+  }
+
+  async insertOwner(input: {
+    workspaceId: string;
+    ownerId: string;
+    name: string;
+  }): Promise<string> {
+    await this.run(
+      `INSERT INTO owners (owner_id, workspace_id, name)
+       VALUES (?, ?, ?)`,
+      [input.ownerId, input.workspaceId, input.name],
+    );
+    return input.ownerId;
+  }
+
+  async updateServiceMetadata(
+    workspaceId: string,
+    serviceId: string,
+    label: string,
+    defaultMinutes: number,
+    ownerId: string | null,
+  ): Promise<void> {
+    await this.run(
+      `UPDATE services
+       SET label = ?, owner_id = ?, default_minutes = ?
+       WHERE service_id = ? AND workspace_id = ?`,
+      [label, ownerId, defaultMinutes, serviceId, workspaceId],
+    );
   }
 
   async findEnvironmentByName(
-    workspaceId: number,
+    workspaceId: string,
     name: string,
-  ): Promise<{ id: number; environmentId: string } | null> {
-    const row = await this.get<
-      RowDataPacket & { id: number; environment_id: string }
-    >(
-      `SELECT id, environment_id
+  ): Promise<{ environmentId: string } | null> {
+    const row = await this.get<RowDataPacket & { environment_id: string }>(
+      `SELECT environment_id
        FROM environments
        WHERE workspace_id = ? AND name = ?
        LIMIT 1`,
       [workspaceId, name],
     );
-    if (!row) {
-      return null;
-    }
-    return { id: row.id, environmentId: row.environment_id };
+    return row ? { environmentId: row.environment_id } : null;
+  }
+
+  async getEnvironmentById(
+    workspaceId: string,
+    environmentId: string,
+  ): Promise<boolean> {
+    const row = await this.get<RowDataPacket>(
+      `SELECT environment_id
+       FROM environments
+       WHERE workspace_id = ? AND environment_id = ?
+       LIMIT 1`,
+      [workspaceId, environmentId],
+    );
+    return Boolean(row);
   }
 
   async insertEnvironment(input: {
-    workspaceId: number;
+    workspaceId: string;
     environmentId: string;
     name: string;
-  }): Promise<number> {
-    const [result] = await this.db.query<ResultSetHeader>(
-      `INSERT INTO environments
-       (workspace_id, environment_id, name)
+  }): Promise<string> {
+    await this.run(
+      `INSERT INTO environments (environment_id, workspace_id, name)
        VALUES (?, ?, ?)`,
-      [input.workspaceId, input.environmentId, input.name],
+      [input.environmentId, input.workspaceId, input.name],
     );
-    return result.insertId;
+    return input.environmentId;
   }
 
   async insertServiceEnvironment(input: {
-    serviceDbId: number;
-    environmentDbId: number;
+    serviceId: string;
+    environmentId: string;
     serviceKey: string;
-  }): Promise<number> {
-    const [result] = await this.db.query<ResultSetHeader>(
+  }): Promise<void> {
+    await this.run(
       `INSERT INTO service_environments
        (service_id, environment_id, service_key)
        VALUES (?, ?, ?)`,
-      [input.serviceDbId, input.environmentDbId, input.serviceKey],
+      [input.serviceId, input.environmentId, input.serviceKey],
     );
-    return result.insertId;
+  }
+
+  async deleteServiceEnvironmentAssociationsNotIn(
+    serviceId: string,
+    environmentIds: string[],
+  ): Promise<void> {
+    if (!environmentIds.length) {
+      await this.run('DELETE FROM service_environments WHERE service_id = ?', [serviceId]);
+      return;
+    }
+
+    const placeholders = environmentIds.map(() => '?').join(',');
+    await this.run(
+      `DELETE FROM service_environments
+       WHERE service_id = ?
+       AND environment_id NOT IN (${placeholders})`,
+      [serviceId, ...environmentIds],
+    );
   }
 
   async listEnvironmentsByWorkspace(
-    workspaceId: number,
+    workspaceId: string,
   ): Promise<Array<{ environmentId: string; environmentName: string }>> {
     const rows = await this.all<
       RowDataPacket & { environment_id: string; environment_name: string }
     >(
-      `SELECT DISTINCT environment_id, name AS environment_name
+      `SELECT environment_id, name AS environment_name
        FROM environments
        WHERE workspace_id = ?
        ORDER BY environment_name`,
@@ -196,24 +319,27 @@ export class ServiceRepository extends AbstractMysqlRepository {
     }));
   }
 
-  async listOwnersByWorkspace(workspaceId: number): Promise<string[]> {
-    const rows = await this.all<RowDataPacket & { owner: string }>(
-      `SELECT DISTINCT owner
-       FROM services
-       WHERE workspace_id = ? AND owner IS NOT NULL AND owner <> ''
-       ORDER BY owner`,
+  async listOwnersByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ ownerId: string; name: string }>> {
+    const rows = await this.all<OwnerSummaryRow>(
+      `SELECT owner_id, name
+       FROM owners
+       WHERE workspace_id = ?
+       ORDER BY name`,
       [workspaceId],
     );
-    return rows.map((row) => row.owner);
+    return rows.map((row) => ({ ownerId: row.owner_id, name: row.name }));
   }
 
   async listServiceCatalogByWorkspace(
-    workspaceId: number,
+    workspaceId: string,
   ): Promise<
     Array<{
       serviceId: string;
       label: string;
-      owner: string | null;
+      ownerId: string | null;
+      ownerName: string | null;
       defaultMinutes: number;
       environmentId: string;
       environmentName: string;
@@ -223,17 +349,19 @@ export class ServiceRepository extends AbstractMysqlRepository {
       RowDataPacket & {
         service_id: string;
         label: string;
-        owner: string | null;
+        owner_id: string | null;
+        owner_name: string | null;
         default_minutes: number;
         environment_id: string;
         environment_name: string;
       }
     >(
-      `SELECT s.service_id, s.label, s.owner, s.default_minutes,
-              e.environment_id, e.name AS environment_name
+      `SELECT s.service_id, s.label, s.owner_id, o.name AS owner_name,
+              s.default_minutes, e.environment_id, e.name AS environment_name
        FROM services s
-       INNER JOIN service_environments se ON se.service_id = s.id
-       INNER JOIN environments e ON e.id = se.environment_id
+       INNER JOIN service_environments se ON se.service_id = s.service_id
+       INNER JOIN environments e ON e.environment_id = se.environment_id
+       LEFT JOIN owners o ON o.owner_id = s.owner_id
        WHERE s.workspace_id = ?
        ORDER BY s.label, e.name`,
       [workspaceId],
@@ -241,21 +369,40 @@ export class ServiceRepository extends AbstractMysqlRepository {
     return rows.map((row) => ({
       serviceId: row.service_id,
       label: row.label,
-      owner: row.owner,
+      ownerId: row.owner_id,
+      ownerName: row.owner_name,
       defaultMinutes: row.default_minutes,
       environmentId: row.environment_id,
       environmentName: row.environment_name,
     }));
   }
 
+  async listServiceSummariesByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ serviceId: string; label: string }>> {
+    const rows = await this.all<
+      RowDataPacket & { service_id: string; label: string }
+    >(
+      `SELECT service_id, label
+       FROM services
+       WHERE workspace_id = ?
+       ORDER BY label`,
+      [workspaceId],
+    );
+    return rows.map((row) => ({
+      serviceId: row.service_id,
+      label: row.label,
+    }));
+  }
+
   async deleteServiceByWorkspaceAndId(
-    workspaceId: number,
+    workspaceId: string,
     serviceId: string,
   ): Promise<number> {
     const [result] = await this.db.query<ResultSetHeader>(
       `DELETE s, se
        FROM services s
-       LEFT JOIN service_environments se ON se.service_id = s.id
+       LEFT JOIN service_environments se ON se.service_id = s.service_id
        WHERE s.workspace_id = ? AND s.service_id = ?`,
       [workspaceId, serviceId],
     );
