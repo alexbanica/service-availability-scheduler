@@ -436,23 +436,24 @@
                             </span>
                           </div>
                         </div>
-                        <div class="admin-service-actions">
-                            <button
-                              v-if="selectedServiceWorkspaceIsAdmin"
-                              type="button"
-                              @click="openEditService(
-                                service.serviceId,
-                                service.label,
-                                service.defaultMinutes,
-                                service.environments
-                              )"
-                            >
-                            {{ editingServiceId === service.serviceId ? 'Cancel edit' : 'Edit' }}
+                        <div
+                          v-if="selectedServiceWorkspaceIsAdmin && editingServiceId !== service.serviceId"
+                          class="admin-service-actions"
+                        >
+                          <button
+                            type="button"
+                            @click="openEditService(
+                              service.serviceId,
+                              service.label,
+                              service.defaultMinutes,
+                              service.environments
+                            )"
+                          >
+                            Edit
                           </button>
                           <button
-                            v-if="selectedServiceWorkspaceIsAdmin"
                             type="button"
-                            class="secondary"
+                            class="danger"
                             @click="openDeleteConfirmation(service.serviceId, service.label)"
                           >
                             Delete
@@ -542,11 +543,18 @@
                               Cancel
                             </button>
                             <button
-                              class="secondary"
                               type="submit"
                               :disabled="serviceEditSubmitting"
                             >
-                              {{ serviceEditSubmitting ? 'Saving...' : 'Save service' }}
+                              {{ serviceEditSubmitting ? 'Saving...' : 'Save Service' }}
+                            </button>
+                            <button
+                              type="button"
+                              class="danger"
+                              :disabled="serviceEditSubmitting"
+                              @click="openDeleteConfirmation(service.serviceId, service.label)"
+                            >
+                              Delete
                             </button>
                           </div>
                           <div class="error" role="status" aria-live="polite">{{ serviceEditError }}</div>
