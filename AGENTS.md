@@ -9,7 +9,8 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Keep behavior deterministic and testable.
 - Inspect `git status --short --branch` before edits and preserve unrelated worktree changes.
 - Do not commit credentials, `.env` files, local database dumps, generated `public/js` bundles, or `node_modules`.
-- Do not run `npm run lint` or `npm run format` unless formatting changes are intended, because those scripts rewrite files.
+- Developer agents must run `npm run lint` during implementation validation and fix every lint issue reported by that command before handing work back.
+- The main agent must run `npm run format` before committing accepted changes so Prettier normalizes the codebase.
 
 ## Project Architecture
 - The project uses Domain Driven Design and onion architecture.
@@ -44,6 +45,8 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 
 ## Validation
 - Build server and browser TypeScript with `npm run build`.
+- Run lint with `npm run lint`; all reported issues must be fixed by the developer agent before completion.
+- Run format with `npm run format` before committing accepted changes; the main agent may perform this final formatting pass.
 - Run the full automated test suite with `npm test`.
 - Run focused TypeScript checks with `npx tsc -p tsconfig.json --noEmit` or `npx tsc -p tsconfig.client.json --noEmit` when faster targeted validation is appropriate.
 - Run `git diff --check` before completing edits.
