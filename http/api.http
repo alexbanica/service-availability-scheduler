@@ -1,0 +1,160 @@
+@host = http://localhost:3000
+@token = replace-with-login-token
+@workspaceId = replace-with-workspace-uuid
+@serviceId = replace-with-service-id
+@serviceKey = replace-with-service-key
+@environmentId = replace-with-environment-uuid
+@ownerId = replace-with-owner-uuid
+
+### Login
+# @name login
+POST {{host}}/api/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com"
+}
+
+### Current user
+GET {{host}}/api/me
+Authorization: Bearer {{token}}
+
+### Renew bearer token
+POST {{host}}/api/renew
+Authorization: Bearer {{token}}
+
+### Logout
+POST {{host}}/api/logout
+Authorization: Bearer {{token}}
+
+### List service availability
+GET {{host}}/api/services
+Authorization: Bearer {{token}}
+
+### Claim a service environment
+POST {{host}}/api/claim
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "service_key": "{{serviceKey}}",
+  "claimed_by_label": "",
+  "claimed_by_team": false
+}
+
+### Release a service environment
+POST {{host}}/api/release
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "service_key": "{{serviceKey}}"
+}
+
+### Extend a service environment
+POST {{host}}/api/extend
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "service_key": "{{serviceKey}}"
+}
+
+### List workspaces
+GET {{host}}/api/workspaces
+Authorization: Bearer {{token}}
+
+### Create workspace
+POST {{host}}/api/workspaces
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Example workspace"
+}
+
+### List workspace services
+GET {{host}}/api/workspaces/{{workspaceId}}/services
+Authorization: Bearer {{token}}
+
+### Create workspace service
+POST {{host}}/api/workspaces/{{workspaceId}}/services
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "label": "Example service",
+  "default_minutes": 60,
+  "owner_id": "{{ownerId}}",
+  "environment_ids": ["{{environmentId}}"],
+  "environment_names": []
+}
+
+### Update workspace service
+PATCH {{host}}/api/workspaces/{{workspaceId}}/services/{{serviceId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "label": "Example service",
+  "default_minutes": 90,
+  "owner_id": "{{ownerId}}",
+  "environment_ids": ["{{environmentId}}"],
+  "environment_names": []
+}
+
+### Delete workspace service
+DELETE {{host}}/api/workspaces/{{workspaceId}}/services/{{serviceId}}
+Authorization: Bearer {{token}}
+
+### List workspace environments
+GET {{host}}/api/workspaces/{{workspaceId}}/environments
+Authorization: Bearer {{token}}
+
+### Create workspace environment
+POST {{host}}/api/workspaces/{{workspaceId}}/environments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "staging"
+}
+
+### List workspace owners
+GET {{host}}/api/workspaces/{{workspaceId}}/owners
+Authorization: Bearer {{token}}
+
+### Create workspace owner
+POST {{host}}/api/workspaces/{{workspaceId}}/owners
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Platform"
+}
+
+### Workspace detail rows: users
+GET {{host}}/api/workspaces/{{workspaceId}}/detail/users
+Authorization: Bearer {{token}}
+
+### Workspace detail rows: services
+GET {{host}}/api/workspaces/{{workspaceId}}/detail/services
+Authorization: Bearer {{token}}
+
+### Workspace detail rows: owners
+GET {{host}}/api/workspaces/{{workspaceId}}/detail/owners
+Authorization: Bearer {{token}}
+
+### Workspace detail rows: environments
+GET {{host}}/api/workspaces/{{workspaceId}}/detail/environments
+Authorization: Bearer {{token}}
+
+### Invite user to workspace
+POST {{host}}/api/workspaces/{{workspaceId}}/invitations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+
