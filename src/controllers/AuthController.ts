@@ -1,9 +1,21 @@
 import type { Express, Request, Response } from 'express';
 import { UserService } from '../services/UserService';
-import { requireAuth } from './AuthMiddleware';
+import { JwtAuthService } from '../services/JwtAuthService';
+import { assignJwtAuthService, requireAuth } from './AuthMiddleware';
+
+type AuthenticatedRequest = Request & {
+  authenticatedUser: {
+    userId: string;
+    email: string;
+    nickname: string;
+  };
+};
 
 export class AuthController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly jwtAuthService: JwtAuthService,
+  ) {}
 
   register(app: Express): void {
     app.post('/api/login', async (req: Request, res: Response) => {
@@ -21,24 +33,60 @@ export class AuthController {
         return;
       }
 
-      req.session.userId = user.userId;
-      req.session.email = user.email;
-      req.session.nickname = user.nickname;
-      res.json({ ok: true, user });
-    });
-
-    app.post('/api/logout', requireAuth, (req: Request, res: Response) => {
-      req.session.destroy(() => {
-        res.json({ ok: true });
+      const token = await this.jwtAuthService.issueToken({
+        userId: user.userId,
+        email: user.email,
+        nickname: user.nickname,
       });
-    });
 
-    app.get('/api/me', requireAuth, (req: Request, res: Response) => {
       res.json({
-        id: req.session.userId,
-        email: req.session.email,
-        nickname: req.session.nickname,
+        ok: true,
+        user,
+        token,
+        token_type: 'Bearer',
+        expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
       });
     });
+
+    app.post('/api/logout', requireAuth, async (_req: Request, res: Response) => {
+      res.json({ ok: true });
+    });
+
+    app.get('/api/me', requireAuth, async (_req: Request, res: Response) => {
+      const reqWithUser = _req as AuthenticatedRequest;
+      if (!reqWithUser.authenticatedUser) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      res.json({
+        id: reqWithUser.authenticatedUser.userId,
+        email: reqWithUser.authenticatedUser.email,
+        nickname: reqWithUser.authenticatedUser.nickname,
+      });
+    });
+
+    app.post('/api/renew', requireAuth, async (_req: Request, res: Response) => {
+      const reqWithUser = _req as AuthenticatedRequest;
+      if (!reqWithUser.authenticatedUser) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+
+      const token = await this.jwtAuthService.issueToken({
+        userId: reqWithUser.authenticatedUser.userId,
+        email: reqWithUser.authenticatedUser.email,
+        nickname: reqWithUser.authenticatedUser.nickname,
+      });
+
+      res.json({
+        ok: true,
+        user: reqWithUser.authenticatedUser,
+        token,
+        token_type: 'Bearer',
+        expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
+      });
+    });
+
+    assignJwtAuthService(app, this.jwtAuthService);
   }
 }

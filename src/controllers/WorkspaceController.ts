@@ -2,6 +2,16 @@ import type { Express, Request, Response } from 'express';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { requireAuth } from './AuthMiddleware';
 
+const getAuthenticatedUserId = (req: Request, res: Response): string | null => {
+  const userId = (req as { authenticatedUser?: { userId?: string } })
+    .authenticatedUser?.userId;
+  if (!userId) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return null;
+  }
+  return userId;
+};
+
 export class WorkspaceController {
   constructor(private readonly workspaceService: WorkspaceService) {}
 
@@ -10,9 +20,11 @@ export class WorkspaceController {
       '/api/workspaces',
       requireAuth,
       async (req: Request, res: Response) => {
-        const list = await this.workspaceService.listWorkspaces(
-          req.session.userId as string,
-        );
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const list = await this.workspaceService.listWorkspaces(userId);
         res.json({
           workspaces: list.map((workspace) => ({
             id: workspace.id,
@@ -31,10 +43,14 @@ export class WorkspaceController {
       '/api/workspaces',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const name = String(req.body.name || '');
         try {
           const workspace = await this.workspaceService.createWorkspace(
-            req.session.userId as string,
+            userId,
             name,
           );
           res.status(201).json({
@@ -64,6 +80,10 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/services',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         const environmentIds = Array.isArray(req.body.environment_ids)
           ? req.body.environment_ids.map((id: unknown) => String(id || '').trim())
@@ -74,7 +94,7 @@ export class WorkspaceController {
         try {
           const result = await this.workspaceService.createService(
             workspaceId,
-            req.session.userId as string,
+            userId,
             {
               environmentIds,
               environmentNames,
@@ -113,6 +133,10 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/services/:serviceId',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         const serviceId = decodeURIComponent(String(req.params.serviceId));
         const environmentIds = Array.isArray(req.body.environment_ids)
@@ -124,7 +148,7 @@ export class WorkspaceController {
         try {
           const result = await this.workspaceService.updateService(
             workspaceId,
-            req.session.userId as string,
+            userId,
             {
               serviceId,
               environmentIds,
@@ -160,12 +184,16 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/services/:serviceId',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         const serviceId = decodeURIComponent(String(req.params.serviceId));
         try {
           await this.workspaceService.deleteService(
             workspaceId,
-            req.session.userId as string,
+            userId,
             serviceId,
           );
           res.status(204).send();
@@ -192,11 +220,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/services',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const catalog = await this.workspaceService.listServiceCatalog(
             workspaceId,
-            req.session.userId as string,
+            userId,
           );
           res.json({
             services: catalog.map((svc) => ({
@@ -230,11 +262,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/environments',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const environments = await this.workspaceService.listEnvironments(
             workspaceId,
-            req.session.userId as string,
+            userId,
           );
           res.json({
             environments: environments.map((env) => ({
@@ -261,11 +297,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/environments',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const environment = await this.workspaceService.createEnvironment(
             workspaceId,
-            req.session.userId as string,
+            userId,
             { name: String(req.body.name || '') },
           );
           res.status(201).json({
@@ -281,11 +321,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/owners',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const owners = await this.workspaceService.listOwners(
             workspaceId,
-            req.session.userId as string,
+            userId,
           );
           res.json({
             owners: owners.map((item) => ({
@@ -312,11 +356,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/owners',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const owner = await this.workspaceService.createOwner(
             workspaceId,
-            req.session.userId as string,
+            userId,
             { name: String(req.body.name || '') },
           );
           res.status(201).json({
@@ -332,11 +380,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/detail/users',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const items = await this.workspaceService.listWorkspacePopupRows(
             workspaceId,
-            req.session.userId as string,
+            userId,
             'users',
           );
           res.json({ items });
@@ -350,11 +402,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/detail/services',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const items = await this.workspaceService.listWorkspacePopupRows(
             workspaceId,
-            req.session.userId as string,
+            userId,
             'services',
           );
           res.json({ items });
@@ -368,11 +424,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/detail/owners',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const items = await this.workspaceService.listWorkspacePopupRows(
             workspaceId,
-            req.session.userId as string,
+            userId,
             'owners',
           );
           res.json({ items });
@@ -386,11 +446,15 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/detail/environments',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         try {
           const items = await this.workspaceService.listWorkspacePopupRows(
             workspaceId,
-            req.session.userId as string,
+            userId,
             'environments',
           );
           res.json({ items });
@@ -404,12 +468,16 @@ export class WorkspaceController {
       '/api/workspaces/:workspaceId/invitations',
       requireAuth,
       async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
         const workspaceId = String(req.params.workspaceId || '');
         const inviteeEmail = String(req.body.email || '');
         try {
           const invitation = await this.workspaceService.inviteUser(
             workspaceId,
-            req.session.userId as string,
+            userId,
             inviteeEmail,
           );
           res.status(201).json({

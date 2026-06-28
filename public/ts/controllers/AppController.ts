@@ -1,4 +1,5 @@
 import { AuthService } from '../services/AuthService.js';
+import { ApiService } from '../services/ApiService.js';
 import { ReservationService } from '../services/ReservationService.js';
 import { EventsService } from '../services/EventsService.js';
 import { User } from '../entities/User.js';
@@ -15,7 +16,10 @@ import { Workspace } from '../entities/Workspace.js';
 
 export class AppController {
   private refreshTimer: number | null = null;
+  private tokenRenewalTimer: number | null = null;
   private readonly eventsService = new EventsService();
+  private readonly tokenRenewBeforeMs = 60_000;
+  private readonly tokenRenewCheckMs = 30_000;
   private readonly ownerFilterStorageKey = 'ownerFilter';
   private readonly workspaceFilterStorageKey = 'workspaceFilter';
 
@@ -500,9 +504,7 @@ export class AppController {
 
         const loadAppInfo = async () => {
           try {
-            const response = await fetch('/api/app-info', {
-              credentials: 'include',
-            });
+            const response = await ApiService.get('/api/app-info');
             if (!response.ok) {
               return;
             }
@@ -1568,10 +1570,17 @@ export class AppController {
           });
         };
 
+        const scheduleTokenRenewal = () => {
+          this.scheduleTokenRenewal();
+        };
+
         onMounted(async () => {
           applyTheme(theme.value);
           try {
             await loadUser();
+            if (AuthService.hasToken() && !AuthService.isTokenExpired()) {
+              scheduleTokenRenewal();
+            }
             await loadWorkspaces();
             await loadServices();
             await loadAppInfo();
@@ -1753,5 +1762,37 @@ export class AppController {
         };
       },
     }).mount('#app');
+  }
+
+  private scheduleTokenRenewal(): void {
+    if (this.tokenRenewalTimer) {
+      window.clearTimeout(this.tokenRenewalTimer);
+    }
+
+    const scheduleNextCheck = (): void => {
+      this.tokenRenewalTimer = window.setTimeout(() => {
+        this.scheduleTokenRenewal();
+      }, this.tokenRenewCheckMs);
+    };
+
+    if (!AuthService.hasToken()) {
+      return;
+    }
+
+    if (!AuthService.isTokenRenewalDue(this.tokenRenewBeforeMs)) {
+      scheduleNextCheck();
+      return;
+    }
+
+    this.tokenRenewalTimer = window.setTimeout(async () => {
+      const renewed = await AuthService.renew();
+      if (!renewed) {
+        if (AuthService.hasToken()) {
+          scheduleNextCheck();
+        }
+        return;
+      }
+      this.scheduleTokenRenewal();
+    }, 0);
   }
 }

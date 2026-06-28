@@ -1,16 +1,11 @@
-import path from 'path';
+import path from 'node:path';
 import type { Express, Request, Response } from 'express';
-import { requireAuth } from './AuthMiddleware';
 
 export class PageController {
   constructor(private readonly rootDir: string) {}
 
   register(app: Express): void {
-    app.get('/login', (req: Request, res: Response) => {
-      if (req.session.userId) {
-        res.redirect('/');
-        return;
-      }
+    app.get('/login', (_req: Request, res: Response) => {
       res.sendFile(path.join(this.rootDir, 'public', 'login.html'));
     });
 
@@ -20,7 +15,7 @@ export class PageController {
       });
     });
 
-    app.get('/', requireAuth, (req: Request, res: Response) => {
+    app.get('/', (_req: Request, res: Response) => {
       res.sendFile(path.join(this.rootDir, 'public', 'index.html'));
     });
   }

@@ -114,21 +114,16 @@ export class WorkspaceService {
       ownerId?: string | null;
     },
   ): Promise<{ serviceId: string }> {
-    const response = await fetch(
+    const response = await ApiService.patch(
       `/api/workspaces/${workspaceId}/services/${encodeURIComponent(
         serviceId,
       )}`,
       {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          environment_ids: input.environmentIds,
-          environment_names: input.environmentNames,
-          label: input.label,
-          default_minutes: input.defaultMinutes,
-          owner_id: input.ownerId || null,
-        }),
+        environment_ids: input.environmentIds,
+        environment_names: input.environmentNames,
+        label: input.label,
+        default_minutes: input.defaultMinutes,
+        owner_id: input.ownerId || null,
       },
     );
     const data = (await response.json()) as Record<string, unknown>;
