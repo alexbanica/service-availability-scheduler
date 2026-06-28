@@ -1,5 +1,0 @@
-1. Account UserManagement
-2. Website Registrations
-3. Sending email invitations to users/unregistered users
-4. Update login to jwt. Allow bearer token to be sent in header.
-5. Google Auth Register+Login
