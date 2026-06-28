@@ -1,38 +1,57 @@
-import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { RowDataPacket } from 'mysql2/promise';
 import { User } from '../entities/User';
-import { AbstractMysqlRepository } from './AbstractMysqlRepository';
+import {
+  AbstractMysqlRepository,
+  MysqlConnection,
+} from './AbstractMysqlRepository';
 
 type UserRow = RowDataPacket & {
-  id: number;
+  user_id: string;
   email: string;
   nickname: string;
 };
 
 export class UserRepository extends AbstractMysqlRepository {
-  constructor(db: Pool) {
+  constructor(db: MysqlConnection) {
     super(db);
   }
 
   async findByEmail(email: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT id, email, nickname FROM users WHERE email = ?',
+      'SELECT user_id, email, nickname FROM users WHERE email = ?',
       [email],
     );
     if (!row) {
       return null;
     }
-    return new User(row.id, row.email, row.nickname);
+    return new User(row.user_id, row.email, row.nickname);
   }
 
-  async findByIds(ids: number[]): Promise<User[]> {
+  async findById(id: string): Promise<User | null> {
+    const row = await this.get<UserRow>(
+      'SELECT user_id, email, nickname FROM users WHERE user_id = ?',
+      [id],
+    );
+    return row ? new User(row.user_id, row.email, row.nickname) : null;
+  }
+
+  async findByIds(ids: string[]): Promise<User[]> {
     if (!ids.length) {
       return [];
     }
     const placeholders = ids.map(() => '?').join(',');
     const rows = await this.all<UserRow>(
-      `SELECT id, email, nickname FROM users WHERE id IN (${placeholders})`,
+      `SELECT user_id, email, nickname FROM users WHERE user_id IN (${placeholders})`,
       ids,
     );
-    return rows.map((row) => new User(row.id, row.email, row.nickname));
+    return rows.map((row) => new User(row.user_id, row.email, row.nickname));
+  }
+
+  async insert(id: string, email: string, nickname: string): Promise<void> {
+    await this.run('INSERT INTO users (user_id, email, nickname) VALUES (?, ?, ?)', [
+      id,
+      email,
+      nickname,
+    ]);
   }
 }

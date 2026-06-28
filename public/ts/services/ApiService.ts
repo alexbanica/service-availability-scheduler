@@ -14,4 +14,11 @@ export class ApiService {
       body: JSON.stringify(payload || {}),
     });
   }
+
+  static async delete(path: string): Promise<Response> {
+    return fetch(path, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  }
 }

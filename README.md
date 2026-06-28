@@ -35,7 +35,9 @@ Open `http://localhost:3000`.
 ## Config
 
 Edit `config/app.yml` for `expiry_warning_minutes` and `auto_refresh_minutes`.
-Edit `config/services.yml` to define services with owners and the environments they are deployed to.
+Workspace admins define workspace owners, environments, and services from the
+admin UI. Service creation selects existing workspace-scoped owners and
+environments; it does not create them inline.
 
 ## Schema + seed data
 
@@ -43,3 +45,5 @@ Schema files live in `config/schema` with one `<table>.sql` per table.
 Optional seed data lives in `config/seed` with one `<table>.sql` per table.
 On startup, any schema file whose table is missing is executed once, and its
 matching seed file (if present) is executed immediately afterward.
+The current schema targets an empty database and uses UUID string identifiers
+for users, workspaces, services, environments, owners, and relationships.

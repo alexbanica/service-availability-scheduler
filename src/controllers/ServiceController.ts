@@ -10,24 +10,31 @@ export class ServiceController {
       '/api/services',
       requireAuth,
       async (req: Request, res: Response) => {
-        const list = await this.reservationService.getServiceList(new Date());
+        const list = await this.reservationService.getServiceList(
+          req.session.userId as string,
+          new Date(),
+        );
         res.json({
           expiry_warning_minutes: list.expiryWarningMinutes,
           auto_refresh_minutes: list.autoRefreshMinutes,
           services: list.services.map((svc) => ({
-            key: svc.key,
-            environment_id: svc.environmentId,
-            environment: svc.environment,
-            id: svc.id,
+            service_id: svc.serviceId,
             label: svc.label,
             default_minutes: svc.defaultMinutes,
             owner: svc.owner,
-            active: svc.active,
-            claimed_by: svc.claimedBy,
-            claimed_by_id: svc.claimedById,
-            claimed_at: svc.claimedAt,
-            expires_at: svc.expiresAt,
-            claimed_by_team: svc.claimedByTeam,
+            workspace_id: svc.workspaceId,
+            workspace_name: svc.workspaceName,
+            environments: svc.environments.map((env) => ({
+              service_key: env.serviceKey,
+              environment_id: env.environmentId,
+              environment: env.environment,
+              active: env.active,
+              claimed_by: env.claimedBy,
+              claimed_by_id: env.claimedById,
+              claimed_at: env.claimedAt,
+              expires_at: env.expiresAt,
+              claimed_by_team: env.claimedByTeam,
+            })),
           })),
         });
       },

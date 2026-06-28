@@ -9,7 +9,7 @@ export class AuthService {
       return null;
     }
     const data = (await response.json()) as {
-      id: number;
+      id: string;
       email: string;
       nickname: string;
     };

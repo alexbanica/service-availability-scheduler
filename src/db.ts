@@ -59,13 +59,32 @@ async function listSqlFiles(
 ): Promise<Array<{ tableName: string; path: string }>> {
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const order = new Map<string, number>([
+      ['users', 10],
+      ['user_roles', 20],
+      ['workspaces', 30],
+      ['workspace_users', 40],
+      ['workspace_invitations', 50],
+      ['owners', 60],
+      ['services', 70],
+      ['environments', 80],
+      ['service_environments', 90],
+      ['reservations', 100],
+    ]);
     return entries
       .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))
       .map((entry) => {
         const tableName = path.basename(entry.name, '.sql');
         return { tableName, path: path.join(dirPath, entry.name) };
       })
-      .sort((a, b) => a.tableName.localeCompare(b.tableName));
+      .sort((a, b) => {
+        const aOrder = order.get(a.tableName) ?? 100;
+        const bOrder = order.get(b.tableName) ?? 100;
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+        return a.tableName.localeCompare(b.tableName);
+      });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return [];

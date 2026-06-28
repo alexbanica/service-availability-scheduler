@@ -1,13 +1,16 @@
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { ConfigService } from './ConfigService';
-import { AppConfigDto } from '../dtos/AppConfigDto';
+export type AppConfig = {
+  expiryWarningMinutes: number;
+  autoRefreshMinutes: number;
+};
 
 export class ConfigLoaderService {
-  loadConfig(appConfigPath: string, servicesConfigPath: string): AppConfigDto {
+  loadConfig(appConfigPath: string): AppConfig {
     const appConfig = this.loadYaml(appConfigPath);
-    const servicesConfig = this.loadYaml(servicesConfigPath);
-    return new ConfigService(appConfig, servicesConfig).toDto();
+    const expiryWarningMinutes = Number(appConfig.expiry_warning_minutes ?? 5);
+    const autoRefreshMinutes = Number(appConfig.auto_refresh_minutes ?? 2);
+    return { expiryWarningMinutes, autoRefreshMinutes };
   }
 
   private loadYaml(configPath: string): Record<string, unknown> {
