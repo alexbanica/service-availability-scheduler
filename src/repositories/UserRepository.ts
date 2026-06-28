@@ -48,10 +48,9 @@ export class UserRepository extends AbstractMysqlRepository {
   }
 
   async insert(id: string, email: string, nickname: string): Promise<void> {
-    await this.run('INSERT INTO users (user_id, email, nickname) VALUES (?, ?, ?)', [
-      id,
-      email,
-      nickname,
-    ]);
+    await this.run(
+      'INSERT INTO users (user_id, email, nickname) VALUES (?, ?, ?)',
+      [id, email, nickname],
+    );
   }
 }

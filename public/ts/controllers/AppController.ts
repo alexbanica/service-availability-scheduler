@@ -1,4 +1,5 @@
 import { AuthService } from '../services/AuthService.js';
+import { ApiService } from '../services/ApiService.js';
 import { ReservationService } from '../services/ReservationService.js';
 import { EventsService } from '../services/EventsService.js';
 import { User } from '../entities/User.js';
@@ -15,7 +16,10 @@ import { Workspace } from '../entities/Workspace.js';
 
 export class AppController {
   private refreshTimer: number | null = null;
+  private tokenRenewalTimer: number | null = null;
   private readonly eventsService = new EventsService();
+  private readonly tokenRenewBeforeMs = 60_000;
+  private readonly tokenRenewCheckMs = 30_000;
   private readonly ownerFilterStorageKey = 'ownerFilter';
   private readonly workspaceFilterStorageKey = 'workspaceFilter';
 
@@ -90,7 +94,10 @@ export class AppController {
         } | null>(null);
         const workspaceRowsRequestId = ref(0);
         const workspaceEnvironments = ref<
-          Record<string, Array<{ environmentId: string; environmentName: string }>>
+          Record<
+            string,
+            Array<{ environmentId: string; environmentName: string }>
+          >
         >({});
         const workspaceOwners = ref<Record<string, WorkspaceOwnerOption[]>>({});
         const workspaceServiceCatalog = ref<
@@ -102,7 +109,10 @@ export class AppController {
               owner: string | null;
               ownerId: string | null;
               defaultMinutes: number;
-              environments: Array<{ environmentId: string; environmentName: string }>;
+              environments: Array<{
+                environmentId: string;
+                environmentName: string;
+              }>;
             }>
           >
         >({});
@@ -168,11 +178,11 @@ export class AppController {
               (workspace) => workspace.id === selectedServiceWorkspaceId.value,
             ) || null,
         );
-        const selectedServiceCatalog = computed(
-          () =>
-            selectedServiceWorkspaceId.value
-              ? workspaceServiceCatalog.value[selectedServiceWorkspaceId.value] || []
-              : [],
+        const selectedServiceCatalog = computed(() =>
+          selectedServiceWorkspaceId.value
+            ? workspaceServiceCatalog.value[selectedServiceWorkspaceId.value] ||
+              []
+            : [],
         );
         const isWorkspaceAdmin = (workspaceId: string | null): boolean =>
           !!user.value &&
@@ -303,8 +313,9 @@ export class AppController {
             ),
           }));
           return groups.sort((a, b) => {
-            const workspaceCompare =
-              a.workspaceName.localeCompare(b.workspaceName);
+            const workspaceCompare = a.workspaceName.localeCompare(
+              b.workspaceName,
+            );
             if (workspaceCompare !== 0) {
               return workspaceCompare;
             }
@@ -353,7 +364,6 @@ export class AppController {
               ) || null,
         );
 
-
         const claimedByUser = computed(() => {
           if (!user.value) {
             return [];
@@ -366,23 +376,19 @@ export class AppController {
         });
 
         const totalServicesCount = computed(() => services.value.length);
-        const claimedServicesCount = computed(
-          () =>
-            services.value.reduce(
-              (total, service) =>
-                total +
-                service.environments.filter((env) => env.active).length,
-              0,
-            ),
+        const claimedServicesCount = computed(() =>
+          services.value.reduce(
+            (total, service) =>
+              total + service.environments.filter((env) => env.active).length,
+            0,
+          ),
         );
-        const availableServicesCount = computed(
-          () =>
-            services.value.reduce(
-              (total, service) =>
-                total +
-                service.environments.filter((env) => !env.active).length,
-              0,
-            ),
+        const availableServicesCount = computed(() =>
+          services.value.reduce(
+            (total, service) =>
+              total + service.environments.filter((env) => !env.active).length,
+            0,
+          ),
         );
 
         const showToast = (message: string) => {
@@ -461,13 +467,15 @@ export class AppController {
           try {
             workspaces.value = await WorkspaceService.list();
             const persistedWorkspaceId =
-              localStorage.getItem(serviceManagementWorkspaceStorageKey) || null;
+              localStorage.getItem(serviceManagementWorkspaceStorageKey) ||
+              null;
             const firstWorkspaceId =
               workspaces.value.length > 0 ? workspaces.value[0].id : null;
             if (
               selectedServiceWorkspaceId.value !== null &&
               workspaces.value.some(
-                (workspace) => workspace.id === selectedServiceWorkspaceId.value,
+                (workspace) =>
+                  workspace.id === selectedServiceWorkspaceId.value,
               )
             ) {
               return;
@@ -500,9 +508,7 @@ export class AppController {
 
         const loadAppInfo = async () => {
           try {
-            const response = await fetch('/api/app-info', {
-              credentials: 'include',
-            });
+            const response = await ApiService.get('/api/app-info');
             if (!response.ok) {
               return;
             }
@@ -855,9 +861,7 @@ export class AppController {
               workspace.id,
               resourceType,
             );
-            if (
-              workspaceRowsModal.value?.requestId === requestId
-            ) {
+            if (workspaceRowsModal.value?.requestId === requestId) {
               workspaceRowsModal.value = {
                 ...workspaceRowsModal.value,
                 rows,
@@ -865,9 +869,7 @@ export class AppController {
               };
             }
           } catch (err) {
-            if (
-              workspaceRowsModal.value?.requestId === requestId
-            ) {
+            if (workspaceRowsModal.value?.requestId === requestId) {
               workspaceRowsModal.value = {
                 ...workspaceRowsModal.value,
                 loading: false,
@@ -938,7 +940,10 @@ export class AppController {
             selectedWorkspace.adminUserId === user.value.id;
           const requests = [loadServiceCatalog(workspaceId)];
           if (isAdminWorkspace) {
-            requests.push(loadEnvironments(workspaceId), loadOwners(workspaceId));
+            requests.push(
+              loadEnvironments(workspaceId),
+              loadOwners(workspaceId),
+            );
           }
           await Promise.all(requests);
         };
@@ -980,8 +985,7 @@ export class AppController {
           }
           return (
             owners.find(
-              (owner) =>
-                normalizeTag(owner.name).toLowerCase() === normalized,
+              (owner) => normalizeTag(owner.name).toLowerCase() === normalized,
             ) || null
           );
         };
@@ -1031,7 +1035,9 @@ export class AppController {
         };
 
         const onCreateOwnerInput = () => {
-          const match = findExactWorkspaceOwnerName(serviceCreateForm.value.ownerInput);
+          const match = findExactWorkspaceOwnerName(
+            serviceCreateForm.value.ownerInput,
+          );
           if (match) {
             commitCreateOwnerInput();
           }
@@ -1074,7 +1080,9 @@ export class AppController {
           });
         };
 
-        const findExactWorkspaceEnvironmentName = (raw: string): string | null => {
+        const findExactWorkspaceEnvironmentName = (
+          raw: string,
+        ): string | null => {
           const normalized = normalizeTag(raw).toLowerCase();
           if (!normalized) {
             return null;
@@ -1208,11 +1216,7 @@ export class AppController {
           event: KeyboardEvent,
           formRef: typeof serviceCreateForm | typeof serviceEditForm,
         ) => {
-          if (
-            event.key !== 'Enter' &&
-            event.key !== ',' &&
-            event.key !== ' '
-          ) {
+          if (event.key !== 'Enter' && event.key !== ',' && event.key !== ' ') {
             return;
           }
           if (
@@ -1346,7 +1350,9 @@ export class AppController {
             );
             closeCreateServiceModal();
             showToast('Service created.');
-            await loadServiceManagementWorkspaceData(selectedServiceWorkspaceId.value);
+            await loadServiceManagementWorkspaceData(
+              selectedServiceWorkspaceId.value,
+            );
           } catch (err) {
             serviceCreateError.value = (err as Error).message;
           } finally {
@@ -1358,7 +1364,10 @@ export class AppController {
           serviceId: string,
           label: string,
           defaultMinutes: number,
-          environments: Array<{ environmentId: string; environmentName: string }>,
+          environments: Array<{
+            environmentId: string;
+            environmentName: string;
+          }>,
         ) => {
           if (editingServiceId.value === serviceId) {
             resetServiceEditForm();
@@ -1431,7 +1440,9 @@ export class AppController {
             );
             showToast('Service updated.');
             resetServiceEditForm();
-            await loadServiceManagementWorkspaceData(selectedServiceWorkspaceId.value);
+            await loadServiceManagementWorkspaceData(
+              selectedServiceWorkspaceId.value,
+            );
           } catch (err) {
             serviceEditError.value = (err as Error).message;
           } finally {
@@ -1538,7 +1549,9 @@ export class AppController {
           adminSection.value = section;
         };
 
-        const formatClaimedBy = (environment: Service['environments'][number]): string => {
+        const formatClaimedBy = (
+          environment: Service['environments'][number],
+        ): string => {
           if (!environment.claimedBy) {
             return 'Unknown';
           }
@@ -1568,10 +1581,17 @@ export class AppController {
           });
         };
 
+        const scheduleTokenRenewal = () => {
+          this.scheduleTokenRenewal();
+        };
+
         onMounted(async () => {
           applyTheme(theme.value);
           try {
             await loadUser();
+            if (AuthService.hasToken() && !AuthService.isTokenExpired()) {
+              scheduleTokenRenewal();
+            }
             await loadWorkspaces();
             await loadServices();
             await loadAppInfo();
@@ -1753,5 +1773,37 @@ export class AppController {
         };
       },
     }).mount('#app');
+  }
+
+  private scheduleTokenRenewal(): void {
+    if (this.tokenRenewalTimer) {
+      window.clearTimeout(this.tokenRenewalTimer);
+    }
+
+    const scheduleNextCheck = (): void => {
+      this.tokenRenewalTimer = window.setTimeout(() => {
+        this.scheduleTokenRenewal();
+      }, this.tokenRenewCheckMs);
+    };
+
+    if (!AuthService.hasToken()) {
+      return;
+    }
+
+    if (!AuthService.isTokenRenewalDue(this.tokenRenewBeforeMs)) {
+      scheduleNextCheck();
+      return;
+    }
+
+    this.tokenRenewalTimer = window.setTimeout(async () => {
+      const renewed = await AuthService.renew();
+      if (!renewed) {
+        if (AuthService.hasToken()) {
+          scheduleNextCheck();
+        }
+        return;
+      }
+      this.scheduleTokenRenewal();
+    }, 0);
   }
 }

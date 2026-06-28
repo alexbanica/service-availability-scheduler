@@ -1,0 +1,855 @@
+openapi: 3.0.3
+info:
+  title: Service Availability Scheduler API
+  version: 0.1.0
+  description: API for login, workspace administration, service availability, and reservations.
+servers:
+  - url: http://localhost:3000
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Services
+  - name: Reservations
+  - name: Workspaces
+  - name: Workspace services
+  - name: Workspace resources
+paths:
+  /api/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Log in by email and receive a bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated user and bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+  /api/logout:
+    post:
+      tags: [Auth]
+      summary: Log out the current bearer-token session client-side.
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/me:
+    get:
+      tags: [Auth]
+      summary: Return the authenticated user identity.
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/renew:
+    post:
+      tags: [Auth]
+      summary: Issue a fresh bearer token for the current user.
+      responses:
+        '200':
+          description: Renewed token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/services:
+    get:
+      tags: [Services]
+      summary: List visible services and reservation state.
+      responses:
+        '200':
+          description: Services grouped by workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicesResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/claim:
+    post:
+      tags: [Reservations]
+      summary: Claim one service environment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
+      responses:
+        '200':
+          description: Claim accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiresResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/release:
+    post:
+      tags: [Reservations]
+      summary: Release an active reservation owned by the current user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceKeyRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/extend:
+    post:
+      tags: [Reservations]
+      summary: Extend an active reservation owned by the current user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceKeyRequest'
+      responses:
+        '200':
+          description: Extension accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiresResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/events:
+    get:
+      tags: [Reservations]
+      summary: Stream expiring reservation events as server-sent events.
+      responses:
+        '200':
+          description: text/event-stream response with expiring events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error'
+  /events:
+    get:
+      tags: [Reservations]
+      summary: Legacy server-sent event stream for expiring reservation events.
+      responses:
+        '200':
+          description: text/event-stream response with expiring events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/workspaces:
+    get:
+      tags: [Workspaces]
+      summary: List workspaces visible to the current user.
+      responses:
+        '200':
+          description: Workspace summaries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Workspaces]
+      summary: Create a workspace owned by the current user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceRequest'
+      responses:
+        '201':
+          description: Created workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/services:
+    get:
+      tags: [Workspace services]
+      summary: List the editable service catalog for a workspace.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Workspace service catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceServicesResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Workspace services]
+      summary: Create a workspace service and its environment links.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertWorkspaceServiceRequest'
+      responses:
+        '201':
+          description: Created service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceServiceCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/services/{serviceId}:
+    patch:
+      tags: [Workspace services]
+      summary: Update a workspace service.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ServiceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertWorkspaceServiceRequest'
+      responses:
+        '200':
+          description: Updated service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceServiceUpdated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Workspace services]
+      summary: Delete a workspace service.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '204':
+          description: Service deleted.
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/environments:
+    get:
+      tags: [Workspace resources]
+      summary: List workspace environments.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Workspace environments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentsResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Workspace resources]
+      summary: Create a workspace environment.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NameRequest'
+      responses:
+        '201':
+          description: Created environment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/owners:
+    get:
+      tags: [Workspace resources]
+      summary: List workspace owners.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Workspace owners.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnersResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Workspace resources]
+      summary: Create a workspace owner.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NameRequest'
+      responses:
+        '201':
+          description: Created owner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/detail/{resourceType}:
+    get:
+      tags: [Workspace resources]
+      summary: List workspace popup rows for users, services, owners, or environments.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: resourceType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [users, services, owners, environments]
+      responses:
+        '200':
+          description: Popup row items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PopupRowsResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/invitations:
+    post:
+      tags: [Workspace resources]
+      summary: Invite an existing user to a workspace by email.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteUserRequest'
+      responses:
+        '201':
+          description: Created workspace invitation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ServiceId:
+      name: serviceId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Ok:
+      description: Successful operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OkResponse'
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          example: true
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    LoginResponse:
+      type: object
+      required: [ok, user, token, token_type, expires_in_seconds]
+      properties:
+        ok:
+          type: boolean
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in_seconds:
+          type: integer
+    User:
+      type: object
+      required: [id, email, nickname]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          description: Present on login responses that return the domain user object.
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+    ServiceKeyRequest:
+      type: object
+      required: [service_key]
+      properties:
+        service_key:
+          type: string
+    ClaimRequest:
+      allOf:
+        - $ref: '#/components/schemas/ServiceKeyRequest'
+        - type: object
+          properties:
+            claimed_by_label:
+              type: string
+            claimed_by_team:
+              type: boolean
+              default: false
+    ExpiresResponse:
+      type: object
+      required: [ok, expires_at]
+      properties:
+        ok:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+    ServicesResponse:
+      type: object
+      required: [expiry_warning_minutes, auto_refresh_seconds, services]
+      properties:
+        expiry_warning_minutes:
+          type: integer
+        auto_refresh_seconds:
+          type: integer
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceSummary'
+    ServiceSummary:
+      type: object
+      required:
+        - service_id
+        - label
+        - default_minutes
+        - workspace_id
+        - workspace_name
+        - environments
+      properties:
+        service_id:
+          type: string
+        label:
+          type: string
+        default_minutes:
+          type: integer
+        owner:
+          type: string
+          nullable: true
+        workspace_id:
+          type: string
+          format: uuid
+        workspace_name:
+          type: string
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceEnvironmentStatus'
+    ServiceEnvironmentStatus:
+      type: object
+      required:
+        - service_key
+        - environment_id
+        - environment
+        - active
+        - claimed_by_team
+      properties:
+        service_key:
+          type: string
+        environment_id:
+          type: string
+          format: uuid
+        environment:
+          type: string
+        active:
+          type: boolean
+        claimed_by:
+          type: string
+          nullable: true
+        claimed_by_id:
+          type: string
+          nullable: true
+          format: uuid
+        claimed_at:
+          type: string
+          nullable: true
+          format: date-time
+        expires_at:
+          type: string
+          nullable: true
+          format: date-time
+        claimed_by_team:
+          type: boolean
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    WorkspaceCreated:
+      type: object
+      required: [id, name, admin_user_id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        admin_user_id:
+          type: string
+          format: uuid
+    WorkspacesResponse:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceSummary'
+    WorkspaceSummary:
+      allOf:
+        - $ref: '#/components/schemas/WorkspaceCreated'
+        - type: object
+          required:
+            - user_count
+            - service_count
+            - owner_count
+            - environment_count
+          properties:
+            user_count:
+              type: integer
+            service_count:
+              type: integer
+            owner_count:
+              type: integer
+            environment_count:
+              type: integer
+    UpsertWorkspaceServiceRequest:
+      type: object
+      required: [label, default_minutes]
+      properties:
+        service_id:
+          type: string
+          nullable: true
+          description: Optional on create; required by the path on update.
+        label:
+          type: string
+        default_minutes:
+          type: integer
+        owner_id:
+          type: string
+          format: uuid
+          nullable: true
+        environment_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        environment_names:
+          type: array
+          items:
+            type: string
+    WorkspaceServiceCreated:
+      type: object
+      required: [service_id, created_environments]
+      properties:
+        service_id:
+          type: string
+        created_environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Environment'
+    WorkspaceServiceUpdated:
+      type: object
+      required: [service_id]
+      properties:
+        service_id:
+          type: string
+    WorkspaceServicesResponse:
+      type: object
+      required: [services]
+      properties:
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceServiceCatalogItem'
+    WorkspaceServiceCatalogItem:
+      type: object
+      required: [service_id, label, default_minutes, environments]
+      properties:
+        service_id:
+          type: string
+        label:
+          type: string
+        owner:
+          type: string
+          nullable: true
+        owner_id:
+          type: string
+          format: uuid
+          nullable: true
+        default_minutes:
+          type: integer
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Environment'
+    NameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    Environment:
+      type: object
+      required: [environment_id, environment_name]
+      properties:
+        environment_id:
+          type: string
+          format: uuid
+        environment_name:
+          type: string
+    EnvironmentCreated:
+      type: object
+      required: [environment_id]
+      properties:
+        environment_id:
+          type: string
+          format: uuid
+    EnvironmentsResponse:
+      type: object
+      required: [environments]
+      properties:
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Environment'
+    Owner:
+      type: object
+      required: [owner_id, name]
+      properties:
+        owner_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    OwnerCreated:
+      type: object
+      required: [owner_id]
+      properties:
+        owner_id:
+          type: string
+          format: uuid
+    OwnersResponse:
+      type: object
+      required: [owners]
+      properties:
+        owners:
+          type: array
+          items:
+            $ref: '#/components/schemas/Owner'
+    PopupRowsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: string
+              nullable: true
+    InviteUserRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    InvitationCreated:
+      type: object
+      required:
+        - invitation_id
+        - workspace_id
+        - invited_user_id
+        - invited_by_user_id
+        - status
+      properties:
+        invitation_id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        invited_user_id:
+          type: string
+          format: uuid
+        invited_by_user_id:
+          type: string
+          format: uuid
+        status:
+          type: string

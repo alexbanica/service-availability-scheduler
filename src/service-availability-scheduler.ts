@@ -1,9 +1,9 @@
 import path from 'path';
 import express from 'express';
-import session from 'express-session';
 import type { Pool } from 'mysql2/promise';
 import { initDb } from './db';
 import { ConfigLoaderService } from './services/ConfigLoaderService';
+import { JwtAuthService } from './services/JwtAuthService';
 import { UserService } from './services/UserService';
 import { ReservationService } from './services/ReservationService';
 import { WorkspaceService } from './services/WorkspaceService';
@@ -29,17 +29,6 @@ const ROOT_DIR = path.join(__dirname, '..');
 const APP_CONFIG_PATH = path.join(ROOT_DIR, 'config', 'app.yml');
 
 app.use(express.json());
-app.use(
-  session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 1000 * 60 * 60 * 24 * 365,
-      sameSite: 'lax',
-    },
-  }),
-);
 
 app.use('/public', express.static(path.join(ROOT_DIR, 'public')));
 
@@ -67,6 +56,10 @@ async function start() {
     config.expiryWarningMinutes,
     config.autoRefreshSeconds,
   );
+  const jwtAuthService = new JwtAuthService(
+    SESSION_SECRET,
+    config.jwtExpiresInSeconds,
+  );
   const workspaceService = new WorkspaceService(
     db,
     workspaceRepository,
@@ -84,7 +77,7 @@ async function start() {
   }, CLEANUP_INTERVAL_MS);
 
   new PageController(ROOT_DIR).register(app);
-  new AuthController(userService).register(app);
+  new AuthController(userService, jwtAuthService).register(app);
   new WorkspaceController(workspaceService).register(app);
   new ServiceController(reservationService).register(app);
   new ReservationController(reservationService).register(app);
