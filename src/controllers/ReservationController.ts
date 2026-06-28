@@ -10,9 +10,8 @@ type AuthenticatedRequest = Request & {
   };
 };
 
-const getAuthenticatedUserId = (
-  req: Request,
-): string | undefined => (req as AuthenticatedRequest).authenticatedUser?.userId;
+const getAuthenticatedUserId = (req: Request): string | undefined =>
+  (req as AuthenticatedRequest).authenticatedUser?.userId;
 
 export class ReservationController {
   constructor(private readonly reservationService: ReservationService) {}
@@ -63,11 +62,7 @@ export class ReservationController {
 
         const serviceKey = String(req.body.service_key || '').trim();
         try {
-          await this.reservationService.release(
-            serviceKey,
-            userId,
-            new Date(),
-          );
+          await this.reservationService.release(serviceKey, userId, new Date());
           res.json({ ok: true });
         } catch (err) {
           const message = (err as Error).message;
@@ -167,54 +162,50 @@ export class ReservationController {
       }, pollIntervalMs);
     });
 
-    app.get(
-      '/api/events',
-      requireAuth,
-      async (req: Request, res: Response) => {
-        const userId = getAuthenticatedUserId(req);
-        if (!userId) {
-          res.status(401).json({ error: 'Not authenticated' });
+    app.get('/api/events', requireAuth, async (req: Request, res: Response) => {
+      const userId = getAuthenticatedUserId(req);
+      if (!userId) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+
+      res.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      res.flushHeaders();
+
+      let closed = false;
+      req.on('close', () => {
+        closed = true;
+      });
+
+      const pollIntervalMs = 15000;
+
+      const interval = setInterval(async () => {
+        if (closed) {
+          clearInterval(interval);
           return;
         }
 
-        res.set({
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        });
-        res.flushHeaders();
+        const expiring = await this.reservationService.listExpiring(
+          userId,
+          new Date(),
+        );
 
-        let closed = false;
-        req.on('close', () => {
-          closed = true;
-        });
-
-        const pollIntervalMs = 15000;
-
-        const interval = setInterval(async () => {
-          if (closed) {
-            clearInterval(interval);
-            return;
-          }
-
-          const expiring = await this.reservationService.listExpiring(
-            userId,
-            new Date(),
+        expiring.forEach((row) => {
+          res.write('event: expiring\n');
+          res.write(
+            `data: ${JSON.stringify({
+              service_key: row.service_key,
+              environment: row.environment_name,
+              service_name: row.service_name,
+              minutes_left: row.minutes_left,
+            })}\n\n`,
           );
-
-          expiring.forEach((row) => {
-            res.write('event: expiring\n');
-            res.write(
-              `data: ${JSON.stringify({
-                service_key: row.service_key,
-                environment: row.environment_name,
-                service_name: row.service_name,
-                minutes_left: row.minutes_left,
-              })}\n\n`,
-            );
-          });
-        }, pollIntervalMs);
-      },
-    );
+        });
+      }, pollIntervalMs);
+    });
   }
 }

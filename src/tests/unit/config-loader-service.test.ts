@@ -80,7 +80,9 @@ test('invalid auto_refresh_seconds maps to NaN', () => {
 test('default jwtExpiresInSeconds is 3600 when not configured', () => {
   const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
   try {
-    const config = new ConfigLoaderService().loadConfig(configPath) as AppConfigWithJwt;
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
     assert.equal(config.jwtExpiresInSeconds, 3600);
   } finally {
     cleanupConfig(configPath);
@@ -92,7 +94,9 @@ test('jwt_expires_in_seconds is parsed from app.yml', () => {
     'expiry_warning_minutes: 5\njwt_expires_in_seconds: 900\n',
   );
   try {
-    const config = new ConfigLoaderService().loadConfig(configPath) as AppConfigWithJwt;
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
     assert.equal(config.jwtExpiresInSeconds, 900);
   } finally {
     cleanupConfig(configPath);
@@ -106,7 +110,9 @@ test('JWT_EXPIRES_IN_SECONDS env var overrides app.yml value', () => {
   const previous = process.env.JWT_EXPIRES_IN_SECONDS;
   process.env.JWT_EXPIRES_IN_SECONDS = '1200';
   try {
-    const config = new ConfigLoaderService().loadConfig(configPath) as AppConfigWithJwt;
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
     assert.equal(config.jwtExpiresInSeconds, 1200);
   } finally {
     if (previous === undefined) {

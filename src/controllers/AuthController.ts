@@ -48,9 +48,13 @@ export class AuthController {
       });
     });
 
-    app.post('/api/logout', requireAuth, async (_req: Request, res: Response) => {
-      res.json({ ok: true });
-    });
+    app.post(
+      '/api/logout',
+      requireAuth,
+      async (_req: Request, res: Response) => {
+        res.json({ ok: true });
+      },
+    );
 
     app.get('/api/me', requireAuth, async (_req: Request, res: Response) => {
       const reqWithUser = _req as AuthenticatedRequest;
@@ -65,27 +69,31 @@ export class AuthController {
       });
     });
 
-    app.post('/api/renew', requireAuth, async (_req: Request, res: Response) => {
-      const reqWithUser = _req as AuthenticatedRequest;
-      if (!reqWithUser.authenticatedUser) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
-      }
+    app.post(
+      '/api/renew',
+      requireAuth,
+      async (_req: Request, res: Response) => {
+        const reqWithUser = _req as AuthenticatedRequest;
+        if (!reqWithUser.authenticatedUser) {
+          res.status(401).json({ error: 'Not authenticated' });
+          return;
+        }
 
-      const token = await this.jwtAuthService.issueToken({
-        userId: reqWithUser.authenticatedUser.userId,
-        email: reqWithUser.authenticatedUser.email,
-        nickname: reqWithUser.authenticatedUser.nickname,
-      });
+        const token = await this.jwtAuthService.issueToken({
+          userId: reqWithUser.authenticatedUser.userId,
+          email: reqWithUser.authenticatedUser.email,
+          nickname: reqWithUser.authenticatedUser.nickname,
+        });
 
-      res.json({
-        ok: true,
-        user: reqWithUser.authenticatedUser,
-        token,
-        token_type: 'Bearer',
-        expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
-      });
-    });
+        res.json({
+          ok: true,
+          user: reqWithUser.authenticatedUser,
+          token,
+          token_type: 'Bearer',
+          expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
+        });
+      },
+    );
 
     assignJwtAuthService(app, this.jwtAuthService);
   }

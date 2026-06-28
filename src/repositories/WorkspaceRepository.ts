@@ -114,9 +114,9 @@ export class WorkspaceRepository extends AbstractMysqlRepository {
     return Number(row?.total || 0);
   }
 
-  async listUsersByWorkspace(workspaceId: string): Promise<
-    Array<{ userId: string; email: string }>
-  > {
+  async listUsersByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ userId: string; email: string }>> {
     const rows = await this.all<
       RowDataPacket & { user_id: string; email: string }
     >(

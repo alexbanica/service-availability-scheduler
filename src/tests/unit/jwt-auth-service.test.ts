@@ -31,7 +31,10 @@ function decodeJwtPayload(token: string): JwtPayload {
   const payloadBase64 = payloadBase64Url
     .replace(/-/g, '+')
     .replace(/_/g, '/')
-    .padEnd(payloadBase64Url.length + (4 - (payloadBase64Url.length % 4)) % 4, '=');
+    .padEnd(
+      payloadBase64Url.length + ((4 - (payloadBase64Url.length % 4)) % 4),
+      '=',
+    );
 
   const decoded = Buffer.from(payloadBase64, 'base64').toString('utf8');
   return JSON.parse(decoded) as JwtPayload;

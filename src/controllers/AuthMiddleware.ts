@@ -80,5 +80,6 @@ export function assignJwtAuthService(
   app: Express,
   jwtAuthService: JwtAuthService,
 ): void {
-  (app.locals as { jwtAuthService?: JwtAuthService }).jwtAuthService = jwtAuthService;
+  (app.locals as { jwtAuthService?: JwtAuthService }).jwtAuthService =
+    jwtAuthService;
 }

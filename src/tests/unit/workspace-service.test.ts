@@ -94,12 +94,18 @@ class FakeServiceRepository {
   };
 
   constructor(
-    private readonly userRows = new Map<string, Array<{ userId: string; email: string }>>(),
+    private readonly userRows = new Map<
+      string,
+      Array<{ userId: string; email: string }>
+    >(),
     private readonly serviceRows = new Map<
       string,
       Array<{ serviceId: string; label: string }>
     >(),
-    private readonly ownerRows = new Map<string, Array<{ ownerId: string; name: string }>>(),
+    private readonly ownerRows = new Map<
+      string,
+      Array<{ ownerId: string; name: string }>
+    >(),
     private readonly environmentRows = new Map<
       string,
       Array<{ environmentId: string; environmentName: string }>
@@ -209,7 +215,10 @@ function makeService(
   workspaces: Map<string, Workspace>,
   workspaceUsers = new FakeWorkspaceUserRepository(),
   listByUserImpl?: (userId: string) => Promise<Workspace[]>,
-  workspaceUsersByWorkspace?: Map<string, Array<{ userId: string; email: string }>>,
+  workspaceUsersByWorkspace?: Map<
+    string,
+    Array<{ userId: string; email: string }>
+  >,
   serviceRepository?: FakeServiceRepository,
 ): WorkspaceService {
   return new WorkspaceService(
@@ -227,19 +236,14 @@ function makeService(
   );
 }
 
-function extractPopupRowName(row: {
-  name: string;
-}): string {
+function extractPopupRowName(row: { name: string }): string {
   return row.name;
 }
 
 test('createService requires workspace admin', async () => {
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
   );
 
@@ -259,10 +263,7 @@ test('createService requires at least one environment', async () => {
   workspaceUsers.setAdmin('workspace-1', 'user-1');
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
     workspaceUsers,
   );
@@ -281,10 +282,7 @@ test('createService requires at least one environment', async () => {
 test('updateService requires workspace admin', async () => {
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
   );
 
@@ -305,10 +303,7 @@ test('updateService requires nonblank label', async () => {
   workspaceUsers.setAdmin('workspace-1', 'user-1');
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
     workspaceUsers,
   );
@@ -330,10 +325,7 @@ test('updateService requires at least one environment', async () => {
   workspaceUsers.setAdmin('workspace-1', 'user-1');
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
     workspaceUsers,
   );
@@ -355,10 +347,7 @@ test('updateService requires positive default minutes', async () => {
   workspaceUsers.setAdmin('workspace-1', 'user-1');
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
     workspaceUsers,
   );
@@ -381,10 +370,7 @@ test('inviteUser fails when user already member', async () => {
   workspaceUsers.setMember('workspace-1', 'user-2');
   const service = makeService(
     new Map([
-      [
-        'workspace-1',
-        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
-      ],
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
     ]),
     workspaceUsers,
   );
@@ -400,7 +386,15 @@ test('listWorkspaces exposes summary stats for admin and member workspaces', asy
   workspaceUsers.setAdmin('workspace-admin', 'user-1');
   workspaceUsers.setMember('workspace-member', 'user-1');
 
-  const adminWorkspace = new Workspace('workspace-admin', 'Admin Workspace', 'user-1', 1, 2, 0, 1);
+  const adminWorkspace = new Workspace(
+    'workspace-admin',
+    'Admin Workspace',
+    'user-1',
+    1,
+    2,
+    0,
+    1,
+  );
   const memberWorkspace = new Workspace(
     'workspace-member',
     'Member Workspace',
@@ -468,7 +462,10 @@ test('listWorkspacePopupRows returns user rows with email for users', async () =
 
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 2, 0, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 2, 0, 0, 0),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -490,8 +487,14 @@ test('listWorkspacePopupRows returns user rows with email for users', async () =
     'users',
   );
 
-  assert.deepEqual(rows, [{ name: 'alice@example.com' }, { name: 'bob@example.com' }]);
-  assert.deepEqual(rows.map(extractPopupRowName), ['alice@example.com', 'bob@example.com']);
+  assert.deepEqual(rows, [
+    { name: 'alice@example.com' },
+    { name: 'bob@example.com' },
+  ]);
+  assert.deepEqual(rows.map(extractPopupRowName), [
+    'alice@example.com',
+    'bob@example.com',
+  ]);
 });
 
 test('listWorkspacePopupRows returns service name rows for services', async () => {
@@ -513,7 +516,10 @@ test('listWorkspacePopupRows returns service name rows for services', async () =
 
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 0, 2, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 0, 2, 0, 0),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -551,7 +557,10 @@ test('listWorkspacePopupRows returns owner name rows for owners', async () => {
 
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 0, 0, 2, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 0, 0, 2, 0),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -590,7 +599,10 @@ test('listWorkspacePopupRows returns environment name rows for environments', as
 
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 0, 0, 0, 2)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 0, 0, 0, 2),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -649,7 +661,10 @@ test('listWorkspacePopupRows enforces membership authorization before returning 
   );
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
     ]),
     new FakeWorkspaceUserRepository(),
     undefined,
@@ -657,9 +672,15 @@ test('listWorkspacePopupRows enforces membership authorization before returning 
     serviceRepository,
   );
 
-  for (const resourceType of ['users', 'services', 'owners', 'environments'] as const) {
+  for (const resourceType of [
+    'users',
+    'services',
+    'owners',
+    'environments',
+  ] as const) {
     await assert.rejects(
-      () => service.listWorkspacePopupRows('workspace-1', 'user-2', resourceType),
+      () =>
+        service.listWorkspacePopupRows('workspace-1', 'user-2', resourceType),
       /Not authorized for workspace/,
     );
   }

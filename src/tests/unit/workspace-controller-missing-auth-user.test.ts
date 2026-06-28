@@ -44,11 +44,14 @@ function getRouteHandlers(
   method: 'get' | 'post' | 'patch',
   path: string,
 ): RouteHandler[] {
-  const routeLayer = (app as unknown as { _router: { stack: unknown[] } })._router.stack
-    .find((layer) => {
-      const route = (layer as { route?: { path?: string; methods?: Record<string, boolean> } }).route;
-      return route?.path === path && route.methods?.[method] === true;
-    }) as
+  const routeLayer = (
+    app as unknown as { _router: { stack: unknown[] } }
+  )._router.stack.find((layer) => {
+    const route = (
+      layer as { route?: { path?: string; methods?: Record<string, boolean> } }
+    ).route;
+    return route?.path === path && route.methods?.[method] === true;
+  }) as
     | {
         route: {
           stack: Array<{ handle: RouteHandler }>;
@@ -61,33 +64,22 @@ function getRouteHandlers(
 }
 
 class FakeWorkspaceService {
-  async listWorkspaces(_userId: string) {
+  async listWorkspaces() {
     return [];
   }
 
-  async createWorkspace(_userId: string, _name: string) {
+  async createWorkspace() {
     throw new Error('not implemented');
   }
 
-  async createService(
-    _workspaceId: string,
-    _userId: string,
-    _options: {
-      environmentIds: string[];
-      environmentNames: string[];
-      serviceId: string | null;
-      label: string | null;
-      defaultMinutes: number;
-      ownerId: string | null;
-    },
-  ) {
+  async createService() {
     throw new Error('not implemented');
   }
 
   async updateService(
-    _workspaceId: string,
-    _userId: string,
-    _options: {
+    workspaceId: string,
+    userId: string,
+    options: {
       serviceId: string;
       environmentIds: string[];
       environmentNames: string[];
@@ -96,49 +88,49 @@ class FakeWorkspaceService {
       ownerId: string | null;
     },
   ) {
-    return { serviceId: _options.serviceId };
+    void workspaceId;
+    void userId;
+    return { serviceId: options.serviceId };
   }
 
-  async deleteService(_workspaceId: string, _userId: string, _serviceId: string) {
+  async deleteService() {
     return;
   }
 
-  async listServiceCatalog(_workspaceId: string, _userId: string) {
+  async listServiceCatalog() {
     return [];
   }
 
-  async listEnvironments(_workspaceId: string, _userId: string) {
+  async listEnvironments() {
     return [];
   }
 
-  async createEnvironment(_workspaceId: string, _userId: string, _payload: { name: string }) {
+  async createEnvironment() {
     throw new Error('not implemented');
   }
 
-  async listOwners(_workspaceId: string, _userId: string) {
+  async listOwners() {
     return [];
   }
 
-  async createOwner(_workspaceId: string, _userId: string, _payload: { name: string }) {
+  async createOwner() {
     throw new Error('not implemented');
   }
 
-  async listWorkspacePopupRows(
-    _workspaceId: string,
-    _userId: string,
-    _type: 'users' | 'services' | 'owners' | 'environments',
-  ) {
+  async listWorkspacePopupRows() {
     return { items: [] };
   }
 
-  async inviteUser(_workspaceId: string, _userId: string, _inviteeEmail: string) {
+  async inviteUser() {
     throw new Error('not implemented');
   }
 }
 
 test('GET /api/workspaces returns 401 when request-local identity is missing', async () => {
   const app = express();
-  const controller = new WorkspaceController(new FakeWorkspaceService() as never);
+  const controller = new WorkspaceController(
+    new FakeWorkspaceService() as never,
+  );
   controller.register(app);
 
   const handlers = getRouteHandlers(app, 'get', '/api/workspaces');

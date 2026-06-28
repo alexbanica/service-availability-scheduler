@@ -10,17 +10,21 @@ const requireFromRoot = createRequire(process.cwd() + '/');
 const buildRoot = path.join(os.tmpdir(), 'sas-browser-tests');
 
 function compileBrowserBundle(): void {
-  const result = spawnSync('npx', [
-    'tsc',
-    '-p',
-    'tsconfig.client.json',
-    '--outDir',
-    buildRoot,
-    '--module',
-    'commonjs',
-  ], {
-    stdio: 'ignore',
-  });
+  const result = spawnSync(
+    'npx',
+    [
+      'tsc',
+      '-p',
+      'tsconfig.client.json',
+      '--outDir',
+      buildRoot,
+      '--module',
+      'commonjs',
+    ],
+    {
+      stdio: 'ignore',
+    },
+  );
 
   if (result.status !== 0) {
     throw new Error('Failed to compile browser bundle for tests');
@@ -30,20 +34,29 @@ function compileBrowserBundle(): void {
 
 compileBrowserBundle();
 
-const { ApiService } = requireFromRoot(path.join(buildRoot, 'services/ApiService.js')) as {
+const { ApiService } = requireFromRoot(
+  path.join(buildRoot, 'services/ApiService.js'),
+) as {
   ApiService: {
-    post: (path: string, payload?: Record<string, unknown>) => Promise<Response>;
+    post: (
+      path: string,
+      payload?: Record<string, unknown>,
+    ) => Promise<Response>;
     get: (path: string) => Promise<Response>;
   };
 };
 
-const { LoginService } = requireFromRoot(path.join(buildRoot, 'services/LoginService.js')) as {
+const { LoginService } = requireFromRoot(
+  path.join(buildRoot, 'services/LoginService.js'),
+) as {
   LoginService: {
     login: (email: string) => Promise<void>;
   };
 };
 
-const { AuthService } = requireFromRoot(path.join(buildRoot, 'services/AuthService.js')) as {
+const { AuthService } = requireFromRoot(
+  path.join(buildRoot, 'services/AuthService.js'),
+) as {
   AuthService: {
     renew: () => Promise<boolean>;
   };
@@ -70,10 +83,7 @@ function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
   const state: FetchState[] = [];
   const originalFetch = globalThis.fetch;
 
-  globalThis.fetch = (async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const headers = (() => {
       const entries = new Headers(init?.headers);
@@ -122,12 +132,15 @@ function createWindowAndStorage(): {
     clear: (): void => {
       data.clear();
     },
-    key: (_index: number): string | null => null,
+    key: (): string | null => null,
     length: 0,
   } as Storage;
 
-  const originalStorage = (globalThis as { localStorage?: Storage }).localStorage;
-  const originalWindow = (globalThis as unknown as { window?: { location?: { href: string } } }).window;
+  const originalStorage = (globalThis as { localStorage?: Storage })
+    .localStorage;
+  const originalWindow = (
+    globalThis as unknown as { window?: { location?: { href: string } } }
+  ).window;
 
   Object.defineProperty(globalThis, 'localStorage', {
     value: localStorage,

@@ -31,11 +31,6 @@ type ServiceScopeRow = RowDataPacket & {
   owner_id: string | null;
 };
 
-type ServiceRow = RowDataPacket & {
-  service_id: string;
-  workspace_id: string;
-};
-
 export class ServiceRepository extends AbstractMysqlRepository {
   constructor(db: MysqlConnection) {
     super(db);
@@ -153,7 +148,13 @@ export class ServiceRepository extends AbstractMysqlRepository {
   async findServiceByWorkspaceAndId(
     workspaceId: string,
     serviceId: string,
-  ): Promise<{ serviceId: string; workspaceId: string; label: string; defaultMinutes: number; ownerId: string | null } | null> {
+  ): Promise<{
+    serviceId: string;
+    workspaceId: string;
+    label: string;
+    defaultMinutes: number;
+    ownerId: string | null;
+  } | null> {
     const row = await this.get<ServiceScopeRow>(
       `SELECT service_id, workspace_id, label, default_minutes, owner_id
        FROM services
@@ -310,7 +311,9 @@ export class ServiceRepository extends AbstractMysqlRepository {
     environmentIds: string[],
   ): Promise<void> {
     if (!environmentIds.length) {
-      await this.run('DELETE FROM service_environments WHERE service_id = ?', [serviceId]);
+      await this.run('DELETE FROM service_environments WHERE service_id = ?', [
+        serviceId,
+      ]);
       return;
     }
 
@@ -354,9 +357,7 @@ export class ServiceRepository extends AbstractMysqlRepository {
     return rows.map((row) => ({ ownerId: row.owner_id, name: row.name }));
   }
 
-  async listServiceCatalogByWorkspace(
-    workspaceId: string,
-  ): Promise<
+  async listServiceCatalogByWorkspace(workspaceId: string): Promise<
     Array<{
       serviceId: string;
       label: string;

@@ -21,14 +21,14 @@ export class ConfigLoaderService {
     };
   }
 
-  private resolveJwtExpiresInSeconds(appConfig: Record<string, unknown>): number {
+  private resolveJwtExpiresInSeconds(
+    appConfig: Record<string, unknown>,
+  ): number {
     const envValue = process.env.JWT_EXPIRES_IN_SECONDS;
     if (envValue !== undefined) {
       const envJwtExpiry = Number(envValue);
       if (!Number.isFinite(envJwtExpiry) || envJwtExpiry <= 0) {
-        throw new Error(
-          `Invalid JWT_EXPIRES_IN_SECONDS value: ${envValue}`,
-        );
+        throw new Error(`Invalid JWT_EXPIRES_IN_SECONDS value: ${envValue}`);
       }
       return envJwtExpiry;
     }

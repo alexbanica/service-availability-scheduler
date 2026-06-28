@@ -86,10 +86,14 @@ export class WorkspaceController {
         }
         const workspaceId = String(req.params.workspaceId || '');
         const environmentIds = Array.isArray(req.body.environment_ids)
-          ? req.body.environment_ids.map((id: unknown) => String(id || '').trim())
+          ? req.body.environment_ids.map((id: unknown) =>
+              String(id || '').trim(),
+            )
           : [];
         const environmentNames = Array.isArray(req.body.environment_names)
-          ? req.body.environment_names.map((name: unknown) => String(name || '').trim())
+          ? req.body.environment_names.map((name: unknown) =>
+              String(name || '').trim(),
+            )
           : [];
         try {
           const result = await this.workspaceService.createService(
@@ -140,10 +144,14 @@ export class WorkspaceController {
         const workspaceId = String(req.params.workspaceId || '');
         const serviceId = decodeURIComponent(String(req.params.serviceId));
         const environmentIds = Array.isArray(req.body.environment_ids)
-          ? req.body.environment_ids.map((id: unknown) => String(id || '').trim())
+          ? req.body.environment_ids.map((id: unknown) =>
+              String(id || '').trim(),
+            )
           : [];
         const environmentNames = Array.isArray(req.body.environment_names)
-          ? req.body.environment_names.map((name: unknown) => String(name || '').trim())
+          ? req.body.environment_names.map((name: unknown) =>
+              String(name || '').trim(),
+            )
           : [];
         try {
           const result = await this.workspaceService.updateService(

@@ -10,9 +10,8 @@ type AuthenticatedRequest = Request & {
   };
 };
 
-const getAuthenticatedUserId = (
-  req: Request,
-): string | undefined => (req as AuthenticatedRequest).authenticatedUser?.userId;
+const getAuthenticatedUserId = (req: Request): string | undefined =>
+  (req as AuthenticatedRequest).authenticatedUser?.userId;
 
 export class ServiceController {
   constructor(private readonly reservationService: ReservationService) {}

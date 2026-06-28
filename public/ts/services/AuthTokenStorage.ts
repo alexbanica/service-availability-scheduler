@@ -34,7 +34,9 @@ export class AuthTokenStorage {
 
   static getExpiryEpochMs(): number | null {
     try {
-      const stored = localStorage.getItem(AuthTokenStorage.TOKEN_EXPIRES_AT_MS_KEY);
+      const stored = localStorage.getItem(
+        AuthTokenStorage.TOKEN_EXPIRES_AT_MS_KEY,
+      );
       if (!stored) {
         return null;
       }

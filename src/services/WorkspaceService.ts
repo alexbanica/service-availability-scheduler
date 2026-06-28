@@ -9,7 +9,11 @@ import { WorkspaceUserRepository } from '../repositories/WorkspaceUserRepository
 import { Workspace } from '../entities/Workspace';
 import { WorkspaceInvitation } from '../entities/WorkspaceInvitation';
 
-export type WorkspaceResourceType = 'users' | 'services' | 'owners' | 'environments';
+export type WorkspaceResourceType =
+  | 'users'
+  | 'services'
+  | 'owners'
+  | 'environments';
 
 type WorkspaceDetailItem = {
   name: string;
@@ -75,9 +79,8 @@ export class WorkspaceService {
     try {
       await connection.beginTransaction();
       const workspaceRepo = this.workspaceRepository.withConnection(connection);
-      const workspaceUserRepo = this.workspaceUserRepository.withConnection(
-        connection,
-      );
+      const workspaceUserRepo =
+        this.workspaceUserRepository.withConnection(connection);
 
       const total = await workspaceRepo.countByAdmin(userId);
       if (total >= WorkspaceService.MAX_WORKSPACES_PER_ADMIN) {
@@ -85,11 +88,23 @@ export class WorkspaceService {
       }
 
       const workspaceId = randomUUID();
-      const workspace = await workspaceRepo.insert(workspaceId, trimmedName, userId);
+      const workspace = await workspaceRepo.insert(
+        workspaceId,
+        trimmedName,
+        userId,
+      );
       await workspaceUserRepo.insert(workspace.id, userId, 'admin');
 
       await connection.commit();
-      return new Workspace(workspace.id, workspace.name, workspace.adminUserId, 1, 0, 0, 0);
+      return new Workspace(
+        workspace.id,
+        workspace.name,
+        workspace.adminUserId,
+        1,
+        0,
+        0,
+        0,
+      );
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -162,7 +177,9 @@ export class WorkspaceService {
     userId: string,
     input: CreateServiceInput,
   ): Promise<{ serviceId: string; createdEnvironments: number }> {
-    const environmentIds = this.normalizeIds(input.environmentIds ?? input.environment_ids);
+    const environmentIds = this.normalizeIds(
+      input.environmentIds ?? input.environment_ids,
+    );
     const environmentNames = this.normalizeEnvironmentNames(
       input.environmentNames ?? input.environment_names,
     );
@@ -184,10 +201,11 @@ export class WorkspaceService {
 
     const ownerId = this.normalizeOptionalId(input.ownerId ?? input.owner_id);
     if (ownerId) {
-      const ownerExists = await this.serviceRepository.isWorkspaceOwnerOwnedByWorkspace(
-        workspaceId,
-        ownerId,
-      );
+      const ownerExists =
+        await this.serviceRepository.isWorkspaceOwnerOwnedByWorkspace(
+          workspaceId,
+          ownerId,
+        );
       if (!ownerExists) {
         throw new Error('Owner not found in workspace');
       }
@@ -269,7 +287,8 @@ export class WorkspaceService {
   > {
     await this.assertWorkspaceMember(workspaceId, userId);
 
-    const rows = await this.serviceRepository.listServiceCatalogByWorkspace(workspaceId);
+    const rows =
+      await this.serviceRepository.listServiceCatalogByWorkspace(workspaceId);
     const map = new Map<
       string,
       {
@@ -313,24 +332,30 @@ export class WorkspaceService {
     await this.assertWorkspaceMember(workspaceId, userId);
 
     if (resourceType === 'users') {
-      const users = await this.workspaceRepository.listUsersByWorkspace(workspaceId);
+      const users =
+        await this.workspaceRepository.listUsersByWorkspace(workspaceId);
       return users.map((user) => ({ name: user.email }));
     }
 
     if (resourceType === 'services') {
-      const services = await this.serviceRepository.listServiceSummariesByWorkspace(
-        workspaceId,
-      );
+      const services =
+        await this.serviceRepository.listServiceSummariesByWorkspace(
+          workspaceId,
+        );
       return services.map((service) => ({ name: service.label }));
     }
 
     if (resourceType === 'owners') {
-      const owners = await this.serviceRepository.listOwnersByWorkspace(workspaceId);
+      const owners =
+        await this.serviceRepository.listOwnersByWorkspace(workspaceId);
       return owners.map((owner) => ({ name: owner.name }));
     }
 
-    const environments = await this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
-    return environments.map((environment) => ({ name: environment.environmentName }));
+    const environments =
+      await this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
+    return environments.map((environment) => ({
+      name: environment.environmentName,
+    }));
   }
 
   async deleteService(
@@ -364,7 +389,9 @@ export class WorkspaceService {
       throw new Error('Default minutes must be positive');
     }
 
-    const environmentIds = this.normalizeIds(input.environmentIds ?? input.environment_ids);
+    const environmentIds = this.normalizeIds(
+      input.environmentIds ?? input.environment_ids,
+    );
     const environmentNames = this.normalizeEnvironmentNames(
       input.environmentNames ?? input.environment_names,
     );
@@ -374,7 +401,9 @@ export class WorkspaceService {
 
     await this.assertWorkspaceAdmin(workspaceId, userId);
 
-    const normalizedOwnerId = this.normalizeOptionalId(input.ownerId ?? input.owner_id);
+    const normalizedOwnerId = this.normalizeOptionalId(
+      input.ownerId ?? input.owner_id,
+    );
 
     const connection = await this.db.getConnection();
     try {
@@ -487,12 +516,18 @@ export class WorkspaceService {
     }
   }
 
-  private async assertWorkspaceAdmin(workspaceId: string, userId: string): Promise<void> {
+  private async assertWorkspaceAdmin(
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
     const workspace = await this.workspaceRepository.findById(workspaceId);
     if (!workspace) {
       throw new Error('Workspace not found');
     }
-    const isAdmin = await this.workspaceUserRepository.isAdmin(workspace.id, userId);
+    const isAdmin = await this.workspaceUserRepository.isAdmin(
+      workspace.id,
+      userId,
+    );
     if (!isAdmin) {
       throw new Error('Not authorized for workspace');
     }

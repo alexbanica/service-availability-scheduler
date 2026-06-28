@@ -53,7 +53,7 @@ class FakeJwtAuthService {
 }
 
 class FakeUserService {
-  async getNicknamesByIds(_ids: string[]): Promise<Map<string, string>> {
+  async getNicknamesByIds(): Promise<Map<string, string>> {
     return new Map();
   }
 
@@ -76,11 +76,14 @@ function getRouteHandlers(
   method: 'get' | 'post' | 'patch',
   path: string,
 ): RouteHandler[] {
-  const routeLayer = (app as unknown as { _router: { stack: unknown[] } })._router.stack
-    .find((layer) => {
-      const route = (layer as { route?: { path?: string; methods?: Record<string, boolean> } }).route;
-      return route?.path === path && route.methods?.[method] === true;
-    }) as
+  const routeLayer = (
+    app as unknown as { _router: { stack: unknown[] } }
+  )._router.stack.find((layer) => {
+    const route = (
+      layer as { route?: { path?: string; methods?: Record<string, boolean> } }
+    ).route;
+    return route?.path === path && route.methods?.[method] === true;
+  }) as
     | {
         route: {
           stack: Array<{ handle: RouteHandler }>;
@@ -181,11 +184,11 @@ test('POST /api/login does not require Authorization and returns token fields', 
     (response.body as { expires_in_seconds?: number }).expires_in_seconds,
     3600,
   );
-  assert.equal((response.body as { user?: JwtUserIdentity }).user?.userId, 'user-1');
   assert.equal(
-    typeof (response.body as { token?: unknown }).token,
-    'string',
+    (response.body as { user?: JwtUserIdentity }).user?.userId,
+    'user-1',
   );
+  assert.equal(typeof (response.body as { token?: unknown }).token, 'string');
 });
 
 test('Protected middleware accepts valid bearer token', async () => {
@@ -242,7 +245,10 @@ test('Protected middleware rejects missing Authorization header', async () => {
     }),
   );
   assert.equal(response.statusCode, 401);
-  assert.equal((response.body as { error?: string }).error, 'Not authenticated');
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Not authenticated',
+  );
 });
 
 test('Protected middleware rejects malformed Authorization header', async () => {
@@ -267,7 +273,10 @@ test('Protected middleware rejects malformed Authorization header', async () => 
     }),
   );
   assert.equal(response.statusCode, 401);
-  assert.equal((response.body as { error?: string }).error, 'Not authenticated');
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Not authenticated',
+  );
 });
 
 test('Protected middleware rejects invalid token with 401', async () => {
@@ -292,7 +301,10 @@ test('Protected middleware rejects invalid token with 401', async () => {
     }),
   );
   assert.equal(response.statusCode, 401);
-  assert.equal((response.body as { error?: string }).error, 'Not authenticated');
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Not authenticated',
+  );
 });
 
 test('Protected middleware rejects expired token with 401', async () => {
@@ -317,7 +329,10 @@ test('Protected middleware rejects expired token with 401', async () => {
     }),
   );
   assert.equal(response.statusCode, 401);
-  assert.equal((response.body as { error?: string }).error, 'Not authenticated');
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Not authenticated',
+  );
 });
 
 test('Protected renew endpoint accepts valid token and returns replacement token', async () => {
@@ -356,7 +371,10 @@ test('Protected renew endpoint accepts valid token and returns replacement token
     (response.body as { token?: string }).token?.startsWith('token-2'),
     true,
   );
-  assert.equal((response.body as { user?: JwtUserIdentity }).user?.userId, 'user-1');
+  assert.equal(
+    (response.body as { user?: JwtUserIdentity }).user?.userId,
+    'user-1',
+  );
 });
 
 test('Protected renew endpoint rejects expired token with 401', async () => {

@@ -97,12 +97,14 @@ export class EventsService {
 
         if (eventName === 'expiring' && eventData) {
           try {
-            onExpiring(JSON.parse(eventData) as {
-              service_key: string;
-              environment: string;
-              service_name: string;
-              minutes_left: number;
-            });
+            onExpiring(
+              JSON.parse(eventData) as {
+                service_key: string;
+                environment: string;
+                service_name: string;
+                minutes_left: number;
+              },
+            );
           } catch {
             continue;
           }

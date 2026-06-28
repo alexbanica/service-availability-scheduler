@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -65,16 +66,16 @@ type ColumnInfo = RowDataPacket & {
 
 type PopupResource = 'users' | 'services' | 'owners' | 'environments';
 
-type PopupResourceRow =
-  | { name: string };
+type PopupResourceRow = { name: string };
 
-function popupRowDisplayName(
-  row: PopupResourceRow,
-): string {
+function popupRowDisplayName(row: PopupResourceRow): string {
   return row.name;
 }
 
-async function tableExists(db: mysql.Pool, tableName: string): Promise<boolean> {
+async function tableExists(
+  db: mysql.Pool,
+  tableName: string,
+): Promise<boolean> {
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT TABLE_NAME
      FROM information_schema.TABLES
@@ -281,9 +282,8 @@ test(
       });
 
       const serviceRepo = new ServiceRepository(db);
-      const services = await serviceRepo.listServiceEnvironmentsByUser(
-        adminUserId,
-      );
+      const services =
+        await serviceRepo.listServiceEnvironmentsByUser(adminUserId);
       assert.equal(services.length, 1);
       assert.ok(services[0].serviceKey);
     } finally {
@@ -368,7 +368,12 @@ test(
           .join(', ')}`,
       );
 
-      const uuidIdColumns = ['user_id', 'workspace_id', 'service_id', 'environment_id'];
+      const uuidIdColumns = [
+        'user_id',
+        'workspace_id',
+        'service_id',
+        'environment_id',
+      ];
       const [idColumns] = await db.query<ColumnInfo[]>(
         `SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, COLUMN_KEY, EXTRA, IS_NULLABLE
          FROM INFORMATION_SCHEMA.COLUMNS
@@ -376,7 +381,9 @@ test(
            AND COLUMN_NAME IN (${uuidIdColumns.map(() => '?').join(',')})`,
         uuidIdColumns,
       );
-      const idColumnNames = new Set(idColumns.map((row) => `${row.TABLE_NAME}.${row.COLUMN_NAME}`));
+      const idColumnNames = new Set(
+        idColumns.map((row) => `${row.TABLE_NAME}.${row.COLUMN_NAME}`),
+      );
       for (const [table, column] of [
         ['users', 'user_id'],
         ['workspaces', 'workspace_id'],
@@ -392,13 +399,9 @@ test(
 
       const invalidDataTypes = idColumns.filter(
         (row) =>
-          ![
-            'char',
-            'varchar',
-            'binary',
-            'varbinary',
-            'uuid',
-          ].includes(row.DATA_TYPE),
+          !['char', 'varchar', 'binary', 'varbinary', 'uuid'].includes(
+            row.DATA_TYPE,
+          ),
       );
       assert.equal(
         invalidDataTypes.length,
@@ -507,7 +510,8 @@ test(
         defaultMinutes: 15,
       });
 
-      const workspaceSummaries = await workspaceService.listWorkspaces(adminUserId);
+      const workspaceSummaries =
+        await workspaceService.listWorkspaces(adminUserId);
       assert.equal(workspaceSummaries.length, 2);
 
       const byName = new Map(
@@ -637,7 +641,9 @@ test(
         environmentCount: number;
       } => ({
         userCount:
-          summary.userCount !== undefined ? summary.userCount : summary.user_count || 0,
+          summary.userCount !== undefined
+            ? summary.userCount
+            : summary.user_count || 0,
         serviceCount:
           summary.serviceCount !== undefined
             ? summary.serviceCount
@@ -665,7 +671,10 @@ test(
       );
       const normalizedAdminSummary = normalizeSummary(adminSummary as never);
       assert.equal(normalizedAdminSummary.ownerCount, adminOwnerCount);
-      assert.equal(normalizedAdminSummary.environmentCount, adminEnvironmentCount);
+      assert.equal(
+        normalizedAdminSummary.environmentCount,
+        adminEnvironmentCount,
+      );
 
       const memberOwnerCount = hasOwnersTable
         ? await countTableRows(db, 'owners', memberWorkspace.id)
@@ -800,7 +809,9 @@ test(
         'owners',
       );
 
-      assert.ok(workspaceOneUsers.some((row) => row.email === 'admin@example.com'));
+      assert.ok(
+        workspaceOneUsers.some((row) => row.email === 'admin@example.com'),
+      );
       assert.ok(workspaceOneServices.some((row) => row.label === 'alpha'));
       assert.ok(workspaceOneEnvs.some((row) => row.name === 'Development'));
 
@@ -824,7 +835,9 @@ test(
         'environments',
       );
 
-      assert.ok(workspaceTwoUsers.some((row) => row.email === 'admin@example.com'));
+      assert.ok(
+        workspaceTwoUsers.some((row) => row.email === 'admin@example.com'),
+      );
       assert.ok(workspaceTwoServices.some((row) => row.label === 'beta'));
       assert.ok(workspaceTwoEnvs.some((row) => row.name === 'Staging'));
 
@@ -955,7 +968,10 @@ test(
           'owners',
         );
         assert.equal(owners.length, 2);
-        assert.deepEqual(owners.map(popupRowDisplayName), ['Alpha Owner', 'Beta Owner']);
+        assert.deepEqual(owners.map(popupRowDisplayName), [
+          'Alpha Owner',
+          'Beta Owner',
+        ]);
       }
 
       const environments = await workspaceService.listWorkspacePopupRows(
@@ -964,10 +980,10 @@ test(
         'environments',
       );
       assert.equal(environments.length, 2);
-      assert.deepEqual(
-        environments.map(popupRowDisplayName),
-        ['Alpha Env', 'Zeta Env'],
-      );
+      assert.deepEqual(environments.map(popupRowDisplayName), [
+        'Alpha Env',
+        'Zeta Env',
+      ]);
     } finally {
       if (ALLOW_TRUNCATE) {
         await truncateAll(db);
@@ -1197,7 +1213,12 @@ test(
       );
       const outsiderUserId = outsiderResult.insertId;
 
-      for (const resourceType of ['users', 'services', 'owners', 'environments'] as const) {
+      for (const resourceType of [
+        'users',
+        'services',
+        'owners',
+        'environments',
+      ] as const) {
         await assert.rejects(
           () =>
             workspaceService.listWorkspacePopupRows(
@@ -1273,10 +1294,6 @@ test(
         defaultMinutes: 15,
       });
 
-      const [workspaceOneEnvRows] = await db.query<RowDataPacket[]>(
-        'SELECT environment_id FROM environments WHERE workspace_id = ?',
-        [workspaceOne.id],
-      );
       const [workspaceTwoEnvRows] = await db.query<RowDataPacket[]>(
         'SELECT environment_id FROM environments WHERE workspace_id = ?',
         [workspaceTwo.id],
@@ -1285,41 +1302,45 @@ test(
 
       await assert.rejects(
         () =>
-          (workspaceService as unknown as {
-            createService: (
-              workspaceId: unknown,
-              userId: unknown,
-              input: { label: string; defaultMinutes: number; environmentIds: string[] },
-            ) => Promise<unknown>;
-          }).createService(
-            workspaceOne.id,
-            adminUserId,
-            {
-              label: 'Cross Workspace',
-              defaultMinutes: 15,
-              environmentIds: [workspaceTwoEnvId],
-            } as never,
-          ),
+          (
+            workspaceService as unknown as {
+              createService: (
+                workspaceId: unknown,
+                userId: unknown,
+                input: {
+                  label: string;
+                  defaultMinutes: number;
+                  environmentIds: string[];
+                },
+              ) => Promise<unknown>;
+            }
+          ).createService(workspaceOne.id, adminUserId, {
+            label: 'Cross Workspace',
+            defaultMinutes: 15,
+            environmentIds: [workspaceTwoEnvId],
+          } as never),
         /workspace|not found|not in workspace|environment/i,
       );
 
       await assert.rejects(
         () =>
-          (workspaceService as unknown as {
-            createService: (
-              workspaceId: unknown,
-              userId: unknown,
-              input: { label: string; defaultMinutes: number; environmentIds: string[] },
-            ) => Promise<unknown>;
-          }).createService(
-            workspaceOne.id,
-            adminUserId,
-            {
-              label: 'Unknown Env',
-              defaultMinutes: 15,
-              environmentIds: [randomUUID()],
-            } as never,
-          ),
+          (
+            workspaceService as unknown as {
+              createService: (
+                workspaceId: unknown,
+                userId: unknown,
+                input: {
+                  label: string;
+                  defaultMinutes: number;
+                  environmentIds: string[];
+                },
+              ) => Promise<unknown>;
+            }
+          ).createService(workspaceOne.id, adminUserId, {
+            label: 'Unknown Env',
+            defaultMinutes: 15,
+            environmentIds: [randomUUID()],
+          } as never),
         /environment|not found|does not exist/i,
       );
 
@@ -1331,27 +1352,25 @@ test(
 
       await assert.rejects(
         () =>
-          (workspaceService as unknown as {
-            updateService: (
-              workspaceId: unknown,
-              userId: unknown,
-              input: {
-                serviceId: string;
-                label: string;
-                defaultMinutes: number;
-                environmentIds: string[];
-              },
-            ) => Promise<unknown>;
-          }).updateService(
-            workspaceOne.id,
-            adminUserId,
-            {
-              serviceId,
-              label: 'Cross Update',
-              defaultMinutes: 20,
-              environmentIds: [workspaceTwoEnvId],
-            } as never,
-          ),
+          (
+            workspaceService as unknown as {
+              updateService: (
+                workspaceId: unknown,
+                userId: unknown,
+                input: {
+                  serviceId: string;
+                  label: string;
+                  defaultMinutes: number;
+                  environmentIds: string[];
+                },
+              ) => Promise<unknown>;
+            }
+          ).updateService(workspaceOne.id, adminUserId, {
+            serviceId,
+            label: 'Cross Update',
+            defaultMinutes: 20,
+            environmentIds: [workspaceTwoEnvId],
+          } as never),
         /workspace|not found|not in workspace|environment/i,
       );
     } finally {
@@ -1405,18 +1424,25 @@ test(
         new UserRoleRepository(db),
       );
 
-      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Alpha',
+      );
 
       await db.query(
         'INSERT INTO workspace_users (workspace_id, user_id, role) VALUES (?, ?, ?)',
         [workspace.id, memberUserId, 'member'],
       );
 
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        environmentNames: ['Dev'],
-        label: 'API',
-        defaultMinutes: 15,
-      });
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          environmentNames: ['Dev'],
+          label: 'API',
+          defaultMinutes: 15,
+        },
+      );
 
       await assert.rejects(
         () =>
@@ -1472,12 +1498,19 @@ test(
         new UserRoleRepository(db),
       );
 
-      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        environmentNames: ['Dev'],
-        label: 'API',
-        defaultMinutes: 15,
-      });
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Alpha',
+      );
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          environmentNames: ['Dev'],
+          label: 'API',
+          defaultMinutes: 15,
+        },
+      );
 
       await assert.rejects(
         () =>
@@ -1533,12 +1566,19 @@ test(
         new UserRoleRepository(db),
       );
 
-      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        environmentNames: ['Dev'],
-        label: 'API',
-        defaultMinutes: 15,
-      });
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Alpha',
+      );
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          environmentNames: ['Dev'],
+          label: 'API',
+          defaultMinutes: 15,
+        },
+      );
 
       await assert.rejects(
         () =>
@@ -1594,12 +1634,19 @@ test(
         new UserRoleRepository(db),
       );
 
-      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        environmentNames: ['Dev'],
-        label: 'API',
-        defaultMinutes: 15,
-      });
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Alpha',
+      );
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          environmentNames: ['Dev'],
+          label: 'API',
+          defaultMinutes: 15,
+        },
+      );
 
       await assert.rejects(
         () =>
@@ -1661,29 +1708,54 @@ test(
         'Alpha',
       );
 
-      const managedService = workspaceService as unknown as WorkspaceScopedIdOps;
-      const eastEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
-        name: 'Region East',
-      });
-      const westEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
-        name: 'Region West',
-      });
-      const ownerAlpha = await managedService.createOwner(workspace.id, adminUserId, {
-        name: 'Owner Alpha',
-      });
-      const ownerBeta = await managedService.createOwner(workspace.id, adminUserId, {
-        name: 'Owner Beta',
-      });
-      const northEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
-        name: 'Region North',
-      });
+      const managedService =
+        workspaceService as unknown as WorkspaceScopedIdOps;
+      const eastEnv = await managedService.createEnvironment(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Region East',
+        },
+      );
+      const westEnv = await managedService.createEnvironment(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Region West',
+        },
+      );
+      const ownerAlpha = await managedService.createOwner(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Owner Alpha',
+        },
+      );
+      const ownerBeta = await managedService.createOwner(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Owner Beta',
+        },
+      );
+      const northEnv = await managedService.createEnvironment(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Region North',
+        },
+      );
 
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        label: 'API',
-        ownerId: ownerAlpha.ownerId,
-        defaultMinutes: 15,
-        environmentIds: [eastEnv.environmentId, westEnv.environmentId],
-      });
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          label: 'API',
+          ownerId: ownerAlpha.ownerId,
+          defaultMinutes: 15,
+          environmentIds: [eastEnv.environmentId, westEnv.environmentId],
+        },
+      );
 
       const [serviceRows] = await db.query<RowDataPacket[]>(
         'SELECT service_id, label, default_minutes, owner_id FROM services WHERE workspace_id = ? AND service_id = ?',
@@ -1703,10 +1775,10 @@ test(
          ORDER BY e.name`,
         [created.serviceId],
       );
-      assert.deepEqual(
-        initialAssocRows.map((row) => row.name).sort(),
-        ['Region East', 'Region West'],
-      );
+      assert.deepEqual(initialAssocRows.map((row) => row.name).sort(), [
+        'Region East',
+        'Region West',
+      ]);
 
       const [existingEnvRows] = await db.query<RowDataPacket[]>(
         'SELECT environment_id FROM environments WHERE workspace_id = ? AND name = ?',
@@ -1714,13 +1786,17 @@ test(
       );
       const retainedEnvironmentId = existingEnvRows[0].environment_id;
 
-      const updated = await workspaceService.updateService(workspace.id, adminUserId, {
-        serviceId: created.serviceId,
-        label: 'API (updated)',
-        defaultMinutes: 25,
-        ownerId: ownerBeta.ownerId,
-        environmentIds: [westEnv.environmentId, northEnv.environmentId],
-      });
+      const updated = await workspaceService.updateService(
+        workspace.id,
+        adminUserId,
+        {
+          serviceId: created.serviceId,
+          label: 'API (updated)',
+          defaultMinutes: 25,
+          ownerId: ownerBeta.ownerId,
+          environmentIds: [westEnv.environmentId, northEnv.environmentId],
+        },
+      );
       assert.equal(updated.serviceId, created.serviceId);
 
       const [updatedServiceRows] = await db.query<RowDataPacket[]>(
@@ -1742,7 +1818,10 @@ test(
         [created.serviceId],
       );
       const updatedEnvironmentNames = updatedAssocRows.map((row) => row.name);
-      assert.deepEqual(updatedEnvironmentNames, ['Region North', 'Region West']);
+      assert.deepEqual(updatedEnvironmentNames, [
+        'Region North',
+        'Region West',
+      ]);
 
       const [eastAssocRows] = await db.query<RowDataPacket[]>(
         `SELECT COUNT(*) AS count
@@ -1771,21 +1850,22 @@ test(
       assert.equal(westAssocRows.length, 1);
       assert.equal(westAssocRows[0].environment_id, retainedEnvironmentId);
 
-      const serviceCatalog = await new ServiceRepository(db).listServiceCatalogByWorkspace(
-        workspace.id,
-      );
+      const serviceCatalog = await new ServiceRepository(
+        db,
+      ).listServiceCatalogByWorkspace(workspace.id);
       const catalogRows = serviceCatalog.filter(
-        (serviceCatalogEntry) => serviceCatalogEntry.serviceId === created.serviceId,
+        (serviceCatalogEntry) =>
+          serviceCatalogEntry.serviceId === created.serviceId,
       );
       assert.equal(catalogRows.length, 2);
       assert.deepEqual(
-        catalogRows
-          .map((catalogEntry) => catalogEntry.environmentName)
-          .sort(),
+        catalogRows.map((catalogEntry) => catalogEntry.environmentName).sort(),
         ['Region North', 'Region West'],
       );
       assert.equal(
-        catalogRows.some((catalogEntry) => catalogEntry.environmentName === 'Region East'),
+        catalogRows.some(
+          (catalogEntry) => catalogEntry.environmentName === 'Region East',
+        ),
         false,
       );
     } finally {
@@ -1881,7 +1961,8 @@ test(
         'Alpha',
       );
 
-      const managedService = workspaceService as unknown as WorkspaceScopedIdOps;
+      const managedService =
+        workspaceService as unknown as WorkspaceScopedIdOps;
       const westEnv = await managedService.createEnvironment(
         workspace.id,
         adminUserId,
@@ -1893,11 +1974,15 @@ test(
         name: 'Region East',
       });
 
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        label: 'API',
-        defaultMinutes: 15,
-        environmentNames: ['Region West', 'Region East'],
-      });
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          label: 'API',
+          defaultMinutes: 15,
+          environmentNames: ['Region West', 'Region East'],
+        },
+      );
 
       const [initialEnvRows] = await db.query<RowDataPacket[]>(
         `SELECT e.name
@@ -1907,17 +1992,21 @@ test(
          ORDER BY e.name`,
         [created.serviceId],
       );
-      assert.deepEqual(
-        initialEnvRows.map((row) => row.name).sort(),
-        ['Region East', 'Region West'],
-      );
+      assert.deepEqual(initialEnvRows.map((row) => row.name).sort(), [
+        'Region East',
+        'Region West',
+      ]);
 
-      const updated = await workspaceService.updateService(workspace.id, adminUserId, {
-        serviceId: created.serviceId,
-        label: 'API',
-        defaultMinutes: 15,
-        environmentNames: ['region west', 'Region South'],
-      });
+      const updated = await workspaceService.updateService(
+        workspace.id,
+        adminUserId,
+        {
+          serviceId: created.serviceId,
+          label: 'API',
+          defaultMinutes: 15,
+          environmentNames: ['region west', 'Region South'],
+        },
+      );
       assert.equal(updated.serviceId, created.serviceId);
 
       const [updatedEnvRows] = await db.query<RowDataPacket[]>(
@@ -1928,10 +2017,10 @@ test(
          ORDER BY e.name`,
         [created.serviceId],
       );
-      assert.deepEqual(
-        updatedEnvRows.map((row) => row.name).sort(),
-        ['Region South', 'Region West'],
-      );
+      assert.deepEqual(updatedEnvRows.map((row) => row.name).sort(), [
+        'Region South',
+        'Region West',
+      ]);
 
       const [westAssocRows] = await db.query<RowDataPacket[]>(
         `SELECT se.environment_id
@@ -1967,7 +2056,10 @@ test(
         [created.serviceId],
       );
       assert.equal(southAssocRows.length, 1);
-      assert.equal(southAssocRows[0].environment_id, southEnvRows[0].environment_id);
+      assert.equal(
+        southAssocRows[0].environment_id,
+        southEnvRows[0].environment_id,
+      );
     } finally {
       if (ALLOW_TRUNCATE) {
         await truncateAll(db);
@@ -2017,11 +2109,15 @@ test(
         'Alpha',
       );
 
-      const created = await workspaceService.createService(workspace.id, adminUserId, {
-        environmentNames: ['East', 'West'],
-        label: 'Auth API',
-        defaultMinutes: 15,
-      });
+      const created = await workspaceService.createService(
+        workspace.id,
+        adminUserId,
+        {
+          environmentNames: ['East', 'West'],
+          label: 'Auth API',
+          defaultMinutes: 15,
+        },
+      );
 
       const [serviceRows] = await db.query<RowDataPacket[]>(
         'SELECT id, service_id FROM services WHERE workspace_id = ? AND service_id = ?',
@@ -2099,12 +2195,15 @@ test(
         new UserRoleRepository(db),
       );
 
-      const managedService = workspaceService as unknown as WorkspaceScopedIdOps;
+      const managedService =
+        workspaceService as unknown as WorkspaceScopedIdOps;
       if (
         typeof managedService.createEnvironment !== 'function' ||
         typeof managedService.createOwner !== 'function'
       ) {
-        assert.fail('Workspace owner/environment create methods are not implemented yet');
+        assert.fail(
+          'Workspace owner/environment create methods are not implemented yet',
+        );
       }
 
       const workspace = await workspaceService.createWorkspace(
@@ -2113,16 +2212,26 @@ test(
       );
 
       await assert.rejects(
-        () => managedService.createEnvironment(workspace.id, memberUserId, { name: 'Dev' }),
+        () =>
+          managedService.createEnvironment(workspace.id, memberUserId, {
+            name: 'Dev',
+          }),
         /Not authorized|forbidden|admin/i,
       );
       await assert.rejects(
-        () => managedService.createEnvironment(workspace.id, adminUserId, { name: '   ' }),
+        () =>
+          managedService.createEnvironment(workspace.id, adminUserId, {
+            name: '   ',
+          }),
         /required|name/i,
       );
-      const createdEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
-        name: 'Development',
-      });
+      const createdEnv = await managedService.createEnvironment(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Development',
+        },
+      );
       await assert.rejects(
         () =>
           managedService.createEnvironment(workspace.id, adminUserId, {
@@ -2132,19 +2241,30 @@ test(
       );
 
       await assert.rejects(
-        () => managedService.createOwner(workspace.id, memberUserId, { name: 'Team' }),
+        () =>
+          managedService.createOwner(workspace.id, memberUserId, {
+            name: 'Team',
+          }),
         /Not authorized|forbidden|admin/i,
       );
       await assert.rejects(
-        () => managedService.createOwner(workspace.id, adminUserId, { name: '' }),
+        () =>
+          managedService.createOwner(workspace.id, adminUserId, { name: '' }),
         /required|name/i,
       );
 
-      const createdOwner = await managedService.createOwner(workspace.id, adminUserId, {
-        name: 'Team Owner',
-      });
+      const createdOwner = await managedService.createOwner(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Team Owner',
+        },
+      );
       await assert.rejects(
-        () => managedService.createOwner(workspace.id, adminUserId, { name: 'team owner' }),
+        () =>
+          managedService.createOwner(workspace.id, adminUserId, {
+            name: 'team owner',
+          }),
         /duplicate|already exists|conflict/i,
       );
 
@@ -2207,7 +2327,8 @@ test(
         new UserRoleRepository(db),
       );
 
-      const managedService = workspaceService as unknown as WorkspaceScopedIdOps;
+      const managedService =
+        workspaceService as unknown as WorkspaceScopedIdOps;
 
       const workspaceOne = await workspaceService.createWorkspace(
         adminUserId,
@@ -2222,28 +2343,50 @@ test(
         typeof managedService.createEnvironment !== 'function' ||
         typeof managedService.createOwner !== 'function'
       ) {
-        assert.fail('Workspace owner/environment create methods are not implemented yet');
+        assert.fail(
+          'Workspace owner/environment create methods are not implemented yet',
+        );
       }
 
-      const envOne = await managedService.createEnvironment(workspaceOne.id, adminUserId, {
-        name: 'One',
-      });
-      const envTwo = await managedService.createEnvironment(workspaceTwo.id, adminUserId, {
-        name: 'Two',
-      });
-      const ownerOne = await managedService.createOwner(workspaceOne.id, adminUserId, {
-        name: 'Owner One',
-      });
-      const ownerTwo = await managedService.createOwner(workspaceTwo.id, adminUserId, {
-        name: 'Owner Two',
-      });
+      const envOne = await managedService.createEnvironment(
+        workspaceOne.id,
+        adminUserId,
+        {
+          name: 'One',
+        },
+      );
+      const envTwo = await managedService.createEnvironment(
+        workspaceTwo.id,
+        adminUserId,
+        {
+          name: 'Two',
+        },
+      );
+      const ownerOne = await managedService.createOwner(
+        workspaceOne.id,
+        adminUserId,
+        {
+          name: 'Owner One',
+        },
+      );
+      const ownerTwo = await managedService.createOwner(
+        workspaceTwo.id,
+        adminUserId,
+        {
+          name: 'Owner Two',
+        },
+      );
 
-      const createdService = await managedService.createService(workspaceOne.id, adminUserId, {
-        label: 'Service One',
-        defaultMinutes: 15,
-        environmentIds: [envOne.environmentId],
-        ownerId: ownerOne.ownerId,
-      });
+      const createdService = await managedService.createService(
+        workspaceOne.id,
+        adminUserId,
+        {
+          label: 'Service One',
+          defaultMinutes: 15,
+          environmentIds: [envOne.environmentId],
+          ownerId: ownerOne.ownerId,
+        },
+      );
 
       await assert.rejects(
         () =>
@@ -2314,7 +2457,11 @@ test(
         /environment|not in workspace|not found|invalid/i,
       );
 
-      await workspaceService.deleteService(workspaceOne.id, adminUserId, createdService.serviceId);
+      await workspaceService.deleteService(
+        workspaceOne.id,
+        adminUserId,
+        createdService.serviceId,
+      );
     } finally {
       if (ALLOW_TRUNCATE) {
         await truncateAll(db);

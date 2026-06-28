@@ -22,16 +22,17 @@ export class WorkspaceService {
       workspaces: Array<Record<string, unknown>>;
     };
 
-    return data.workspaces.map((workspace) =>
-      new Workspace(
-        this.asString(workspace.id, ''),
-        this.asString(workspace.name, 'Untitled'),
-        this.asString(workspace.admin_user_id, ''),
-        this.asNumber(workspace.user_count, 0),
-        this.asNumber(workspace.service_count, 0),
-        this.asNumber(workspace.owner_count, 0),
-        this.asNumber(workspace.environment_count, 0),
-      ),
+    return data.workspaces.map(
+      (workspace) =>
+        new Workspace(
+          this.asString(workspace.id, ''),
+          this.asString(workspace.name, 'Untitled'),
+          this.asString(workspace.admin_user_id, ''),
+          this.asNumber(workspace.user_count, 0),
+          this.asNumber(workspace.service_count, 0),
+          this.asNumber(workspace.owner_count, 0),
+          this.asNumber(workspace.environment_count, 0),
+        ),
     );
   }
 
@@ -182,7 +183,9 @@ export class WorkspaceService {
     }));
   }
 
-  static async listOwners(workspaceId: string): Promise<WorkspaceOwnerOption[]> {
+  static async listOwners(
+    workspaceId: string,
+  ): Promise<WorkspaceOwnerOption[]> {
     const response = await ApiService.get(
       `/api/workspaces/${workspaceId}/owners`,
     );
@@ -256,9 +259,7 @@ export class WorkspaceService {
       : [];
   }
 
-  static async listServiceCatalog(
-    workspaceId: string,
-  ): Promise<
+  static async listServiceCatalog(workspaceId: string): Promise<
     Array<{
       serviceId: string;
       label: string;
@@ -277,9 +278,7 @@ export class WorkspaceService {
     };
     if (!response.ok) {
       throw new Error(
-        typeof data.error === 'string'
-          ? data.error
-          : 'Failed to load services',
+        typeof data.error === 'string' ? data.error : 'Failed to load services',
       );
     }
     return data.services.map((svc) => ({

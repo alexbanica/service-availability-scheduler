@@ -10,17 +10,21 @@ const requireFromRoot = createRequire(process.cwd() + '/');
 const buildRoot = path.join(os.tmpdir(), 'sas-browser-tests');
 
 function compileBrowserBundle(): void {
-  const result = spawnSync('npx', [
-    'tsc',
-    '-p',
-    'tsconfig.client.json',
-    '--outDir',
-    buildRoot,
-    '--module',
-    'commonjs',
-  ], {
-    stdio: 'ignore',
-  });
+  const result = spawnSync(
+    'npx',
+    [
+      'tsc',
+      '-p',
+      'tsconfig.client.json',
+      '--outDir',
+      buildRoot,
+      '--module',
+      'commonjs',
+    ],
+    {
+      stdio: 'ignore',
+    },
+  );
 
   if (result.status !== 0) {
     throw new Error('Failed to compile browser bundle for tests');
@@ -51,10 +55,14 @@ const { AuthService } = requireFromRoot(
 };
 
 test('non-401 token renewal failure schedules a delayed retry', async () => {
-  const previousWindow = (globalThis as { window?: { setTimeout: unknown; clearTimeout: unknown } })
-    .window;
+  const previousWindow = (
+    globalThis as { window?: { setTimeout: unknown; clearTimeout: unknown } }
+  ).window;
 
-  const calls: Array<{ delay: number; callback: () => Promise<unknown> | unknown }> = [];
+  const calls: Array<{
+    delay: number;
+    callback: () => Promise<unknown> | unknown;
+  }> = [];
   const originalAuthHasToken = AuthService.hasToken;
   const originalAuthIsTokenRenewalDue = AuthService.isTokenRenewalDue;
   const originalAuthRenew = AuthService.renew;
@@ -62,10 +70,10 @@ test('non-401 token renewal failure schedules a delayed retry', async () => {
   Object.defineProperty(globalThis, 'window', {
     value: {
       setTimeout: (callback: () => void, delay?: number) => {
-      calls.push({
-        delay: delay ?? 0,
-        callback,
-      });
+        calls.push({
+          delay: delay ?? 0,
+          callback,
+        });
         return calls.length;
       },
       clearTimeout: () => undefined,
@@ -78,7 +86,9 @@ test('non-401 token renewal failure schedules a delayed retry', async () => {
   AuthService.renew = async () => false;
 
   const controller = new AppController();
-  await (controller as { scheduleTokenRenewal: () => void }).scheduleTokenRenewal();
+  await (
+    controller as { scheduleTokenRenewal: () => void }
+  ).scheduleTokenRenewal();
   assert.equal(calls.length, 1);
   await (calls[0].callback as () => Promise<void>)();
 
