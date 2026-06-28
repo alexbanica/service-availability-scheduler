@@ -65,16 +65,19 @@ export class WorkspaceController {
       requireAuth,
       async (req: Request, res: Response) => {
         const workspaceId = String(req.params.workspaceId || '');
+        const environmentIds = Array.isArray(req.body.environment_ids)
+          ? req.body.environment_ids.map((id: unknown) => String(id || '').trim())
+          : [];
+        const environmentNames = Array.isArray(req.body.environment_names)
+          ? req.body.environment_names.map((name: unknown) => String(name || '').trim())
+          : [];
         try {
           const result = await this.workspaceService.createService(
             workspaceId,
             req.session.userId as string,
             {
-              environmentIds: Array.isArray(req.body.environment_ids)
-                ? req.body.environment_ids.map((id: unknown) =>
-                    String(id || ''),
-                  )
-                : [],
+              environmentIds,
+              environmentNames,
               serviceId: req.body.service_id
                 ? String(req.body.service_id)
                 : null,
@@ -112,17 +115,20 @@ export class WorkspaceController {
       async (req: Request, res: Response) => {
         const workspaceId = String(req.params.workspaceId || '');
         const serviceId = decodeURIComponent(String(req.params.serviceId));
+        const environmentIds = Array.isArray(req.body.environment_ids)
+          ? req.body.environment_ids.map((id: unknown) => String(id || '').trim())
+          : [];
+        const environmentNames = Array.isArray(req.body.environment_names)
+          ? req.body.environment_names.map((name: unknown) => String(name || '').trim())
+          : [];
         try {
           const result = await this.workspaceService.updateService(
             workspaceId,
             req.session.userId as string,
             {
               serviceId,
-              environmentIds: Array.isArray(req.body.environment_ids)
-                ? req.body.environment_ids.map((id: unknown) =>
-                    String(id || ''),
-                  )
-                : [],
+              environmentIds,
+              environmentNames,
               label: req.body.label ? String(req.body.label) : '',
               defaultMinutes: Number(req.body.default_minutes || 0),
               ownerId: req.body.owner_id ? String(req.body.owner_id) : null,

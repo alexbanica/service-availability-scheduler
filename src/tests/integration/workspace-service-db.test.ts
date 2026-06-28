@@ -36,6 +36,15 @@ function assertWorkspaceHasCounts(
   expectedServiceCount: number,
 ): void {
   const stats = workspace as WorkspaceStats;
+  assert.ok(
+    stats.userCount !== undefined || stats.user_count !== undefined,
+    'Workspace summary is missing user count',
+  );
+  assert.ok(
+    stats.serviceCount !== undefined || stats.service_count !== undefined,
+    'Workspace summary is missing service count',
+  );
+
   const userCount = stats.userCount ?? stats.user_count;
   const serviceCount = stats.serviceCount ?? stats.service_count;
   assert.equal(userCount, expectedUserCount);
@@ -831,6 +840,205 @@ test(
 );
 
 test(
+  'listWorkspacePopupRows returns typed resource rows for services, owners, environments, and users',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Popup Workspace',
+      );
+
+      const [memberResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['member@example.com', 'Member'],
+      );
+      const memberUserId = memberResult.insertId;
+      await db.query(
+        'INSERT INTO workspace_users (workspace_id, user_id, role) VALUES (?, ?, ?)',
+        [workspace.id, memberUserId, 'member'],
+      );
+
+      await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Zeta Env'],
+        label: 'Beta Service',
+        defaultMinutes: 30,
+      });
+      await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Alpha Env'],
+        label: 'Alpha Service',
+        defaultMinutes: 30,
+      });
+
+      const hasOwnersTable = await tableExists(db, 'owners');
+      if (hasOwnersTable) {
+        await db.query(
+          'INSERT INTO owners (owner_id, workspace_id, name) VALUES (?, ?, ?), (?, ?, ?)',
+          [
+            randomUUID(),
+            workspace.id,
+            'Beta Owner',
+            randomUUID(),
+            workspace.id,
+            'Alpha Owner',
+          ],
+        );
+      }
+
+      const users = await workspaceService.listWorkspacePopupRows(
+        workspace.id,
+        adminUserId,
+        'users',
+      );
+      assert.equal(users.length, 2);
+      assert.deepEqual(
+        users.map((row) => row.email),
+        ['admin@example.com', 'member@example.com'],
+      );
+      assert.ok(users.every((row) => row.type === 'users'));
+
+      const services = await workspaceService.listWorkspacePopupRows(
+        workspace.id,
+        adminUserId,
+        'services',
+      );
+      assert.equal(services.length, 2);
+      assert.deepEqual(
+        services.map((row) => row.serviceName),
+        ['Alpha Service', 'Beta Service'],
+      );
+
+      if (hasOwnersTable) {
+        const owners = await workspaceService.listWorkspacePopupRows(
+          workspace.id,
+          adminUserId,
+          'owners',
+        );
+        assert.equal(owners.length, 2);
+        assert.deepEqual(
+          owners.map((row) => row.ownerName),
+          ['Alpha Owner', 'Beta Owner'],
+        );
+      }
+
+      const environments = await workspaceService.listWorkspacePopupRows(
+        workspace.id,
+        adminUserId,
+        'environments',
+      );
+      assert.equal(environments.length, 2);
+      assert.deepEqual(
+        environments.map((row) => row.environmentName),
+        ['Alpha Env', 'Zeta Env'],
+      );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
+  'listWorkspacePopupRows enforces workspace membership before returning popup rows',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Popup Workspace',
+      );
+
+      const [outsiderResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['outsider@example.com', 'Outsider'],
+      );
+      const outsiderUserId = outsiderResult.insertId;
+
+      for (const resourceType of ['users', 'services', 'owners', 'environments'] as const) {
+        await assert.rejects(
+          () =>
+            workspaceService.listWorkspacePopupRows(
+              workspace.id,
+              outsiderUserId,
+              resourceType,
+            ),
+          /Not authorized for workspace/,
+        );
+      }
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
   'service creation and update require existing workspace environment identifiers only',
   { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
   async () => {
@@ -977,6 +1185,263 @@ test(
 );
 
 test(
+  'updateService requires workspace admin access in database workflow',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+
+      const [memberResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['member@example.com', 'Member'],
+      );
+      const memberUserId = memberResult.insertId;
+
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
+
+      await db.query(
+        'INSERT INTO workspace_users (workspace_id, user_id, role) VALUES (?, ?, ?)',
+        [workspace.id, memberUserId, 'member'],
+      );
+
+      const created = await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Dev'],
+        label: 'API',
+        defaultMinutes: 15,
+      });
+
+      await assert.rejects(
+        () =>
+          workspaceService.updateService(workspace.id, memberUserId, {
+            serviceId: created.serviceId,
+            label: 'API Updated',
+            defaultMinutes: 20,
+            environmentNames: ['Dev'],
+          }),
+        /Not authorized for workspace/,
+      );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
+  'updateService requires nonblank label in database workflow',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
+      const created = await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Dev'],
+        label: 'API',
+        defaultMinutes: 15,
+      });
+
+      await assert.rejects(
+        () =>
+          workspaceService.updateService(workspace.id, adminUserId, {
+            serviceId: created.serviceId,
+            label: '   ',
+            defaultMinutes: 15,
+            environmentNames: ['Dev'],
+          }),
+        /Service name required/,
+      );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
+  'updateService requires at least one environment in database workflow',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
+      const created = await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Dev'],
+        label: 'API',
+        defaultMinutes: 15,
+      });
+
+      await assert.rejects(
+        () =>
+          workspaceService.updateService(workspace.id, adminUserId, {
+            serviceId: created.serviceId,
+            label: 'API',
+            defaultMinutes: 15,
+            environmentNames: [],
+          } as never),
+        /At least one environment is required/,
+      );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
+  'updateService requires positive default minutes in database workflow',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(adminUserId, 'Alpha');
+      const created = await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Dev'],
+        label: 'API',
+        defaultMinutes: 15,
+      });
+
+      await assert.rejects(
+        () =>
+          workspaceService.updateService(workspace.id, adminUserId, {
+            serviceId: created.serviceId,
+            label: 'API',
+            defaultMinutes: 0,
+            environmentNames: ['Dev'],
+          }),
+        /Default minutes must be positive/,
+      );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
   'updateService updates service metadata and replaces environments without changing service_id',
   { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
   async () => {
@@ -1017,29 +1482,47 @@ test(
         'Alpha',
       );
 
+      const managedService = workspaceService as unknown as WorkspaceScopedIdOps;
+      const eastEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
+        name: 'Region East',
+      });
+      const westEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
+        name: 'Region West',
+      });
+      const ownerAlpha = await managedService.createOwner(workspace.id, adminUserId, {
+        name: 'Owner Alpha',
+      });
+      const ownerBeta = await managedService.createOwner(workspace.id, adminUserId, {
+        name: 'Owner Beta',
+      });
+      const northEnv = await managedService.createEnvironment(workspace.id, adminUserId, {
+        name: 'Region North',
+      });
+
       const created = await workspaceService.createService(workspace.id, adminUserId, {
-        environmentNames: ['Region East', 'Region West'],
         label: 'API',
-        owner: 'Owner Alpha',
+        ownerId: ownerAlpha.ownerId,
         defaultMinutes: 15,
+        environmentIds: [eastEnv.environmentId, westEnv.environmentId],
       });
 
       const [serviceRows] = await db.query<RowDataPacket[]>(
-        'SELECT id, service_id, label, default_minutes, owner FROM services WHERE workspace_id = ? AND service_id = ?',
+        'SELECT service_id, label, default_minutes, owner_id FROM services WHERE workspace_id = ? AND service_id = ?',
         [workspace.id, created.serviceId],
       );
       assert.equal(serviceRows.length, 1);
       assert.equal(serviceRows[0].service_id, created.serviceId);
-
-      const serviceDbId = serviceRows[0].id;
+      assert.equal(serviceRows[0].label, 'API');
+      assert.equal(serviceRows[0].default_minutes, 15);
+      assert.equal(serviceRows[0].owner_id, ownerAlpha.ownerId);
 
       const [initialAssocRows] = await db.query<RowDataPacket[]>(
         `SELECT e.name, e.environment_id
          FROM service_environments se
-         JOIN environments e ON e.id = se.environment_id
+         JOIN environments e ON e.environment_id = se.environment_id
          WHERE se.service_id = ?
          ORDER BY e.name`,
-        [serviceDbId],
+        [created.serviceId],
       );
       assert.deepEqual(
         initialAssocRows.map((row) => row.name).sort(),
@@ -1052,31 +1535,32 @@ test(
       );
       const retainedEnvironmentId = existingEnvRows[0].environment_id;
 
-      await workspaceService.updateService(workspace.id, adminUserId, {
+      const updated = await workspaceService.updateService(workspace.id, adminUserId, {
         serviceId: created.serviceId,
         label: 'API (updated)',
         defaultMinutes: 25,
-        owner: 'Owner Beta',
-        environmentNames: ['Region West', 'Region North'],
+        ownerId: ownerBeta.ownerId,
+        environmentIds: [westEnv.environmentId, northEnv.environmentId],
       });
+      assert.equal(updated.serviceId, created.serviceId);
 
       const [updatedServiceRows] = await db.query<RowDataPacket[]>(
-        'SELECT id, service_id, label, default_minutes, owner FROM services WHERE workspace_id = ? AND service_id = ?',
+        'SELECT service_id, label, default_minutes, owner_id FROM services WHERE workspace_id = ? AND service_id = ?',
         [workspace.id, created.serviceId],
       );
       assert.equal(updatedServiceRows.length, 1);
       assert.equal(updatedServiceRows[0].label, 'API (updated)');
       assert.equal(updatedServiceRows[0].default_minutes, 25);
-      assert.equal(updatedServiceRows[0].owner, 'Owner Beta');
+      assert.equal(updatedServiceRows[0].owner_id, ownerBeta.ownerId);
       assert.equal(updatedServiceRows[0].service_id, created.serviceId);
 
       const [updatedAssocRows] = await db.query<RowDataPacket[]>(
         `SELECT e.name, e.environment_id
          FROM service_environments se
-         JOIN environments e ON e.id = se.environment_id
+         JOIN environments e ON e.environment_id = se.environment_id
          WHERE se.service_id = ?
          ORDER BY e.name`,
-        [serviceDbId],
+        [created.serviceId],
       );
       const updatedEnvironmentNames = updatedAssocRows.map((row) => row.name);
       assert.deepEqual(updatedEnvironmentNames, ['Region North', 'Region West']);
@@ -1084,24 +1568,26 @@ test(
       const [eastAssocRows] = await db.query<RowDataPacket[]>(
         `SELECT COUNT(*) AS count
          FROM service_environments se
-         JOIN environments e ON e.id = se.environment_id
+         JOIN environments e ON e.environment_id = se.environment_id
          WHERE se.service_id = ? AND e.name = ?`,
-        [serviceDbId, 'Region East'],
+        [created.serviceId, 'Region East'],
       );
       assert.equal(Number(eastAssocRows[0].count), 0);
 
-      const [northEnvRows] = await db.query<RowDataPacket[]>(
-        'SELECT environment_id FROM environments WHERE workspace_id = ? AND name = ?',
-        [workspace.id, 'Region North'],
+      const [northAssocRows] = await db.query<RowDataPacket[]>(
+        `SELECT environment_id
+         FROM service_environments
+         WHERE service_id = ? AND environment_id = ?`,
+        [created.serviceId, northEnv.environmentId],
       );
-      assert.equal(northEnvRows.length, 1);
+      assert.equal(northAssocRows.length, 1);
 
       const [westAssocRows] = await db.query<RowDataPacket[]>(
         `SELECT e.environment_id
          FROM service_environments se
-         JOIN environments e ON e.id = se.environment_id
+         JOIN environments e ON e.environment_id = se.environment_id
          WHERE se.service_id = ? AND e.name = ?`,
-        [serviceDbId, 'Region West'],
+        [created.serviceId, 'Region West'],
       );
       assert.equal(westAssocRows.length, 1);
       assert.equal(westAssocRows[0].environment_id, retainedEnvironmentId);
@@ -1118,6 +1604,10 @@ test(
           .map((catalogEntry) => catalogEntry.environmentName)
           .sort(),
         ['Region North', 'Region West'],
+      );
+      assert.equal(
+        catalogRows.some((catalogEntry) => catalogEntry.environmentName === 'Region East'),
+        false,
       );
     } finally {
       if (ALLOW_TRUNCATE) {
@@ -1149,6 +1639,7 @@ type WorkspaceScopedIdOps = {
     input: {
       label: string;
       defaultMinutes: number;
+      environmentNames?: string[];
       environmentIds?: string[];
       environment_ids?: string[];
       ownerId?: string | null;
@@ -1162,6 +1653,7 @@ type WorkspaceScopedIdOps = {
       serviceId: string;
       label: string;
       defaultMinutes: number;
+      environmentNames?: string[];
       environmentIds?: string[];
       environment_ids?: string[];
       ownerId?: string | null;
@@ -1169,6 +1661,142 @@ type WorkspaceScopedIdOps = {
     },
   ) => Promise<unknown>;
 };
+
+test(
+  'service update reuses existing environment names and creates missing names from environmentNames',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Alpha',
+      );
+
+      const managedService = workspaceService as unknown as WorkspaceScopedIdOps;
+      const westEnv = await managedService.createEnvironment(
+        workspace.id,
+        adminUserId,
+        {
+          name: 'Region West',
+        },
+      );
+      await managedService.createEnvironment(workspace.id, adminUserId, {
+        name: 'Region East',
+      });
+
+      const created = await workspaceService.createService(workspace.id, adminUserId, {
+        label: 'API',
+        defaultMinutes: 15,
+        environmentNames: ['Region West', 'Region East'],
+      });
+
+      const [initialEnvRows] = await db.query<RowDataPacket[]>(
+        `SELECT e.name
+         FROM service_environments se
+         JOIN environments e ON e.environment_id = se.environment_id
+         WHERE se.service_id = ?
+         ORDER BY e.name`,
+        [created.serviceId],
+      );
+      assert.deepEqual(
+        initialEnvRows.map((row) => row.name).sort(),
+        ['Region East', 'Region West'],
+      );
+
+      const updated = await workspaceService.updateService(workspace.id, adminUserId, {
+        serviceId: created.serviceId,
+        label: 'API',
+        defaultMinutes: 15,
+        environmentNames: ['region west', 'Region South'],
+      });
+      assert.equal(updated.serviceId, created.serviceId);
+
+      const [updatedEnvRows] = await db.query<RowDataPacket[]>(
+        `SELECT e.name, se.environment_id
+         FROM service_environments se
+         JOIN environments e ON e.environment_id = se.environment_id
+         WHERE se.service_id = ?
+         ORDER BY e.name`,
+        [created.serviceId],
+      );
+      assert.deepEqual(
+        updatedEnvRows.map((row) => row.name).sort(),
+        ['Region South', 'Region West'],
+      );
+
+      const [westAssocRows] = await db.query<RowDataPacket[]>(
+        `SELECT se.environment_id
+         FROM service_environments se
+         JOIN environments e ON e.environment_id = se.environment_id
+         WHERE se.service_id = ? AND e.name = 'Region West'`,
+        [created.serviceId],
+      );
+      assert.equal(westAssocRows.length, 1);
+      assert.equal(westAssocRows[0].environment_id, westEnv.environmentId);
+
+      const [eastAssocRows] = await db.query<RowDataPacket[]>(
+        `SELECT se.service_id
+         FROM service_environments se
+         JOIN environments e ON e.environment_id = se.environment_id
+         WHERE se.service_id = ? AND e.name = 'Region East'`,
+        [created.serviceId],
+      );
+      assert.equal(eastAssocRows.length, 0);
+
+      const [southEnvRows] = await db.query<RowDataPacket[]>(
+        `SELECT environment_id
+         FROM environments
+         WHERE workspace_id = ? AND name = 'Region South'`,
+        [workspace.id],
+      );
+      assert.equal(southEnvRows.length, 1);
+      const [southAssocRows] = await db.query<RowDataPacket[]>(
+        `SELECT se.environment_id
+         FROM service_environments se
+         JOIN environments e ON e.environment_id = se.environment_id
+         WHERE se.service_id = ? AND e.name = 'Region South'`,
+        [created.serviceId],
+      );
+      assert.equal(southAssocRows.length, 1);
+      assert.equal(southAssocRows[0].environment_id, southEnvRows[0].environment_id);
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
 
 test(
   'service creation persists generated service_key per service-environment association',

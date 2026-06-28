@@ -16,6 +16,10 @@ class FakeWorkspaceRepository {
   constructor(
     private readonly workspaces: Map<string, Workspace>,
     private readonly listByUserImpl?: (userId: string) => Promise<Workspace[]>,
+    private readonly workspaceUsers = new Map<
+      string,
+      Array<{ userId: string; email: string }>
+    >(),
   ) {}
 
   withConnection(): FakeWorkspaceRepository {
@@ -24,6 +28,12 @@ class FakeWorkspaceRepository {
 
   async findById(id: string): Promise<Workspace | null> {
     return this.workspaces.get(id) || null;
+  }
+
+  async listUsersByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ userId: string; email: string }>> {
+    return this.workspaceUsers.get(workspaceId) || [];
   }
 
   async listByUser(userId: string): Promise<Workspace[]> {
@@ -76,8 +86,45 @@ class FakeWorkspaceUserRepository {
 }
 
 class FakeServiceRepository {
+  constructor(
+    private readonly userRows = new Map<string, Array<{ userId: string; email: string }>>(),
+    private readonly serviceRows = new Map<
+      string,
+      Array<{ serviceId: string; label: string }>
+    >(),
+    private readonly ownerRows = new Map<string, Array<{ ownerId: string; name: string }>>(),
+    private readonly environmentRows = new Map<
+      string,
+      Array<{ environmentId: string; environmentName: string }>
+    >(),
+  ) {}
+
   withConnection(): FakeServiceRepository {
     return this;
+  }
+
+  async listUsersByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ userId: string; email: string }>> {
+    return this.userRows.get(workspaceId) || [];
+  }
+
+  async listServiceSummariesByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ serviceId: string; label: string }>> {
+    return this.serviceRows.get(workspaceId) || [];
+  }
+
+  async listOwnersByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ ownerId: string; name: string }>> {
+    return this.ownerRows.get(workspaceId) || [];
+  }
+
+  async listEnvironmentsByWorkspace(
+    workspaceId: string,
+  ): Promise<Array<{ environmentId: string; environmentName: string }>> {
+    return this.environmentRows.get(workspaceId) || [];
   }
 
   async isWorkspaceOwnerOwnedByWorkspace(): Promise<boolean> {
@@ -146,12 +193,19 @@ class FakePool {
 function makeService(
   workspaces: Map<string, Workspace>,
   workspaceUsers = new FakeWorkspaceUserRepository(),
+  listByUserImpl?: (userId: string) => Promise<Workspace[]>,
+  workspaceUsersByWorkspace?: Map<string, Array<{ userId: string; email: string }>>,
+  serviceRepository?: FakeServiceRepository,
 ): WorkspaceService {
   return new WorkspaceService(
     new FakePool() as never,
-    new FakeWorkspaceRepository(workspaces) as never,
+    new FakeWorkspaceRepository(
+      workspaces,
+      listByUserImpl,
+      workspaceUsersByWorkspace,
+    ) as never,
     workspaceUsers as never,
-    new FakeServiceRepository() as never,
+    (serviceRepository ?? new FakeServiceRepository()) as never,
     new FakeInvitationRepository() as never,
     new FakeUserRepository(new Map([['user@example.com', 'user-2']])) as never,
     new FakeUserRoleRepository(new Set(['user-1'])) as never,
@@ -225,7 +279,7 @@ test('updateService requires workspace admin', async () => {
   );
 });
 
-test('updateService validates deterministic inputs before persistence', async () => {
+test('updateService requires nonblank label', async () => {
   const workspaceUsers = new FakeWorkspaceUserRepository();
   workspaceUsers.setAdmin('workspace-1', 'user-1');
   const service = makeService(
@@ -248,6 +302,21 @@ test('updateService validates deterministic inputs before persistence', async ()
       }),
     /Service name required/,
   );
+});
+
+test('updateService requires at least one environment', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'user-1');
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
   await assert.rejects(
     () =>
       service.updateService('workspace-1', 'user-1', {
@@ -256,8 +325,23 @@ test('updateService validates deterministic inputs before persistence', async ()
         label: 'svc',
         defaultMinutes: 10,
       }),
-    /Select at least one environment/,
+    /At least one environment is required/,
   );
+});
+
+test('updateService requires positive default minutes', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'user-1');
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
   await assert.rejects(
     () =>
       service.updateService('workspace-1', 'user-1', {
@@ -287,5 +371,271 @@ test('inviteUser fails when user already member', async () => {
   await assert.rejects(
     () => service.inviteUser('workspace-1', 'user-1', 'user@example.com'),
     /User already in workspace/,
+  );
+});
+
+test('listWorkspaces exposes summary stats for admin and member workspaces', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-admin', 'user-1');
+  workspaceUsers.setMember('workspace-member', 'user-1');
+
+  const adminWorkspace = new Workspace('workspace-admin', 'Admin Workspace', 'user-1', 1, 2, 0, 1);
+  const memberWorkspace = new Workspace(
+    'workspace-member',
+    'Member Workspace',
+    'user-2',
+    3,
+    1,
+    0,
+    1,
+  );
+
+  const service = makeService(
+    new Map([
+      [adminWorkspace.id, adminWorkspace],
+      [memberWorkspace.id, memberWorkspace],
+    ]),
+    workspaceUsers,
+    async (userId: string) => {
+      if (userId === 'user-1') {
+        return [adminWorkspace, memberWorkspace];
+      }
+      return [];
+    },
+  );
+
+  const summaries = await service.listWorkspaces('user-1');
+  assert.equal(summaries.length, 2);
+  assert.equal(summaries[0].id, adminWorkspace.id);
+  assert.equal(summaries[0].userCount, 1);
+  assert.equal(summaries[0].serviceCount, 2);
+  assert.equal(summaries[1].id, memberWorkspace.id);
+  assert.equal(summaries[1].userCount, 3);
+  assert.equal(summaries[1].serviceCount, 1);
+});
+
+test('createWorkspace returns workspace summary defaults for new workspace', async () => {
+  const service = makeService(new Map());
+
+  const createdWorkspace = await service.createWorkspace(
+    'user-1',
+    '  New Workspace ',
+  );
+
+  assert.equal(createdWorkspace.name, 'New Workspace');
+  assert.equal(createdWorkspace.userCount, 1);
+  assert.equal(createdWorkspace.serviceCount, 0);
+  assert.equal(createdWorkspace.ownerCount, 0);
+  assert.equal(createdWorkspace.environmentCount, 0);
+});
+
+test('listWorkspacePopupRows returns user rows with email for users', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setMember('workspace-1', 'user-1');
+
+  const serviceRepository = new FakeServiceRepository(
+    new Map([
+      [
+        'workspace-1',
+        [
+          { userId: 'user-a', email: 'alice@example.com' },
+          { userId: 'user-b', email: 'bob@example.com' },
+        ],
+      ],
+    ]),
+  );
+
+  const service = makeService(
+    new Map([
+      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 2, 0, 0, 0)],
+    ]),
+    workspaceUsers,
+    undefined,
+    new Map([
+      [
+        'workspace-1',
+        [
+          { userId: 'user-a', email: 'alice@example.com' },
+          { userId: 'user-b', email: 'bob@example.com' },
+        ],
+      ],
+    ]),
+    serviceRepository,
+  );
+
+  const rows = await service.listWorkspacePopupRows(
+    'workspace-1',
+    'user-1',
+    'users',
+  );
+
+  assert.deepEqual(rows, [
+    {
+      type: 'users',
+      userId: 'user-a',
+      email: 'alice@example.com',
+    },
+    {
+      type: 'users',
+      userId: 'user-b',
+      email: 'bob@example.com',
+    },
+  ]);
+});
+
+test('listWorkspacePopupRows returns service name rows for services', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setMember('workspace-1', 'user-1');
+
+  const serviceRepository = new FakeServiceRepository(
+    undefined,
+    new Map([
+      [
+        'workspace-1',
+        [
+          { serviceId: 'service-a', label: 'Auth API' },
+          { serviceId: 'service-b', label: 'Billing' },
+        ],
+      ],
+    ]),
+  );
+
+  const service = makeService(
+    new Map([
+      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 0, 2, 0, 0)],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const rows = await service.listWorkspacePopupRows(
+    'workspace-1',
+    'user-1',
+    'services',
+  );
+
+  assert.deepEqual(rows, [
+    {
+      type: 'services',
+      serviceId: 'service-a',
+      serviceName: 'Auth API',
+    },
+    {
+      type: 'services',
+      serviceId: 'service-b',
+      serviceName: 'Billing',
+    },
+  ]);
+});
+
+test('listWorkspacePopupRows returns owner name rows for owners', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setMember('workspace-1', 'user-1');
+
+  const serviceRepository = new FakeServiceRepository(
+    undefined,
+    undefined,
+    new Map([
+      [
+        'workspace-1',
+        [
+          { ownerId: 'owner-a', name: 'Acme Team' },
+          { ownerId: 'owner-b', name: 'Team B' },
+        ],
+      ],
+    ]),
+  );
+
+  const service = makeService(
+    new Map([
+      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 0, 0, 2, 0)],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const rows = await service.listWorkspacePopupRows(
+    'workspace-1',
+    'user-1',
+    'owners',
+  );
+
+  assert.deepEqual(rows, [
+    {
+      type: 'owners',
+      ownerId: 'owner-a',
+      ownerName: 'Acme Team',
+    },
+    {
+      type: 'owners',
+      ownerId: 'owner-b',
+      ownerName: 'Team B',
+    },
+  ]);
+});
+
+test('listWorkspacePopupRows returns environment name rows for environments', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setMember('workspace-1', 'user-1');
+
+  const serviceRepository = new FakeServiceRepository(
+    undefined,
+    undefined,
+    undefined,
+    new Map([
+      [
+        'workspace-1',
+        [
+          { environmentId: 'environment-a', environmentName: 'Dev' },
+          { environmentId: 'environment-b', environmentName: 'Prod' },
+        ],
+      ],
+    ]),
+  );
+
+  const service = makeService(
+    new Map([
+      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 0, 0, 0, 2)],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const rows = await service.listWorkspacePopupRows(
+    'workspace-1',
+    'user-1',
+    'environments',
+  );
+
+  assert.deepEqual(rows, [
+    {
+      type: 'environments',
+      environmentId: 'environment-a',
+      environmentName: 'Dev',
+    },
+    {
+      type: 'environments',
+      environmentId: 'environment-b',
+      environmentName: 'Prod',
+    },
+  ]);
+});
+
+test('listWorkspacePopupRows enforces membership authorization before returning rows', async () => {
+  const service = makeService(
+    new Map([
+      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
+    ]),
+  );
+
+  await assert.rejects(
+    () => service.listWorkspacePopupRows('workspace-1', 'user-2', 'users'),
+    /Not authorized for workspace/,
   );
 });

@@ -83,10 +83,12 @@ export class AppController {
           workspaceId: string;
           workspaceName: string;
           resourceType: WorkspaceResourceType;
+          requestId: number;
           rows: Array<Record<string, unknown>>;
           loading: boolean;
           error: string;
         } | null>(null);
+        const workspaceRowsRequestId = ref(0);
         const workspaceEnvironments = ref<
           Record<string, Array<{ environmentId: string; environmentName: string }>>
         >({});
@@ -114,6 +116,8 @@ export class AppController {
           serviceLabel: string;
           defaultMinutes: number;
           ownerId: string;
+          ownerInput: string;
+          ownerName: string;
         };
 
         const createEmptyServiceManagementForm = (): ServiceManagementForm => ({
@@ -122,11 +126,14 @@ export class AppController {
           serviceLabel: '',
           defaultMinutes: 60,
           ownerId: '',
+          ownerInput: '',
+          ownerName: '',
         });
 
         const serviceCreateForm = ref<ServiceManagementForm>(
           createEmptyServiceManagementForm(),
         );
+        const isCreateServiceModalOpen = ref(false);
         const serviceCreateError = ref('');
         const serviceCreateSubmitting = ref(false);
 
@@ -136,7 +143,16 @@ export class AppController {
         const serviceEditError = ref('');
         const serviceEditSubmitting = ref(false);
         const editingServiceId = ref<string | null>(null);
-
+        type PendingDeleteActionType = 'service';
+        type PendingDeleteAction = {
+          actionType: PendingDeleteActionType;
+          workspaceId: string;
+          serviceId: string;
+          targetLabel: string;
+          submitting: boolean;
+        };
+        const pendingDeleteAction = ref<PendingDeleteAction | null>(null);
+        const pendingDeleteError = ref('');
         const selectedServiceWorkspace = computed(
           () =>
             workspaces.value.find(
@@ -149,16 +165,32 @@ export class AppController {
               ? workspaceServiceCatalog.value[selectedServiceWorkspaceId.value] || []
               : [],
         );
-        const selectedServiceCatalogByName = computed(() =>
-          [...selectedServiceCatalog.value].sort((a, b) =>
-            a.label.localeCompare(b.label),
-          ),
-        );
+        const isWorkspaceAdmin = (workspaceId: string | null): boolean =>
+          !!user.value &&
+          !!workspaceId &&
+          !!workspaces.value.find(
+            (workspace) =>
+              workspace.id === workspaceId &&
+              workspace.adminUserId === user.value?.id,
+          );
         const selectedServiceWorkspaceIsAdmin = computed(
           () =>
             !!user.value &&
             selectedServiceWorkspace.value?.adminUserId === user.value?.id,
         );
+        const createServiceOwnerName = computed(() => {
+          const workspaceId = selectedServiceWorkspaceId.value;
+          if (!workspaceId) {
+            return '';
+          }
+          const owners = workspaceOwners.value[workspaceId] || [];
+          const ownerId = serviceCreateForm.value.ownerId;
+          if (ownerId) {
+            const owner = owners.find((item) => item.ownerId === ownerId);
+            return owner ? owner.name : '';
+          }
+          return serviceCreateForm.value.ownerName;
+        });
 
         const normalizeOwner = (owner: string | null): string =>
           owner || 'unowned';
@@ -743,22 +775,23 @@ export class AppController {
           workspace: Workspace,
           resourceType: WorkspaceResourceType,
         ) => {
+          const requestId = ++workspaceRowsRequestId.value;
           workspaceRowsModal.value = {
             workspaceId: workspace.id,
             workspaceName: workspace.name,
             resourceType,
+            requestId,
             rows: [],
             loading: true,
             error: '',
           };
           try {
             const rows = await WorkspaceService.listWorkspaceRows(
-              workspace.id,
+            workspace.id,
               resourceType,
             );
             if (
-              workspaceRowsModal.value?.workspaceId === workspace.id &&
-              workspaceRowsModal.value.resourceType === resourceType
+              workspaceRowsModal.value?.requestId === requestId
             ) {
               workspaceRowsModal.value = {
                 ...workspaceRowsModal.value,
@@ -768,8 +801,7 @@ export class AppController {
             }
           } catch (err) {
             if (
-              workspaceRowsModal.value?.workspaceId === workspace.id &&
-              workspaceRowsModal.value.resourceType === resourceType
+              workspaceRowsModal.value?.requestId === requestId
             ) {
               workspaceRowsModal.value = {
                 ...workspaceRowsModal.value,
@@ -778,6 +810,21 @@ export class AppController {
               };
             }
           }
+        };
+
+        const workspaceResourceLabel = (
+          resourceType: WorkspaceResourceType,
+        ): string => {
+          if (resourceType === 'users') {
+            return 'Users';
+          }
+          if (resourceType === 'services') {
+            return 'Services';
+          }
+          if (resourceType === 'owners') {
+            return 'Owners';
+          }
+          return 'Environments';
         };
 
         const workspaceRowLabel = (row: Record<string, unknown>): string => {
@@ -804,6 +851,7 @@ export class AppController {
         const resetServiceCreateForm = () => {
           serviceCreateForm.value = createEmptyServiceManagementForm();
           serviceCreateError.value = '';
+          serviceCreateSubmitting.value = false;
         };
 
         const resetServiceEditForm = () => {
@@ -816,6 +864,16 @@ export class AppController {
         const resetServiceForms = () => {
           resetServiceCreateForm();
           resetServiceEditForm();
+        };
+
+        const closeCreateServiceModal = () => {
+          isCreateServiceModalOpen.value = false;
+          resetServiceCreateForm();
+        };
+
+        const openCreateServiceModal = () => {
+          resetServiceCreateForm();
+          isCreateServiceModalOpen.value = true;
         };
 
         const loadServiceManagementWorkspaceData = async (
@@ -835,39 +893,13 @@ export class AppController {
           await Promise.all(requests);
         };
 
-        const selectedServiceCatalogLookup = (serviceLabel: string) => {
-          const trimmed = serviceLabel.trim().toLowerCase();
-          if (!trimmed) {
-            return null;
-          }
-          return (
-            selectedServiceCatalog.value.find(
-              (svc) => svc.label.toLowerCase() === trimmed,
-            ) || null
-          );
-        };
-
-        const splitEnvironmentInput = (
-          input: string,
-        ): { tags: string[]; remainder: string } => {
-          if (!/[ ,\t\n\r\f]/.test(input)) {
-            return { tags: [], remainder: input };
-          }
-          const endsWithSeparator = /[ ,\t\n\r\f]$/.test(input);
-          const parts = input.split(/[ ,\t\n\r\f]+/);
-          const remainder = endsWithSeparator ? '' : parts.pop() || '';
-          const tags = parts
-            .map((part) => normalizeTag(part))
-            .filter((part) => part.length > 0);
-          return { tags, remainder };
-        };
-
         const dedupeEnvironmentTags = (
           existingTags: string[],
           nextTags: string[],
         ): string[] => {
           const seen = new Set(existingTags.map((tag) => tag.toLowerCase()));
           const merged = [...existingTags];
+          let changed = false;
           nextTags.forEach((tag) => {
             const normalized = normalizeTag(tag);
             if (!normalized) {
@@ -879,25 +911,161 @@ export class AppController {
             }
             seen.add(key);
             merged.push(normalized);
+            changed = true;
           });
-          return merged;
+          return changed ? merged : existingTags;
         };
 
-        const addEnvironmentTags = (
-          form: ServiceManagementForm,
+        const findExactWorkspaceOwnerName = (
           raw: string,
-        ): ServiceManagementForm => {
-          const parts = raw
-            .split(/[ ,\t\n\r\f]+/)
-            .map((part) => normalizeTag(part))
-            .filter((part) => part.length > 0);
-          if (!parts.length) {
-            return form;
+        ): WorkspaceOwnerOption | null => {
+          const selectedWorkspaceId = selectedServiceWorkspaceId.value;
+          if (!selectedWorkspaceId) {
+            return null;
           }
-          return {
+          const owners = workspaceOwners.value[selectedWorkspaceId] || [];
+          const normalized = normalizeTag(raw).toLowerCase();
+          if (!normalized) {
+            return null;
+          }
+          return (
+            owners.find(
+              (owner) =>
+                normalizeTag(owner.name).toLowerCase() === normalized,
+            ) || null
+          );
+        };
+
+        const commitCreateOwnerInput = () => {
+          const form = serviceCreateForm.value;
+          const match = findExactWorkspaceOwnerName(form.ownerInput);
+          if (match) {
+            serviceCreateForm.value = {
+              ...form,
+              ownerId: match.ownerId,
+              ownerName: match.name,
+              ownerInput: '',
+            };
+            return;
+          }
+          const typedOwner = normalizeTag(form.ownerInput);
+          if (!typedOwner) {
+            serviceCreateForm.value = { ...form, ownerInput: '' };
+            return;
+          }
+          serviceCreateForm.value = {
             ...form,
-            environmentTags: dedupeEnvironmentTags(form.environmentTags, parts),
+            ownerId: '',
+            ownerName: typedOwner,
+            ownerInput: '',
           };
+        };
+
+        const commitCreateOwnerInputOnBlur = () => {
+          const form = serviceCreateForm.value;
+          const match = findExactWorkspaceOwnerName(form.ownerInput);
+          const typedOwner = normalizeTag(form.ownerInput);
+          serviceCreateForm.value = {
+            ...form,
+            ownerInput: '',
+          };
+          if (match) {
+            serviceCreateForm.value.ownerId = match.ownerId;
+            serviceCreateForm.value.ownerName = match.name;
+            return;
+          }
+          if (typedOwner) {
+            serviceCreateForm.value.ownerId = '';
+            serviceCreateForm.value.ownerName = typedOwner;
+          }
+        };
+
+        const onCreateOwnerInput = () => {
+          const match = findExactWorkspaceOwnerName(serviceCreateForm.value.ownerInput);
+          if (match) {
+            commitCreateOwnerInput();
+          }
+        };
+
+        const onCreateOwnerKeydown = (event: KeyboardEvent) => {
+          if (event.key === 'Enter') {
+            commitCreateOwnerInput();
+          }
+        };
+
+        const clearCreateOwner = () => {
+          serviceCreateForm.value = {
+            ...serviceCreateForm.value,
+            ownerId: '',
+            ownerName: '',
+            ownerInput: '',
+          };
+        };
+
+        const isWorkspaceEnvironmentNamePrefix = (input: string): boolean => {
+          const normalizedInput = normalizeTag(input).toLowerCase();
+          if (!normalizedInput) {
+            return false;
+          }
+          const selectedWorkspaceId = selectedServiceWorkspaceId.value;
+          if (!selectedWorkspaceId) {
+            return false;
+          }
+          const environments =
+            workspaceEnvironments.value[selectedWorkspaceId] || [];
+          return environments.some((environment) => {
+            const normalizedEnvironment = normalizeTag(
+              environment.environmentName,
+            ).toLowerCase();
+            return (
+              normalizedEnvironment.startsWith(normalizedInput) &&
+              normalizedEnvironment !== normalizedInput
+            );
+          });
+        };
+
+        const findExactWorkspaceEnvironmentName = (raw: string): string | null => {
+          const normalized = normalizeTag(raw).toLowerCase();
+          if (!normalized) {
+            return null;
+          }
+          const selectedWorkspaceId = selectedServiceWorkspaceId.value;
+          if (!selectedWorkspaceId) {
+            return null;
+          }
+          const environments =
+            workspaceEnvironments.value[selectedWorkspaceId] || [];
+          const match = environments.find(
+            (environment) =>
+              normalizeTag(environment.environmentName).toLowerCase() ===
+              normalized,
+          );
+          return match ? match.environmentName : null;
+        };
+
+        const hasEnvironmentListDelimiter = (input: string): boolean => {
+          return /[,\t\n\r\f]/.test(input);
+        };
+
+        const isExactEnvironment = (input: string): boolean => {
+          return !!findExactWorkspaceEnvironmentName(input);
+        };
+
+        const shouldCommitOnSpace = (input: string): boolean => {
+          if (isExactEnvironment(input)) {
+            return true;
+          }
+          return hasEnvironmentListDelimiter(input);
+        };
+
+        const addEnvironmentTagValues = (
+          form: ServiceManagementForm,
+          nextTags: string[],
+        ): string[] => {
+          if (!nextTags.length) {
+            return form.environmentTags;
+          }
+          return dedupeEnvironmentTags(form.environmentTags, nextTags);
         };
 
         const resolveEnvironmentTags = (
@@ -909,62 +1077,122 @@ export class AppController {
           return Array.from(new Set(tags));
         };
 
-        const commitCreateEnvironmentInput = () => {
-          const form = serviceCreateForm.value;
-          const nextForm = addEnvironmentTags(form, form.environmentInput);
-          serviceCreateForm.value = { ...nextForm, environmentInput: '' };
+        const commitCreateEnvironmentInput = (force = false) => {
+          commitEnvironmentInput(serviceCreateForm, force);
         };
 
-        const commitEditEnvironmentInput = () => {
-          const form = serviceEditForm.value;
-          const nextForm = addEnvironmentTags(form, form.environmentInput);
-          serviceEditForm.value = { ...nextForm, environmentInput: '' };
+        const commitEditEnvironmentInput = (force = false) => {
+          commitEnvironmentInput(serviceEditForm, force);
+        };
+
+        const commitEnvironmentInput = (
+          formRef: typeof serviceCreateForm | typeof serviceEditForm,
+          force = false,
+        ) => {
+          const form = formRef.value;
+          const { tags, remainder } = splitEnvironmentInput(
+            form.environmentInput,
+            force,
+          );
+          if (!tags.length && remainder === form.environmentInput) {
+            return;
+          }
+          const nextEnvironmentTags = addEnvironmentTagValues(form, tags);
+          const nextEnvironmentInput = remainder;
+          if (
+            nextEnvironmentTags === form.environmentTags &&
+            nextEnvironmentInput === form.environmentInput
+          ) {
+            return;
+          }
+          const nextState = {
+            ...form,
+            environmentTags: nextEnvironmentTags,
+            environmentInput: nextEnvironmentInput,
+          };
+          formRef.value = nextState;
         };
 
         const handleCreateEnvironmentInput = () => {
-          const form = serviceCreateForm.value;
-          const { tags, remainder } = splitEnvironmentInput(form.environmentInput);
-          if (!tags.length) {
-            return;
-          }
-          serviceCreateForm.value = {
-            ...addEnvironmentTags(form, tags.join(' ')),
-            environmentInput: remainder,
-          };
+          commitEnvironmentInput(serviceCreateForm);
         };
 
         const handleEditEnvironmentInput = () => {
-          const form = serviceEditForm.value;
-          const { tags, remainder } = splitEnvironmentInput(form.environmentInput);
-          if (!tags.length) {
+          commitEnvironmentInput(serviceEditForm);
+        };
+
+        const splitEnvironmentInput = (
+          input: string,
+          force = false,
+        ): { tags: string[]; remainder: string } => {
+          if (!input) {
+            return { tags: [], remainder: input };
+          }
+          const exactMatch = findExactWorkspaceEnvironmentName(input);
+          const isPrefix = isWorkspaceEnvironmentNamePrefix(input);
+          const normalizedInput = normalizeTag(input);
+          const hasDelimiter = hasEnvironmentListDelimiter(input);
+
+          if (exactMatch) {
+            return { tags: [exactMatch], remainder: '' };
+          }
+          if (!hasDelimiter) {
+            if (force && normalizedInput) {
+              return { tags: [normalizedInput], remainder: '' };
+            }
+            if (isPrefix) {
+              return { tags: [], remainder: input };
+            }
+            return { tags: [], remainder: input };
+          }
+          const endsWithSeparator = /[,\t\n\r\f]$/.test(input);
+          const parts = input.split(/[,\t\n\r\f]+/);
+          const remainder = endsWithSeparator ? '' : parts.pop() || '';
+          const tags = parts
+            .map((part) => normalizeTag(part))
+            .filter((part) => part.length > 0);
+          return { tags, remainder };
+        };
+
+        const commitOnEnvironmentDelimiter = (
+          event: KeyboardEvent,
+          formRef: typeof serviceCreateForm | typeof serviceEditForm,
+        ) => {
+          if (
+            event.key !== 'Enter' &&
+            event.key !== ',' &&
+            event.key !== ' '
+          ) {
             return;
           }
-          serviceEditForm.value = {
-            ...addEnvironmentTags(form, tags.join(' ')),
-            environmentInput: remainder,
-          };
+          if (
+            event.key === ' ' &&
+            !shouldCommitOnSpace(formRef.value.environmentInput)
+          ) {
+            return;
+          }
+          event.preventDefault();
+          if (formRef === serviceCreateForm) {
+            commitCreateEnvironmentInput(true);
+          } else {
+            commitEditEnvironmentInput(true);
+          }
         };
 
         const onCreateEnvironmentKeydown = (event: KeyboardEvent) => {
-          if (event.key === 'Enter' || event.key === ',' || event.key === ' ') {
-            event.preventDefault();
-            commitCreateEnvironmentInput();
-          }
+          commitOnEnvironmentDelimiter(event, serviceCreateForm);
         };
 
         const onEditEnvironmentKeydown = (event: KeyboardEvent) => {
-          if (event.key === 'Enter' || event.key === ',' || event.key === ' ') {
-            event.preventDefault();
-            commitEditEnvironmentInput();
-          }
+          commitOnEnvironmentDelimiter(event, serviceEditForm);
         };
 
         const onCreateEnvironmentBlur = () => {
-          commitCreateEnvironmentInput();
+          commitCreateEnvironmentInput(true);
         };
 
         const onEditEnvironmentBlur = () => {
-          commitEditEnvironmentInput();
+          commitEditEnvironmentInput(true);
         };
 
         const removeCreateEnvironmentTag = (tag: string) => {
@@ -985,6 +1213,40 @@ export class AppController {
           };
         };
 
+        const resolveCreateOwnerId = async (
+          workspaceId: string,
+        ): Promise<string | null> => {
+          if (serviceCreateForm.value.ownerId) {
+            return serviceCreateForm.value.ownerId;
+          }
+          const ownerName = normalizeTag(serviceCreateForm.value.ownerName);
+          if (!ownerName) {
+            return null;
+          }
+          const existingOwner = findExactWorkspaceOwnerName(ownerName);
+          if (existingOwner) {
+            serviceCreateForm.value = {
+              ...serviceCreateForm.value,
+              ownerId: existingOwner.ownerId,
+              ownerName: existingOwner.name,
+            };
+            return existingOwner.ownerId;
+          }
+
+          await WorkspaceService.createOwner(workspaceId, ownerName);
+          await loadOwners(workspaceId);
+          const createdOwner = findExactWorkspaceOwnerName(ownerName);
+          if (!createdOwner) {
+            throw new Error('Owner was created but could not be selected.');
+          }
+          serviceCreateForm.value = {
+            ...serviceCreateForm.value,
+            ownerId: createdOwner.ownerId,
+            ownerName: createdOwner.name,
+          };
+          return createdOwner.ownerId;
+        };
+
         const createService = async () => {
           if (!selectedServiceWorkspaceId.value) {
             return;
@@ -994,7 +1256,8 @@ export class AppController {
             return;
           }
 
-          commitCreateEnvironmentInput();
+          commitCreateEnvironmentInput(true);
+          commitCreateOwnerInputOnBlur();
           serviceCreateError.value = '';
 
           const environments = resolveEnvironmentTags(serviceCreateForm.value);
@@ -1009,32 +1272,29 @@ export class AppController {
             return;
           }
 
-          const selectedService = selectedServiceCatalogLookup(serviceLabel);
-          const minutes =
-            selectedService?.defaultMinutes ??
-            Number(serviceCreateForm.value.defaultMinutes);
-          if (!selectedService && (!Number.isFinite(minutes) || minutes <= 0)) {
+          const minutes = Number(serviceCreateForm.value.defaultMinutes);
+          if (!Number.isFinite(minutes) || minutes <= 0) {
             serviceCreateError.value = 'Default minutes must be positive.';
             return;
           }
 
           serviceCreateSubmitting.value = true;
           try {
+            const ownerId = await resolveCreateOwnerId(
+              selectedServiceWorkspaceId.value,
+            );
             await WorkspaceService.createService(
               selectedServiceWorkspaceId.value,
               {
-                environmentIds: environments,
-                serviceId: selectedService ? selectedService.serviceId : null,
+                environmentIds: [],
+                environmentNames: environments,
+                serviceId: null,
                 label: serviceLabel,
-                defaultMinutes: selectedService
-                  ? selectedService.defaultMinutes
-                  : minutes,
-                ownerId: selectedService
-                  ? selectedService.ownerId
-                  : serviceCreateForm.value.ownerId || null,
+                defaultMinutes: minutes,
+                ownerId,
               },
             );
-            resetServiceCreateForm();
+            closeCreateServiceModal();
             showToast('Service created.');
             await loadServiceManagementWorkspaceData(selectedServiceWorkspaceId.value);
           } catch (err) {
@@ -1059,13 +1319,15 @@ export class AppController {
           editingServiceId.value = serviceId;
           serviceEditForm.value = {
             environmentInput: '',
-            environmentTags: environments.map((env) => env.environmentId),
+            environmentTags: environments.map((env) => env.environmentName),
             serviceLabel: label,
             defaultMinutes,
             ownerId:
               selectedServiceCatalog.value.find(
                 (service) => service.serviceId === serviceId,
               )?.ownerId || '',
+            ownerInput: '',
+            ownerName: '',
           };
         };
 
@@ -1083,7 +1345,7 @@ export class AppController {
             return;
           }
 
-          commitEditEnvironmentInput();
+          commitEditEnvironmentInput(true);
           serviceEditError.value = '';
 
           const environments = resolveEnvironmentTags(serviceEditForm.value);
@@ -1110,7 +1372,8 @@ export class AppController {
               selectedServiceWorkspaceId.value,
               serviceId,
               {
-                environmentIds: environments,
+                environmentIds: [],
+                environmentNames: environments,
                 label: serviceLabel,
                 ownerId: serviceEditForm.value.ownerId || null,
                 defaultMinutes: minutes,
@@ -1126,7 +1389,15 @@ export class AppController {
           }
         };
 
-        const deleteService = async (serviceId: string) => {
+        const resetPendingDelete = () => {
+          pendingDeleteAction.value = null;
+          pendingDeleteError.value = '';
+        };
+
+        const openDeleteConfirmation = (
+          serviceId: string,
+          serviceLabel: string | null,
+        ) => {
           if (!selectedServiceWorkspaceId.value) {
             return;
           }
@@ -1134,18 +1405,58 @@ export class AppController {
             showToast('Not authorized for workspace');
             return;
           }
+          pendingDeleteAction.value = {
+            actionType: 'service',
+            workspaceId: selectedServiceWorkspaceId.value,
+            serviceId,
+            targetLabel: serviceLabel?.trim() || serviceId,
+            submitting: false,
+          };
+          pendingDeleteError.value = '';
+        };
+
+        const closeDeleteConfirmation = () => {
+          resetPendingDelete();
+        };
+
+        const confirmDeleteAction = async () => {
+          const action = pendingDeleteAction.value;
+          if (!action || action.submitting) {
+            return;
+          }
+          if (!isWorkspaceAdmin(action.workspaceId)) {
+            showToast('Not authorized for workspace');
+            resetPendingDelete();
+            return;
+          }
+          pendingDeleteAction.value = {
+            ...action,
+            submitting: true,
+          };
+          let deleteSucceeded = false;
           try {
             await WorkspaceService.deleteService(
-              selectedServiceWorkspaceId.value,
-              serviceId,
+              action.workspaceId,
+              action.serviceId,
             );
-            if (editingServiceId.value === serviceId) {
+            deleteSucceeded = true;
+            if (editingServiceId.value === action.serviceId) {
               resetServiceEditForm();
             }
+            resetPendingDelete();
             showToast('Service deleted.');
-            await loadServiceManagementWorkspaceData(selectedServiceWorkspaceId.value);
+            await loadServiceManagementWorkspaceData(action.workspaceId);
           } catch (err) {
-            showToast((err as Error).message);
+            const message = (err as Error).message;
+            pendingDeleteError.value = message;
+            showToast(message);
+            if (deleteSucceeded) {
+              return;
+            }
+            pendingDeleteAction.value = {
+              ...action,
+              submitting: false,
+            };
           }
         };
 
@@ -1248,6 +1559,7 @@ export class AppController {
         });
 
         watch(selectedServiceWorkspaceId, (workspaceId) => {
+          resetPendingDelete();
           if (workspaceId === null) {
             localStorage.removeItem(serviceManagementWorkspaceStorageKey);
             return;
@@ -1256,6 +1568,7 @@ export class AppController {
             serviceManagementWorkspaceStorageKey,
             String(workspaceId),
           );
+          closeCreateServiceModal();
           resetServiceForms();
           loadServiceManagementWorkspaceData(workspaceId).catch((err) => {
             showToast((err as Error).message);
@@ -1303,19 +1616,22 @@ export class AppController {
           selectedServiceWorkspaceId,
           selectedServiceWorkspace,
           selectedServiceCatalog,
-          selectedServiceCatalogByName,
           selectedServiceWorkspaceIsAdmin,
+          createServiceOwnerName,
           adminWorkspaces,
           claimedByUser,
           totalServicesCount,
           claimedServicesCount,
           availableServicesCount,
           workspaceName,
+          isCreateServiceModalOpen,
           isCreateWorkspaceModalOpen,
           workspaceError,
           workspaceSubmitting,
           openCreateWorkspaceModal,
           closeCreateWorkspaceModal,
+          openCreateServiceModal,
+          closeCreateServiceModal,
           cancelCreateWorkspace,
           isInviteModalOpen,
           inviteWorkspaceId,
@@ -1344,6 +1660,7 @@ export class AppController {
           closeEnvironmentModal,
           createEnvironment,
           workspaceRowsModal,
+          workspaceResourceLabel,
           openWorkspaceRowsModal,
           closeWorkspaceRowsModal,
           workspaceRowLabel,
@@ -1362,7 +1679,11 @@ export class AppController {
           openEditService,
           cancelEditService,
           editService,
-          deleteService,
+          openDeleteConfirmation,
+          closeDeleteConfirmation,
+          confirmDeleteAction,
+          pendingDeleteAction,
+          pendingDeleteError,
           onCreateEnvironmentKeydown,
           onEditEnvironmentKeydown,
           onCreateEnvironmentBlur,
@@ -1371,6 +1692,10 @@ export class AppController {
           handleEditEnvironmentInput,
           removeCreateEnvironmentTag,
           removeEditEnvironmentTag,
+          onCreateOwnerInput,
+          onCreateOwnerKeydown,
+          onCreateOwnerBlur: commitCreateOwnerInputOnBlur,
+          clearCreateOwner,
         };
       },
     }).mount('#app');

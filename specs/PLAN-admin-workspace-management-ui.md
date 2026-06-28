@@ -6,43 +6,48 @@ Approved spec: `specs/SPEC-admin-workspace-management-ui.md`
 
 ## Objective
 
-Implement the approved Administration workspace management UI behavior: administered workspace list with backend-provided user and service stats, an email-only invite modal structured for future invited-user fields, and a workspace-name-only create-workspace modal structured for future workspace fields.
+Implement the approved `Workspace Stat Popup Detail APIs Bug Fix` iteration for the Administration workspace management UI: clicking `Users`, `Services`, `Owners`, or `Environments` stat tags must fetch from dedicated `/detail/*` backend APIs and show only the corresponding names in the popup.
 
 ## Branch
 
 - Target branch: current branch `workingspaces`.
 - Do not create a new branch unless the user requests one before implementation.
-- Preserve existing unrelated worktree changes, including the currently modified `package.json`, unless implementation directly requires changing them.
+- Preserve existing unrelated worktree changes.
 
 ## Architecture Approach
 
 - Preserve onion architecture:
-  - repository layer owns MySQL aggregation queries
-  - service layer exposes workspace summaries for the authenticated user
-  - controller maps service output to API response fields
-  - browser service/entity/controller consume the API contract
-- Extend the existing `/api/workspaces` response with additive stat fields:
-  - `user_count`
-  - `service_count`
-- Keep existing invitation endpoint and backend invitation semantics unchanged.
-- Reuse the existing modal overlay/card styling pattern where practical, with workspace-invite-specific classes only where needed.
-- Keep workspace creation in the Workspace management section through a button-triggered modal, not a persistent card or column, so the administered workspace list remains the primary right-hand content.
-- Reuse the existing modal overlay/card styling pattern for both invitation and workspace creation, with flow-specific classes only where needed.
+  - repository adapters own MySQL row queries
+  - `WorkspaceService` owns authorization and resource-specific detail methods
+  - `WorkspaceController` maps service output to HTTP JSON
+  - browser `WorkspaceService` owns HTTP calls and response parsing
+  - `AppController` owns modal state and display labels
+- Add separate read-only workspace detail API routes:
+  - `GET /api/workspaces/:workspaceId/detail/users`
+  - `GET /api/workspaces/:workspaceId/detail/services`
+  - `GET /api/workspaces/:workspaceId/detail/owners`
+  - `GET /api/workspaces/:workspaceId/detail/environments`
+- Each detail route returns `{ "items": [{ "name": string }] }`.
+- Do not use the previous generic popup route `/api/workspaces/:workspaceId/:resourceType` as the frontend popup contract.
+- Keep existing service-management routes unchanged:
+  - `GET /api/workspaces/:workspaceId/services`
+  - `GET /api/workspaces/:workspaceId/owners`
+  - `GET /api/workspaces/:workspaceId/environments`
+- Keep existing workspace authorization semantics for detail rows. The popup may list rows only for an authorized workspace member.
+- Do not change workspace stat count semantics, create workspace behavior, invite behavior, owner/environment creation behavior, or service management behavior.
 
 ## Affected Files
 
-- `src/entities/Workspace.ts`
-- `src/repositories/WorkspaceRepository.ts`
 - `src/services/WorkspaceService.ts`
 - `src/controllers/WorkspaceController.ts`
-- `public/ts/entities/Workspace.ts`
+- `src/repositories/ServiceRepository.ts`
 - `public/ts/services/WorkspaceService.ts`
 - `public/ts/controllers/AppController.ts`
 - `public/index.html`
 - `public/styles.css`
 - `src/tests/unit/workspace-service.test.ts`
 - `src/tests/integration/workspace-service-db.test.ts`
-- `README.md` only if implementation adds user-facing workflow notes; otherwise leave unchanged.
+- `README.md` only if implementation discovers existing admin-workflow documentation that contradicts the fixed behavior; otherwise leave unchanged.
 
 ## Test-First Subagent Assignment
 
@@ -54,17 +59,23 @@ Input context for the subagent:
 
 - `specs/SPEC-admin-workspace-management-ui.md`
 - this plan
-- existing test files listed above
-- minimal repository/entity/service/controller signatures needed to write tests
+- existing workspace service and repository test files listed above
+- minimal signatures for current `WorkspaceService`, `WorkspaceController`, `WorkspaceRepository`, and `ServiceRepository`
 
 Assignment:
 
-- Add or update deterministic tests for workspace summary stats.
-- Cover that workspace summaries expose administered/member workspaces for the user with `user_count` and `service_count`.
-- Cover that workspace creation still works with the extended workspace entity/summary shape if existing tests are affected.
-- Inspect whether there is a practical frontend controller/modal test pattern for workspace creation modal state. If none exists, report test-first coverage as not practical for the frontend modal and rely on TypeScript build plus main-agent manual QA for that UI behavior.
+- Add or update deterministic tests for workspace detail row behavior covering:
+  - users returns `{ name: email }` rows.
+  - services returns `{ name: service label }` rows.
+  - owners returns `{ name: owner name }` rows.
+  - environments returns `{ name: environment name }` rows.
+  - authorization is enforced before rows are returned.
+  - detail rows are ordered by displayed name where repository behavior is testable.
+- Add or update integration coverage where practical for service, owner, and environment detail data coming from the database.
+- Add or update controller-level tests only if an existing practical Express/controller test pattern exists; otherwise report route response shape as covered by service/repository tests plus build/manual QA.
+- Inspect whether there is a practical frontend test pattern for popup item parsing and rendering. If none exists, report frontend coverage as TypeScript build plus manual QA.
 - Do not implement production behavior.
-- Report any spec or plan conflicts instead of resolving them independently.
+- Report blockers, missing repository helpers, route conflicts, or spec/plan conflicts.
 
 ## Implementation Subagent Assignment
 
@@ -81,50 +92,21 @@ Input context for the subagent:
 
 Assignment:
 
-1. Extend workspace domain/entity shape to carry `userCount` and `serviceCount`.
-2. Update `WorkspaceRepository.listByUser` to return workspace rows with:
-   - `COUNT(DISTINCT wu_stats.user_id)` as user count
-   - `COUNT(DISTINCT s.id)` as service count
-   while preserving membership filtering to the signed-in user and stable ordering.
-3. Keep `findById`, `insert`, and `countByAdmin` behavior compatible with the updated entity constructor.
-4. Update `WorkspaceController` to include `user_count` and `service_count` in `/api/workspaces`.
-5. Update browser `Workspace` entity and `public/ts/services/WorkspaceService.ts` parsing with numeric fallbacks.
-6. In `AppController`:
-   - replace per-workspace inline invite state with modal state:
-     - selected invite workspace
-     - invite email
-     - invite error
-     - invite submitting
-     - modal open/close/reset methods
-   - keep existing `WorkspaceService.invite` call
-   - reset modal state on open success, close, cancel, and successful submission
-   - replace persistent workspace creation form state usage with create-workspace modal state:
-     - create modal open flag
-     - workspace name
-     - workspace error
-     - workspace submitting
-     - modal open/close/reset/cancel methods
-   - keep existing `WorkspaceService.create` call
-   - reset workspace creation modal state on open, close, cancel, and successful submission
-   - refresh workspaces after successful workspace creation so stats remain current
-7. In `public/index.html`:
-   - make the admin workspace list the primary content in the right-hand block
-   - show workspace name, id, user count, service count, and `Invite user`
-   - replace the persistent create-workspace card/column with a `Create workspace` button in the Workspace management header or workspace-list action area
-   - add an invite modal with `role="dialog"`, `aria-modal="true"`, labeled email input, close/cancel controls, submit progress text, and modal error region
-   - add a create-workspace modal with `role="dialog"`, `aria-modal="true"`, labeled workspace name input, close/cancel controls, submit progress text, and modal error region
-   - structure the create-workspace modal body as a form area where future workspace fields can be added after workspace name without changing the trigger or submit flow
-   - ensure pressing Enter in the workspace name input submits the create-workspace modal form
-8. In `public/styles.css`:
-   - style the workspace list as responsive cards or rows that do not overflow mobile widths
-   - ensure the workspace list card/list spans the available admin content width and is not constrained by a persistent create-workspace column
-   - style the create-workspace action and modal consistently with the invite modal and existing theme tokens
-   - use existing color tokens and theme variables
-   - provide clear hover/focus states
-   - avoid a wide table layout
-9. Do not change invitation acceptance, user lookup, email sending, roles, or bulk invite behavior.
-10. Do not change workspace creation authorization, backend endpoint semantics, workspace limit behavior, or successful list refresh semantics.
-11. Do not modify unrelated `package.json` changes unless they are required to compile or test this implementation.
+1. In `WorkspaceService`, expose deterministic workspace detail methods or a constrained dispatcher that returns `Array<{ name: string }>` for:
+   - users from workspace user emails
+   - services from service labels
+   - owners from owner names
+   - environments from environment names
+2. Preserve authorization by asserting workspace membership before returning any detail rows.
+3. In `ServiceRepository`, add or reuse repository methods needed to list service labels, owner names, and environment names by workspace with ascending display-name ordering.
+4. In `WorkspaceController`, add the four dedicated `GET /api/workspaces/:workspaceId/detail/*` routes. Each route must respond with `{ items }` on success and reuse existing workspace error mapping.
+5. Ensure the dedicated detail routes do not shadow or alter existing service-management routes.
+6. Remove frontend dependence on `WorkspaceService.listWorkspaceRows(workspaceId, resourceType)` calling `/api/workspaces/:workspaceId/:resourceType`.
+7. In browser `WorkspaceService`, add explicit detail API methods or a constrained dispatcher that maps resource type to the approved `/detail/*` path and parses `{ items: [{ name }] }`.
+8. In `AppController`, keep the existing popup loading, close, error, empty, request-id, and stale-result protections, but store and render item names rather than resource-specific row objects or ids.
+9. In `public/index.html`, render each popup row as the item `name` only, with uppercase resource labels for title and empty state.
+10. In `public/styles.css`, make only minimal overflow/wrapping adjustments needed for long popup names.
+11. Do not change create workspace, invite user, create owner, create environment, or service management flows except where strictly required to avoid route or state regressions.
 
 ## Code-Review Subagent Assignment
 
@@ -143,16 +125,17 @@ Assignment:
 
 - Review implementation against the approved spec and plan.
 - Look for:
-  - missing or incorrect stats semantics
+  - frontend still calling the old generic popup route
+  - missing dedicated detail route for any of users, services, owners, or environments
+  - response shape not matching `{ items: [{ name }] }`
+  - popup rendering ids or metadata instead of names only
+  - services, owners, or environments still not listing in the popup
+  - route regressions affecting service catalog, owners, or environments management APIs
   - workspace access leaks
-  - broken workspace creation or invitation behavior
-  - frontend state that can leak stale email/error/submitting state between workspaces
-  - frontend state that can leak stale workspace name/error/submitting state between create-workspace modal opens
-  - modal accessibility gaps
-  - mobile overflow or text overlap risks
-  - the workspace creation form remaining as a persistent card/column instead of moving behind a button-triggered modal
+  - stale async popup fetch results overwriting closed or newer modal state
+  - unnecessary changes to create/invite/service-management behavior
   - onion architecture violations
-  - missing tests for stats contract
+  - missing deterministic tests for backend popup detail rows
 - Do not implement fixes.
 - Report findings with file and line references where possible.
 
@@ -169,27 +152,19 @@ Manual QA when a dev server/browser is available:
 - Start the app with `npm run dev` if a local database configuration is available.
 - Open Administration.
 - Click `Workspace management`.
-- Verify the right-hand block lists administered workspaces with user and service counts.
-- Verify the create-workspace form is not visible as a persistent card or column.
-- Verify `Create workspace` is available as a button near the Workspace management header or workspace-list action area.
-- Verify the list fits desktop and mobile widths without horizontal overflow.
-- Click `Create workspace`.
-- Verify the modal opens above the page, has `role="dialog"`/`aria-modal="true"`, contains a labeled workspace name field, and has close/cancel controls.
-- Submit blank workspace name and verify the existing workspace-name-required client validation appears without an API request.
-- Type a workspace name and press Enter; verify the submit path runs.
-- Create a workspace and verify the modal closes, `Workspace created.` appears, and the workspace list refreshes with `1` user and `0` services.
-- Reopen `Create workspace` and verify the workspace name and error state are reset.
-- Click `Invite user` for a workspace.
-- Verify the modal opens above the page, names the workspace, and contains a labeled email field.
-- Submit blank email and verify `Email is required.` appears without an API request.
-- Submit an existing invitee email and verify success toast plus modal close.
-- Submit a duplicate/member/unknown email case when data is available and verify the modal remains open with backend error text.
+- For a workspace with data, click `Users`, `Services`, `Owners`, and `Environments`.
+- Verify each popup opens above the page and lists the expected names only.
+- Verify each popup title starts with `Users`, `Services`, `Owners`, or `Environments`.
+- Verify empty states, if encountered, use the uppercase resource label.
+- Verify closing a popup during loading does not reopen it or overwrite a later popup.
+- Verify browser network calls use `/api/workspaces/:workspaceId/detail/users`, `/detail/services`, `/detail/owners`, or `/detail/environments` for the popup.
+- Verify the existing create workspace, invite user, create owner, create environment, and Service Management flows still render normally.
 
 If the dev server or browser QA is not possible because database configuration is unavailable, report that as unvalidated and mark delivery draft unless the user explicitly accepts build/test-only validation.
 
 ## Documentation
 
-- No README update is required for the visual/admin workflow change unless implementation introduces new setup, API usage documentation, or user-facing admin workflow documentation.
+- No README update is expected for this bug fix unless implementation discovers existing admin-workflow documentation that says the opposite of the fixed behavior.
 - Do not add unrelated documentation churn.
 
 ## Validation Pass Criteria
@@ -230,4 +205,4 @@ The implementation completion report must include:
 - commit status
 - push status
 - final or draft delivery status
-- final main-agent acceptance confirmation
+- whether final main-agent acceptance was completed

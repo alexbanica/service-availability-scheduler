@@ -21,8 +21,10 @@ type CreateServiceInput = {
   serviceId?: string | null;
   label?: string | null;
   defaultMinutes?: number | null;
+  environmentNames?: string[];
   environmentIds?: string[];
   environment_ids?: string[];
+  environment_names?: string[];
   ownerId?: string | null;
   owner_id?: string | null;
 };
@@ -31,8 +33,10 @@ type UpdateServiceInput = {
   serviceId: string;
   label: string;
   defaultMinutes: number;
+  environmentNames?: string[];
   environmentIds?: string[];
   environment_ids?: string[];
+  environment_names?: string[];
   ownerId?: string | null;
   owner_id?: string | null;
 };
@@ -160,10 +164,11 @@ export class WorkspaceService {
     userId: string,
     input: CreateServiceInput,
   ): Promise<{ serviceId: string; createdEnvironments: number }> {
-    const environmentIds = this.normalizeIds(
-      input.environmentIds ?? input.environment_ids,
+    const environmentIds = this.normalizeIds(input.environmentIds ?? input.environment_ids);
+    const environmentNames = this.normalizeEnvironmentNames(
+      input.environmentNames ?? input.environment_names,
     );
-    if (!environmentIds.length) {
+    if (!environmentIds.length && !environmentNames.length) {
       throw new Error('Select at least one environment.');
     }
 
@@ -196,6 +201,16 @@ export class WorkspaceService {
     try {
       await connection.beginTransaction();
       const serviceRepo = this.serviceRepository.withConnection(connection);
+      const resolvedEnvironmentIds = await this.resolveEnvironmentIds(
+        workspaceId,
+        serviceRepo,
+        environmentIds,
+        environmentNames,
+      );
+
+      if (!resolvedEnvironmentIds.length) {
+        throw new Error('Select at least one environment.');
+      }
 
       const createdServiceId = await serviceRepo.insertService({
         workspaceId,
@@ -206,15 +221,7 @@ export class WorkspaceService {
       });
 
       let createdEnvironments = 0;
-      const uniqueEnvironmentIds = Array.from(new Set(environmentIds));
-      for (const environmentId of uniqueEnvironmentIds) {
-        const belongsToWorkspace = await serviceRepo.getEnvironmentById(
-          workspaceId,
-          environmentId,
-        );
-        if (!belongsToWorkspace) {
-          throw new Error('Environment not found in workspace');
-        }
+      for (const environmentId of resolvedEnvironmentIds) {
         await serviceRepo.insertServiceEnvironment({
           serviceId,
           environmentId,
@@ -378,11 +385,12 @@ export class WorkspaceService {
       throw new Error('Default minutes must be positive');
     }
 
-    const environmentIds = this.normalizeIds(
-      input.environmentIds ?? input.environment_ids,
+    const environmentIds = this.normalizeIds(input.environmentIds ?? input.environment_ids);
+    const environmentNames = this.normalizeEnvironmentNames(
+      input.environmentNames ?? input.environment_names,
     );
-    if (!environmentIds.length) {
-      throw new Error('Select at least one environment.');
+    if (!environmentIds.length && !environmentNames.length) {
+      throw new Error('At least one environment is required');
     }
 
     await this.assertWorkspaceAdmin(workspaceId, userId);
@@ -393,6 +401,15 @@ export class WorkspaceService {
     try {
       await connection.beginTransaction();
       const serviceRepo = this.serviceRepository.withConnection(connection);
+      const resolvedEnvironmentIds = await this.resolveEnvironmentIds(
+        workspaceId,
+        serviceRepo,
+        environmentIds,
+        environmentNames,
+      );
+      if (!resolvedEnvironmentIds.length) {
+        throw new Error('At least one environment is required');
+      }
 
       const existingService = await serviceRepo.findServiceByWorkspaceAndId(
         workspaceId,
@@ -412,8 +429,6 @@ export class WorkspaceService {
         }
       }
 
-      const uniqueEnvironmentIds = Array.from(new Set(environmentIds));
-
       await serviceRepo.updateServiceMetadata(
         workspaceId,
         serviceId,
@@ -422,14 +437,7 @@ export class WorkspaceService {
         normalizedOwnerId,
       );
 
-      for (const environmentId of uniqueEnvironmentIds) {
-        const belongsToWorkspace = await serviceRepo.getEnvironmentById(
-          workspaceId,
-          environmentId,
-        );
-        if (!belongsToWorkspace) {
-          throw new Error('Environment not found in workspace');
-        }
+      for (const environmentId of resolvedEnvironmentIds) {
         try {
           await serviceRepo.insertServiceEnvironment({
             serviceId,
@@ -446,7 +454,7 @@ export class WorkspaceService {
 
       await serviceRepo.deleteServiceEnvironmentAssociationsNotIn(
         serviceId,
-        uniqueEnvironmentIds,
+        resolvedEnvironmentIds,
       );
 
       await connection.commit();
@@ -534,6 +542,99 @@ export class WorkspaceService {
           .map((value) => (typeof value === 'string' ? value.trim() : ''))
           .filter((value) => value.length > 0)
       : [];
+  }
+
+  private normalizeEnvironmentNames(values: string[] | undefined): string[] {
+    return Array.isArray(values)
+      ? values
+          .map((value) => (typeof value === 'string' ? value.trim() : ''))
+          .filter((value) => value.length > 0)
+      : [];
+  }
+
+  private dedupeCaseInsensitive(values: string[]): string[] {
+    const seen = new Set<string>();
+    const output: string[] = [];
+    values.forEach((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      output.push(value);
+    });
+    return output;
+  }
+
+  private async resolveEnvironmentIds(
+    workspaceId: string,
+    serviceRepo: ServiceRepository,
+    environmentIds: string[],
+    environmentNames: string[],
+  ): Promise<string[]> {
+    const seen = new Set<string>();
+    const resolvedIds: string[] = [];
+
+    const uniqueEnvironmentIds = this.dedupeCaseInsensitive(environmentIds);
+    for (const environmentId of uniqueEnvironmentIds) {
+      const belongsToWorkspace = await serviceRepo.getEnvironmentById(
+        workspaceId,
+        environmentId,
+      );
+      if (!belongsToWorkspace) {
+        throw new Error('Environment not found in workspace');
+      }
+      const key = environmentId.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      resolvedIds.push(environmentId);
+    }
+
+    const uniqueEnvironmentNames = this.dedupeCaseInsensitive(
+      this.normalizeEnvironmentNames(environmentNames),
+    );
+    if (!uniqueEnvironmentNames.length) {
+      return resolvedIds;
+    }
+
+    const existingByName = await serviceRepo.findEnvironmentByWorkspaceAndNames(
+      workspaceId,
+      uniqueEnvironmentNames,
+    );
+    const existingEnvironmentMap = new Map<string, string>();
+    existingByName.forEach((environment) => {
+      existingEnvironmentMap.set(
+        environment.environmentName.toLowerCase(),
+        environment.environmentId,
+      );
+    });
+
+    for (const environmentName of uniqueEnvironmentNames) {
+      const existingEnvironmentId = existingEnvironmentMap.get(
+        environmentName.toLowerCase(),
+      );
+      if (existingEnvironmentId) {
+        const key = existingEnvironmentId.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          resolvedIds.push(existingEnvironmentId);
+        }
+        continue;
+      }
+
+      const createdEnvironmentId = randomUUID();
+      await serviceRepo.insertEnvironment({
+        workspaceId,
+        environmentId: createdEnvironmentId,
+        name: environmentName,
+      });
+      resolvedIds.push(createdEnvironmentId);
+      seen.add(createdEnvironmentId.toLowerCase());
+    }
+
+    return resolvedIds;
   }
 
   private normalizeOptionalId(value: unknown): string | null {

@@ -74,6 +74,7 @@ export class WorkspaceService {
   static async createService(
     workspaceId: string,
     input: {
+      environmentNames?: string[];
       environmentIds: string[];
       serviceId?: string | null;
       label?: string;
@@ -85,6 +86,7 @@ export class WorkspaceService {
       `/api/workspaces/${workspaceId}/services`,
       {
         environment_ids: input.environmentIds,
+        environment_names: input.environmentNames,
         service_id: input.serviceId || null,
         label: input.label || null,
         default_minutes: input.defaultMinutes || null,
@@ -105,6 +107,7 @@ export class WorkspaceService {
     workspaceId: string,
     serviceId: string,
     input: {
+      environmentNames?: string[];
       environmentIds: string[];
       label: string;
       defaultMinutes: number;
@@ -121,6 +124,7 @@ export class WorkspaceService {
         credentials: 'include',
         body: JSON.stringify({
           environment_ids: input.environmentIds,
+          environment_names: input.environmentNames,
           label: input.label,
           default_minutes: input.defaultMinutes,
           owner_id: input.ownerId || null,
@@ -304,6 +308,13 @@ export class WorkspaceService {
   }
 
   private static asNumber(value: unknown, fallback = 0): number {
-    return typeof value === 'number' && !Number.isNaN(value) ? value : fallback;
+    if (typeof value === 'number' && !Number.isNaN(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    return fallback;
   }
 }

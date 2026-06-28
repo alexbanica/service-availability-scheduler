@@ -236,11 +236,33 @@ export class ServiceRepository extends AbstractMysqlRepository {
     const row = await this.get<RowDataPacket & { environment_id: string }>(
       `SELECT environment_id
        FROM environments
-       WHERE workspace_id = ? AND name = ?
+       WHERE workspace_id = ? AND LOWER(name) = LOWER(?)
        LIMIT 1`,
       [workspaceId, name],
     );
     return row ? { environmentId: row.environment_id } : null;
+  }
+
+  async findEnvironmentByWorkspaceAndNames(
+    workspaceId: string,
+    names: string[],
+  ): Promise<Array<{ environmentId: string; environmentName: string }>> {
+    if (!names.length) {
+      return [];
+    }
+    const placeholders = names.map(() => '?').join(',');
+    const rows = await this.all<
+      RowDataPacket & { environment_id: string; name: string }
+    >(
+      `SELECT environment_id, name
+       FROM environments
+       WHERE workspace_id = ? AND LOWER(name) IN (${placeholders})`,
+      [workspaceId, ...names.map((name) => name.toLowerCase())],
+    );
+    return rows.map((row) => ({
+      environmentId: row.environment_id,
+      environmentName: row.name,
+    }));
   }
 
   async getEnvironmentById(

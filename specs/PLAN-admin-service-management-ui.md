@@ -6,7 +6,7 @@ Approved spec: `specs/SPEC-admin-service-management-ui.md`
 
 ## Objective
 
-Implement the approved Administration Service Management redesign: select one workspace, list only that workspace's services, create services reliably, edit existing services, preserve delete behavior, and fix environment tag entry so visible environment tags are submitted deterministically.
+Implement the approved Administration Service Management redesign: select one workspace, list only that workspace's services, create services reliably through a modal opened by a page-level `Create service` action, edit existing services, preserve delete behavior, fix environment tag entry so visible environment tags are submitted deterministically, fix duplicate environment commits so already-selected environments clear the input without duplicating or disappearing, fix the create-service owner field so it matches the environments field UX and clears transient suggestion/input text after owner selection or entry, and apply the approved admin-surface UX polish for scanability, responsive behavior, stable interactions, and accessible visual hierarchy.
 
 ## Branch
 
@@ -35,10 +35,16 @@ Use the `ui-ux-pro-max` design-system findings for a professional SaaS/admin das
 
 - Data-dense admin layout with compact controls and scannable service rows/cards.
 - Restrained existing palette and theme tokens rather than a new branded visual system.
-- Workspace selector above the service list as the primary scope control.
-- One create/edit surface for the selected workspace instead of repeated per-workspace forms.
+- Workspace selector above the service list and create action as the primary page-level scope control.
+- Page-level `Create service` action placed consistently with Workspace management `Create workspace`.
+- Create-service modal for the selected workspace instead of a persistent in-page create form.
+- Create-service owner input visually and behaviorally aligned with the create-service environments input, using compact committed-value display and suggestions rather than a mismatched native select.
+- Row-attached edit surface for existing services.
+- Service rows/cards split into identity, metadata, environment associations, and actions regions.
+- Environment associations displayed as wrapped compact labels or equivalent readable grouped text, not an overflowing comma string.
 - Responsive card or row layout, not a wide mobile-breaking table.
-- Explicit labels, visible error regions, visible focus states, disabled styling, and stable hover states.
+- Explicit labels, visible error regions, visible focus states, disabled styling, stable hover states, and reduced-motion support.
+- No new font, CSS framework, icon library, or design-system dependency.
 
 ## Affected Files
 
@@ -108,6 +114,7 @@ No planned edits:
    - selected workspace computed value
    - selected workspace catalog computed or loaded value
    - single create form state
+   - create modal open/close state
    - edit form state keyed by stable `serviceId`
    - create/edit/delete submitting and error state scoped to selected workspace or selected row
 
@@ -116,28 +123,56 @@ No planned edits:
    - preserve selection across refresh when the workspace still exists
    - reset service form state and row errors when the selected workspace changes
    - load service catalog, environments, and owners for the selected workspace on selection and when entering Service Management
+   - present the workspace selector as a page-level scope control above the selected-workspace list and create action
 
 4. Fix environment tag handling:
    - ensure commit-by-comma, Enter, Space, blur, and submit all add visible tags
    - avoid writing stale form objects after `addEnvironmentTags`
    - dedupe tags case-insensitively within each form
+   - when committed text matches an already-selected environment tag, clear the input, preserve the existing tag, and add no duplicate
    - make create and edit submit paths call the same deterministic environment resolver
 
-5. Update `public/index.html` Service Management section:
-   - workspace selector at the top
+5. Fix create-service owner input handling in `AppController`:
+   - add create-form state for transient owner input text if needed, distinct from the committed owner identifier or owner name submitted by create
+   - derive owner suggestions from `workspaceOwners[selectedServiceWorkspaceId]`
+   - commit an existing owner suggestion to the create form's owner value and clear transient input text
+   - commit typed owner text on Enter, blur, or create-form submit and clear transient input text
+   - support clearing the committed owner so the create payload submits `ownerId: null`
+   - reset committed owner and transient owner input text when the create modal closes, cancels, or successfully submits
+   - do not add backend endpoints or alter create-service authorization, validation, or persistence semantics for this owner-field UX fix
+
+6. Update `public/index.html` Service Management section:
+   - workspace selector at the top as the page-level scope control
    - selected-workspace summary header
    - selected-workspace service list only
-   - create service action/form for admins
+   - page-level `Create service` action for admins, placed like Workspace management `Create workspace`
+   - create service modal for admins
+   - create service label input without an existing-service datalist or other existing-service picker
+   - create service owner control using the same compact suggestion/committed-value treatment as environments, with a clear/remove action for the committed owner
    - edit action/form for one service at a time for admins
    - existing delete action for admins
    - non-admin message when selected workspace is view-only
    - empty state for no services in selected workspace
+   - `role="dialog"` and `aria-modal="true"` for the create service modal
+   - keyboard-reachable close/cancel controls for the create service modal
+   - Enter-key submit behavior for create modal text inputs except when the environment input is committing a tag
 
-6. Update `public/styles.css`:
+7. Update `public/styles.css`:
    - responsive selected-workspace service management layout
    - compact service rows/cards with metadata and actions
    - consistent input heights and spacing
    - clear disabled, hover, and focus-visible states
+   - reduce broad nested card treatment where it competes with scanability
+   - present the workspace selector as the higher-level scope control for the Service Management surface
+   - place the `Create service` button consistently with Workspace management's `Create workspace` action
+   - style the create-service modal consistently with existing admin modals
+   - style the create-service owner control to match the compact environments input treatment without causing text overlap, layout shift, or mobile overflow
+   - visually attach edit forms to the active service row
+   - separate service row identity, metadata, environment associations, and actions into stable visual regions
+   - render environment associations as wrapped compact labels or equivalent readable grouped text
+   - ensure long service labels, owner labels, environment labels, and action labels wrap without overlap
+   - ensure hover/focus states do not move controls or resize rows
+   - add `prefers-reduced-motion: reduce` handling for decorative transitions
    - mobile-safe wrapping for long labels, owners, and environment names
 
 ## Test-First Subagent Assignment
@@ -171,6 +206,8 @@ Assignment:
   - new environment row is created
   - removed association no longer appears in the service catalog
 - Add focused tests for environment tag state only if a practical frontend/controller test pattern exists; otherwise identify manual QA coverage.
+- If frontend controller tests are practical, cover duplicate environment commit behavior for create and edit forms: already-selected environment text clears the input, preserves the existing tag, and adds no duplicate.
+- If frontend controller tests are practical, cover create-service owner commit behavior: selecting an existing owner clears transient input text, typed owner commit clears transient input text, and clearing the committed owner submits no owner.
 - Do not implement production behavior.
 - Report spec or plan conflicts instead of resolving them independently.
 
@@ -216,10 +253,23 @@ Assignment:
   - missing admin authorization on create/edit/delete
   - edit operations that create replacement services or change `service_id`
   - environment tag loss or stale state writes
+  - duplicate environment commits leaving stale input, removing selected tags, or adding duplicate tags
   - incorrect association replacement
   - broken create/delete behavior
+  - create service implemented as a persistent in-page form instead of a modal
+  - create service label field still allowing existing-service target selection
+  - create service owner field still implemented as a mismatched native select
+  - owner suggestion/input text remaining visible after selecting or committing an owner
+  - clearing the create-service owner failing to submit an unset owner
   - accessibility gaps in labels, errors, and focus states
+  - missing `role="dialog"` or `aria-modal="true"` on the create service modal
   - mobile overflow or overlapping text
+  - hover or focus states that cause layout shift
+  - missing reduced-motion handling for decorative transitions
+  - selected workspace selector not reading as the page scope control
+  - create form visually blending into service rows
+  - edit form not clearly attached to the active service row
+  - environment associations displayed in a way that can overflow or become hard to scan
   - onion architecture violations
   - missing tests for update-service behavior
 - Do not implement fixes.
@@ -239,8 +289,18 @@ Manual QA when a dev server/browser is available:
 - Open Administration.
 - Click `Service Management`.
 - Verify a workspace selector is visible and scopes the service list.
+- Verify the workspace selector is visually higher than the selected-workspace list and create action.
 - Switch workspaces and verify only the selected workspace's services appear.
+- Verify `Create service` is placed consistently with Workspace management `Create workspace`.
+- Press `Create service` and verify a modal opens for the selected workspace.
+- Verify the create service form is not visible as a persistent in-page block when the modal is closed.
+- Verify the create service label field does not offer existing services as selectable create targets.
+- Verify the create service owner field visually matches the compact environments field treatment.
+- Select an existing owner and verify the committed owner is displayed while transient suggestion/input text clears.
+- Type an owner and commit it with Enter, blur, and form submit; verify the committed owner is displayed while transient input text clears.
+- Clear the committed owner and verify the create payload submits no owner.
 - As a workspace admin, create a service with environments committed by comma, Enter, Space, blur, and submit.
+- In create and edit forms, type an already-selected environment and commit it with comma, Enter, Space, blur, and submit; verify the input clears, the existing tag remains, and no duplicate tag appears.
 - Verify visible environment tags are included in the create request and service list refresh.
 - Edit a service label, default minutes, owner, and environments.
 - Verify the service keeps the same `service_id` and the updated environments appear.
@@ -248,6 +308,13 @@ Manual QA when a dev server/browser is available:
 - Verify delete still works for admins.
 - Verify a non-admin member can view services but cannot create, edit, or delete.
 - Check desktop and mobile widths for no horizontal overflow or text overlap.
+- Verify at 375px, 768px, 1024px, and 1440px widths that selected workspace context, create modal, service identity, metadata, environments, and actions stack or align readably without horizontal page scroll.
+- Verify the workspace selector visually reads as the Service Management scope control.
+- Verify create-service and edit-service forms are visually distinct from each other and from inactive service rows.
+- Verify environment associations wrap cleanly as compact labels or equivalent readable grouped text.
+- Verify hover and keyboard focus states are visible and do not move controls or resize rows.
+- Verify light and dark themes keep readable text contrast in selected workspace context, service rows, forms, empty states, and action controls.
+- Verify reduced-motion preference removes or effectively neutralizes decorative movement.
 
 If the dev server or browser QA is not possible because database configuration is unavailable, report that as unvalidated and mark implementation delivery draft unless the user explicitly accepts build/test-only validation.
 
