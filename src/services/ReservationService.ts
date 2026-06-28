@@ -15,7 +15,7 @@ export class ReservationService {
     private readonly userService: UserService,
     private readonly serviceRepository: ServiceRepository,
     private readonly expiryWarningMinutes: number,
-    private readonly autoRefreshMinutes: number,
+    private readonly autoRefreshSeconds: number,
   ) {}
 
   getServiceList(userId: string, now: Date): Promise<ServiceListDto> {
@@ -81,7 +81,7 @@ export class ReservationService {
 
     return new ServiceListDto(
       this.expiryWarningMinutes,
-      this.autoRefreshMinutes,
+      this.autoRefreshSeconds,
       Array.from(grouped.values()),
     );
   }

@@ -35,7 +35,7 @@ export class AppController {
         const user = ref<User | null>(null);
         const services = ref<Service[]>([]);
         const expiryWarningMinutes = ref(5);
-        const autoRefreshMinutes = ref(2);
+        const autoRefreshSeconds = ref(60);
         const ownerFilter = ref(
           localStorage.getItem(this.ownerFilterStorageKey) || 'all',
         );
@@ -395,7 +395,7 @@ export class AppController {
 
         const themeLabel = computed(() => ThemeHelper.getLabel(theme.value));
 
-        const normalizeAutoRefreshMinutes = (value: unknown): number => {
+        const normalizeAutoRefreshSeconds = (value: unknown): number => {
           const parsed = Number(value);
           if (!Number.isFinite(parsed) || parsed < 1) {
             return 1;
@@ -406,8 +406,8 @@ export class AppController {
         const applyServiceResponse = (data: ServicesResponseDto) => {
           services.value = data.services;
           expiryWarningMinutes.value = data.expiryWarningMinutes;
-          autoRefreshMinutes.value = normalizeAutoRefreshMinutes(
-            data.autoRefreshMinutes,
+          autoRefreshSeconds.value = normalizeAutoRefreshSeconds(
+            data.autoRefreshSeconds,
           );
 
           const ownerKeys = new Set(owners.value.map((owner) => owner.value));
@@ -1498,12 +1498,12 @@ export class AppController {
           if (this.refreshTimer) {
             window.clearTimeout(this.refreshTimer);
           }
-          const intervalMinutes = normalizeAutoRefreshMinutes(
-            autoRefreshMinutes.value,
+          const intervalSeconds = normalizeAutoRefreshSeconds(
+            autoRefreshSeconds.value,
           );
           this.refreshTimer = window.setTimeout(async () => {
             await loadServices();
-          }, intervalMinutes * 60000);
+          }, intervalSeconds * 1000);
         };
 
         const initEvents = () => {

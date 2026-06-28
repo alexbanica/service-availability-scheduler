@@ -65,7 +65,7 @@ async function start() {
     userService,
     serviceRepository,
     config.expiryWarningMinutes,
-    config.autoRefreshMinutes,
+    config.autoRefreshSeconds,
   );
   const workspaceService = new WorkspaceService(
     db,

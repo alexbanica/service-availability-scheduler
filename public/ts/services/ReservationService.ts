@@ -10,7 +10,7 @@ export class ReservationService {
     }
     const data = (await response.json()) as {
       expiry_warning_minutes: number;
-      auto_refresh_minutes: number;
+      auto_refresh_seconds: number;
       services: Array<Record<string, unknown>>;
     };
 
@@ -59,7 +59,7 @@ export class ReservationService {
 
     return new ServicesResponseDto(
       data.expiry_warning_minutes,
-      data.auto_refresh_minutes,
+      data.auto_refresh_seconds,
       services,
     );
   }

@@ -32,12 +32,36 @@ npm start
 
 Open `http://localhost:3000`.
 
-## Config
+## Configuration
 
-Edit `config/app.yml` for `expiry_warning_minutes` and `auto_refresh_minutes`.
+### Runtime environment
+
+| Name | Required | Default | Description |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | Yes | None | MariaDB connection string used by the server, for example `mysql://user:password@host:3306/database_name`. The database must already exist; tables are created automatically on startup. |
+| `SESSION_SECRET` | No | `dev-secret-change-me` | Express session signing secret. Set this outside local development. |
+| `PORT` | No | `3000` | HTTP port used by `npm start` and `npm run dev`. |
+| `APP_VERSION` | No | Empty string | Optional version string exposed to rendered pages. |
+
+### Application file config
+
+Edit `config/app.yml` for app timing behavior.
+
+| Key | Default | Unit | Description |
+| --- | --- | --- | --- |
+| `expiry_warning_minutes` | `5` | minutes | Lead time for reservation expiry warning events. |
+| `auto_refresh_seconds` | `60` | seconds | Browser service-availability auto-refresh interval returned by `/api/services`. Values below `1` second are clamped by the browser scheduler. |
+
 Workspace admins define workspace owners, environments, and services from the
 admin UI. Service creation selects existing workspace-scoped owners and
 environments; it does not create them inline.
+
+### Test environment
+
+| Name | Required | Default | Description |
+| --- | --- | --- | --- |
+| `TEST_DATABASE_URL` | No | None | MariaDB connection string used by integration tests that exercise schema and repository behavior. |
+| `TEST_DATABASE_ALLOW_TRUNCATE` | No | Not enabled | Set to `1` to allow integration tests to truncate tables in the configured test database. |
 
 ## Schema + seed data
 

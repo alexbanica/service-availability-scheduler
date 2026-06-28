@@ -6,137 +6,77 @@ Approved spec reference: `specs/SPEC-service-availability-auto-refresh.md`
 
 ## Objective
 
-Implement the approved Service Availability auto-refresh behavior: remove the authenticated header's manual `Refresh` button, preserve configured automatic service-list refresh, and keep refresh scheduling deterministic and non-overlapping.
+Document the completed `$super-agent` implementation that converts the Service Availability auto-refresh interval from minutes to seconds, defaults it to 60 seconds, and updates project configuration documentation.
 
-## Branch
+## Affected Files
 
-- Target branch: `service-availability-auto-refresh`
-- Create the branch from the current working branch only after confirming that doing so will not include unrelated local changes.
-- Do not revert or modify unrelated existing worktree changes.
-
-## Scope Boundaries
-
-In scope:
-
-- `public/index.html`
+- `config/app.yml`
+- `src/services/ConfigLoaderService.ts`
+- `src/dtos/ServiceListDto.ts`
+- `src/services/ReservationService.ts`
+- `src/controllers/ServiceController.ts`
+- `src/service-availability-scheduler.ts`
+- `public/ts/dtos/ServicesResponseDto.ts`
+- `public/ts/services/ReservationService.ts`
 - `public/ts/controllers/AppController.ts`
-- `public/ts/services/ReservationService.ts` only if needed to make malformed or missing `auto_refresh_minutes` parsing deterministic.
-- `src/services/ConfigLoaderService.ts` only if needed to keep the backend default/config contract deterministic for missing or invalid `auto_refresh_minutes`.
-- Focused tests under `src/tests/**` when practical for any backend config parsing changes.
-- `README.md` only if implementation changes the documented operational behavior.
-
-Out of scope:
-
-- Backend reservation behavior, database schema, workspace authorization, service management behavior, filters, card layout, and realtime event behavior.
-- Browser-side user preference controls for the refresh interval.
-- Broad frontend refactors unrelated to refresh scheduling.
-
-## Existing Behavior To Preserve
-
-- `config/app.yml` contains `auto_refresh_minutes`.
-- `ConfigLoaderService` loads `auto_refresh_minutes` with a default of `2`.
-- `GET /api/services` returns `auto_refresh_minutes`.
-- Browser `ReservationService.loadServices()` maps API `auto_refresh_minutes` to `ServicesResponseDto.autoRefreshMinutes`.
-- `AppController` stores `autoRefreshMinutes`, calls `loadServices()`, and schedules a timer with `scheduleAutoRefresh()`.
-- Claim, release, extend, overview counts, filters, theme toggle, logout, and view navigation continue to use their existing paths.
-
-## Test-First Work
-
-Use exactly one clean-context test-focused subagent before production implementation.
-
-Assignment:
-
-- Read only the approved spec, this approved plan, and the files needed for the assigned tests.
-- Determine whether deterministic automated coverage is practical for the changed refresh contract.
-- Add or update tests before production implementation when feasible.
-- If browser timer behavior cannot be tested with the existing test harness without introducing disproportionate tooling, report that and leave browser timer coverage for build plus manual QA.
-- If backend config parsing is changed, add or update focused unit coverage for `ConfigLoaderService` behavior around missing, invalid, zero, negative, and valid `auto_refresh_minutes` values.
-- Do not implement production behavior.
-
-Expected output:
-
-- Test changes only, or a written blocker/rationale if no focused automated test fits the existing harness.
-
-## Implementation Steps
-
-Use exactly one clean-context implementation subagent for the initial production implementation.
-
-Assignment:
-
-1. Inspect the approved spec and this plan only, plus the in-scope files needed for edits.
-2. Remove the manual header `Refresh` button from `public/index.html`.
-3. Remove the browser-exposed `refresh` action from `AppController` if no template or code path uses it after the button is removed.
-4. Keep `loadServices()` as the shared data-loading path for initial load, automatic refresh, and claim/release/extend flows.
-5. Make refresh interval handling deterministic:
-   - schedule from the latest `autoRefreshMinutes` value received by the browser
-   - clamp missing, non-finite, zero, or negative browser values to 1 minute
-   - clear any existing timer before creating a replacement timer
-   - do not create overlapping timers during normal mounted operation
-6. If the existing backend or browser parsing can pass `NaN` through the contract, normalize that value at the narrowest appropriate boundary without changing the API field name.
-7. Do not add a browser UI for refresh-rate configuration.
-8. Do not change README unless the implementation changes the documented operator workflow for `auto_refresh_minutes`.
-
-## Review Requirements
-
-Use exactly one clean-context code-review subagent after implementation.
-
-Assignment:
-
-- Review the diff against `specs/SPEC-service-availability-auto-refresh.md` and this plan.
-- Check for spec mismatches, overlapping timer risk, lost refresh paths after claims/releases/extensions, filter/view reset regressions, config contract regressions, and unrelated edits.
-- Do not implement fixes.
-
-Route any in-scope review finding requiring code changes to a clean-context implementation subagent with only the approved artifacts, finding details, relevant diff/file context, and the allowed ownership boundary.
-
-## Main-Agent QA
-
-The main agent must run QA after review findings are resolved.
-
-Automated validation:
-
-- `npm test`
-- `npm run build`
-- `git diff --check`
-
-Manual QA when a local database configuration is available:
-
-- Start the app with `npm run dev`.
-- Sign in.
-- Verify the authenticated header no longer shows `Refresh`.
-- Verify theme toggle and `Log out` remain visible and functional.
-- Verify Service Availability loads services.
-- Set filters, wait for an automatic refresh, and verify current view and filters are preserved.
-- Verify claim, release, and extend still reload service state through their existing flows.
-
-If local database access is unavailable, report manual browser QA as unvalidated and mark delivery draft unless the user explicitly accepts build/test-only validation.
-
-## Documentation
-
-- No README change is required if `auto_refresh_minutes` remains configured through `config/app.yml` as currently documented.
-- Update README only if the implementation changes how operators configure the interval.
-
-## Commit And Push
-
-- Commit only files changed for this approved spec and plan.
-- Use commit summary `feature: service availability auto refresh`.
-- If required validation, review, QA, or documentation is skipped, blocked, incomplete, or failing, use a `DRAFT` commit summary instead.
-- Push the implementation branch after accepted review, QA, validation, documentation decisions, and final main-agent acceptance, unless the user instructs otherwise.
-
-## No-Research Constraint For Implementation
-
-Implementation must not perform additional product, architecture, scope, or planning research. It may inspect only:
-
-- repository and workspace instructions
+- `src/tests/unit/config-loader-service.test.ts`
+- `README.md`
+- `AGENTS.md`
 - `specs/SPEC-service-availability-auto-refresh.md`
-- this implementation plan
-- branch/worktree state
-- the in-scope files named above
-- minimal adjacent local patterns needed to make safe edits and run validation
+- `specs/PLAN-service-availability-auto-refresh.md`
 
-## Clean-Context Handoff Requirement
+## Implementation Steps Performed
 
-After this plan is approved and its status is updated to `Approved`, implementation must start only in one of these states:
+1. Inspected repository instructions, workspace instructions, current worktree state, and the existing auto-refresh implementation.
+2. Changed `config/app.yml` from `auto_refresh_minutes: 2` to `auto_refresh_seconds: 60`.
+3. Updated `ConfigLoaderService` to read `auto_refresh_seconds` and default to `60`.
+4. Renamed backend DTO and service properties from minutes to seconds.
+5. Updated `GET /api/services` to return `auto_refresh_seconds`.
+6. Updated browser DTO and API mapping to consume `auto_refresh_seconds`.
+7. Updated `AppController` to keep the auto-refresh interval in seconds and schedule using `intervalSeconds * 1000`.
+8. Updated focused config-loader tests for the seconds-based key and default.
+9. Updated `README.md` with all runtime, application-file, and test configuration inputs.
+10. Updated `AGENTS.md` to reflect current project architecture, active configuration keys, and validation expectations.
+11. Updated the auto-approved spec and this auto-approved completed-work plan.
 
-- a new session
-- explicitly cleared current context
-- explicit user confirmation that continuing implementation in the current context is intentional for this invocation
+## Validation Run
+
+- `npx tsc -p tsconfig.json --noEmit`
+- `npx tsc -p tsconfig.client.json --noEmit`
+- `npx tsc -p tsconfig.client.json`
+- `node -r ts-node/register --test src/tests/unit/config-loader-service.test.ts`
+- Scoped `git diff --check` across the files touched by this change.
+- Focused source search confirmed no remaining `auto_refresh_minutes` references in active source, config, README, or AGENTS files.
+
+## Validation Skipped
+
+- `npm test` was skipped because the `$super-agent` workflow allows only commands expected to complete within 10 seconds and this repo's full test suite includes broader integration coverage.
+- `npm run build` was skipped because it runs clean, install, server compile, and client compile and may exceed 10 seconds.
+- Browser QA with `npm run dev` was skipped because database-backed runtime QA is outside the short-validation boundary.
+
+## QA Skipped
+
+- Manual QA was skipped by design under `$super-agent`.
+
+## Code Review Skipped
+
+- Code review was skipped by design under `$super-agent`.
+
+## Documentation Updates
+
+- `README.md` now lists runtime environment variables, app file configuration keys, and test environment variables with descriptions.
+- `AGENTS.md` now documents current project standards, MySQL-backed service ownership, `auto_refresh_seconds`, generated browser bundles, and validation commands.
+
+## Commit Status
+
+- Not committed. The user did not request a commit.
+
+## Push Status
+
+- Not pushed. The user did not request a push.
+
+## Residual Risk
+
+- Full TypeScript build and full automated tests were not run in this lower-assurance workflow.
+- Runtime browser behavior was not manually verified against a database-backed local app session.
+- External clients expecting `auto_refresh_minutes` from `/api/services` must update to `auto_refresh_seconds`.

@@ -20,52 +20,52 @@ function cleanupConfig(configPath: string): void {
   });
 }
 
-test('missing auto_refresh_minutes uses default value', () => {
+test('missing auto_refresh_seconds uses default value', () => {
   const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
   try {
     const config = new ConfigLoaderService().loadConfig(configPath);
-    assert.equal(config.autoRefreshMinutes, 2);
+    assert.equal(config.autoRefreshSeconds, 60);
     assert.equal(config.expiryWarningMinutes, 5);
   } finally {
     cleanupConfig(configPath);
   }
 });
 
-test('valid auto_refresh_minutes is parsed as number', () => {
-  const configPath = writeTempAppConfig('auto_refresh_minutes: 7\n');
+test('valid auto_refresh_seconds is parsed as number', () => {
+  const configPath = writeTempAppConfig('auto_refresh_seconds: 30\n');
   try {
     const config = new ConfigLoaderService().loadConfig(configPath);
-    assert.equal(config.autoRefreshMinutes, 7);
+    assert.equal(config.autoRefreshSeconds, 30);
   } finally {
     cleanupConfig(configPath);
   }
 });
 
-test('zero auto_refresh_minutes remains zero from file parsing', () => {
-  const configPath = writeTempAppConfig('auto_refresh_minutes: 0\n');
+test('zero auto_refresh_seconds remains zero from file parsing', () => {
+  const configPath = writeTempAppConfig('auto_refresh_seconds: 0\n');
   try {
     const config = new ConfigLoaderService().loadConfig(configPath);
-    assert.equal(config.autoRefreshMinutes, 0);
+    assert.equal(config.autoRefreshSeconds, 0);
   } finally {
     cleanupConfig(configPath);
   }
 });
 
-test('negative auto_refresh_minutes remains negative from file parsing', () => {
-  const configPath = writeTempAppConfig('auto_refresh_minutes: -3\n');
+test('negative auto_refresh_seconds remains negative from file parsing', () => {
+  const configPath = writeTempAppConfig('auto_refresh_seconds: -3\n');
   try {
     const config = new ConfigLoaderService().loadConfig(configPath);
-    assert.equal(config.autoRefreshMinutes, -3);
+    assert.equal(config.autoRefreshSeconds, -3);
   } finally {
     cleanupConfig(configPath);
   }
 });
 
-test('invalid auto_refresh_minutes maps to NaN', () => {
-  const configPath = writeTempAppConfig('auto_refresh_minutes: invalid\n');
+test('invalid auto_refresh_seconds maps to NaN', () => {
+  const configPath = writeTempAppConfig('auto_refresh_seconds: invalid\n');
   try {
     const config = new ConfigLoaderService().loadConfig(configPath);
-    assert.ok(Number.isNaN(config.autoRefreshMinutes));
+    assert.ok(Number.isNaN(config.autoRefreshSeconds));
   } finally {
     cleanupConfig(configPath);
   }

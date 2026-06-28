@@ -4,96 +4,92 @@ Status: Approved
 
 ## Purpose
 
-Keep Service Availability data current without requiring users to press a manual refresh button, while making the refresh interval configurable from application configuration.
+Keep Service Availability data current through automatic browser refresh while expressing the operator-configured refresh interval in seconds.
 
 ## Problem Statement
 
-The authenticated application header currently exposes a `Refresh` button. Service availability data should refresh automatically at a configured interval, so users do not need a manual refresh control to see updated service claim and availability state.
+The auto-refresh configuration previously used a minutes-based key and default. Operators need the interval configured in seconds, with the default set to 60 seconds, and the public documentation must describe all supported configuration inputs.
 
 ## Scope
 
-- Remove the visible manual `Refresh` button from the authenticated application header.
-- Preserve automatic refresh of service availability data for signed-in users.
-- Use the configured service auto-refresh interval as the source of truth for the browser refresh timer.
-- Keep the refresh interval configurable through the existing application configuration contract.
-- Preserve existing service availability rendering, filtering, claim, release, extend, overview counts, workspace navigation, theme toggle, and logout behavior.
+- Replace the auto-refresh configuration key with `auto_refresh_seconds`.
+- Default missing `auto_refresh_seconds` to `60`.
+- Expose the configured interval from `GET /api/services` as `auto_refresh_seconds`.
+- Schedule browser refreshes in seconds.
+- Update README configuration documentation.
+- Update agent-facing repository guidance for current project standards.
 
 ## Out Of Scope
 
-- Adding a user-facing refresh-rate control in the browser UI.
-- Adding per-user or per-session refresh preferences.
-- Changing reservation expiration logic or warning notifications.
-- Changing backend persistence, workspace authorization, or service catalog management.
-- Changing Service Availability filters or service card layout.
-- Adding realtime push updates beyond the existing expiration warning events.
+- Adding a browser control for refresh frequency.
+- Changing reservation expiry warning behavior.
+- Changing claim, release, extend, filtering, workspace, owner, environment, service-management, login, or schema behavior.
+- Adding realtime updates beyond the existing expiration warning events.
 
 ## Definitions
 
-- `Manual Refresh button`: The header button labeled `Refresh` that triggers the browser-side `refresh` action.
 - `Automatic refresh`: A browser-side timer that reloads service availability data from the existing service-list API without user interaction.
-- `Refresh interval`: The numeric interval, in minutes, used by the browser timer between automatic service-list reloads.
-- `Configured refresh interval`: The server-loaded `auto_refresh_minutes` value from application configuration, exposed to the browser through the service-list response.
+- `Refresh interval`: The numeric interval, in seconds, used by the browser timer between automatic service-list reloads.
+- `Configured refresh interval`: The server-loaded `auto_refresh_seconds` value from `config/app.yml`, exposed to the browser through the service-list response.
 
 ## Inputs And Constraints
 
-- Application-level configuration remains in `config/app.yml`.
-- The existing configuration key `auto_refresh_minutes` remains the refresh-rate configuration input.
-- The existing service-list API response continues to expose `auto_refresh_minutes` to the browser.
-- The browser remains responsible for scheduling the automatic reload after it receives the configured interval.
-- The timer must reload only the service availability data needed by the existing app state; it must not perform a full browser page reload.
-- The app must continue to work if `auto_refresh_minutes` is absent from configuration by using the existing default value.
+- Application-level timing configuration remains in `config/app.yml`.
+- `auto_refresh_seconds` is the refresh-rate configuration input.
+- The default refresh interval is 60 seconds when the key is absent.
+- `GET /api/services` exposes `auto_refresh_seconds`.
+- The browser remains responsible for scheduling automatic reloads after it receives the configured interval.
+- The timer reloads service availability data through the existing load path and does not perform a full browser page reload.
 
-## Deterministic Behavior
+## Deterministic Behavior Delivered
 
-- When a signed-in user opens the application, the app loads services and starts an automatic service-list refresh timer.
-- The timer interval is derived from the latest `auto_refresh_minutes` value received from the service-list API.
-- After each automatic service-list reload succeeds, the next automatic refresh is scheduled using the latest configured interval from that response.
-- The manual `Refresh` button is not rendered anywhere in the authenticated application header.
-- Removing the manual button does not remove or change the theme toggle or `Log out` controls.
-- Automatic refresh preserves the currently selected view and active Service Availability filters.
-- Automatic refresh updates service claim and availability state using the same data-loading path as the existing manual refresh behavior.
-- If the configured interval is missing, non-numeric, zero, or negative after browser parsing, the browser uses a minimum interval of 1 minute for scheduling.
-- The application must not create overlapping automatic refresh timers during normal mounted operation.
+- `config/app.yml` configures `auto_refresh_seconds: 60`.
+- `ConfigLoaderService` reads `auto_refresh_seconds` and defaults to `60` when absent.
+- `GET /api/services` returns `auto_refresh_seconds`.
+- Browser service loading maps `auto_refresh_seconds` to `ServicesResponseDto.autoRefreshSeconds`.
+- `AppController` stores the interval as seconds and schedules the timer using `intervalSeconds * 1000`.
+- Missing, non-numeric, zero, or negative browser values are clamped to a minimum of 1 second before scheduling.
+- Existing service-list reload behavior preserves the current view and filters.
+- Existing claim, release, extend, theme toggle, logout, overview, Service Availability, and Administration navigation behavior remains unchanged.
 
 ## Assumptions
 
 - `configurable` means operator-configurable through `config/app.yml`, not user-configurable from the browser UI.
-- The existing `auto_refresh_minutes` configuration key is the intended configuration contract and should be reused.
-- A configured interval below 1 minute is not required for this app; values below 1 minute are clamped to 1 minute in the browser timer.
-- Automatic refresh remains active while the authenticated app is mounted, including when the user is on Overview or Administration, because the loaded service data also feeds overview service counts and existing app state.
+- The seconds-based key replaces the minutes-based refresh contract for current code and documentation.
 
 ## Impact And Regression Considerations
 
-- The primary user-visible change is removal of the manual header refresh control.
-- Users can no longer force a service-list reload from the header; data freshness depends on the configured timer and existing claim, release, and extend reload paths.
-- Service-list API shape and config loading are part of the refresh contract and should remain backward compatible.
+- Operators must use `auto_refresh_seconds` instead of `auto_refresh_minutes`.
+- Clients expecting `auto_refresh_minutes` from `/api/services` must update to `auto_refresh_seconds`.
 - Timer behavior affects browser-side state freshness and must avoid duplicate timers that increase API load.
 - Existing filters and selected workspace state must remain stable across automatic refreshes.
-- Existing README configuration documentation already names `auto_refresh_minutes`; update it only if implementation changes the documented operational behavior.
 
 ## Acceptance Criteria
 
-- The authenticated header no longer displays a `Refresh` button.
-- `auto_refresh_minutes` remains configurable in `config/app.yml`.
-- The browser uses the service-list response's `auto_refresh_minutes` value to schedule service-list reloads.
+- `auto_refresh_seconds` is configurable in `config/app.yml`.
+- Missing `auto_refresh_seconds` defaults to `60`.
+- `GET /api/services` returns `auto_refresh_seconds`.
+- The browser uses the service-list response's `auto_refresh_seconds` value to schedule service-list reloads.
 - Automatic refresh reloads services without a full page reload.
 - Automatic refresh does not reset the current view, selected workspace filter, owner filter, or service-name filter.
 - Automatic refresh does not create overlapping timers during normal app usage.
-- Values missing or below 1 minute result in a 1-minute browser refresh interval.
-- Existing claim, release, extend, theme toggle, logout, overview, Service Availability, and Administration navigation behavior remains unchanged.
+- Values missing or below 1 second result in a 1-second browser refresh interval.
+- README lists supported runtime, app file, and test configuration.
 
-## Validation Plan
+## Validation Performed
 
-- Add or update deterministic browser-side tests if the project has suitable test coverage for the app controller or extracted timer behavior.
-- Run the TypeScript build with `npm run build`.
-- Run `git diff --check`.
-- If a local database is available, start the app with `npm run dev` and manually verify:
-  - the header does not show `Refresh`
-  - Service Availability still loads services after login
-  - configured auto-refresh continues to reload service data without resetting filters
-  - theme toggle and logout remain available
+- Server TypeScript no-emit check passed.
+- Browser TypeScript no-emit check passed.
+- Browser TypeScript compilation passed.
+- Focused unit coverage for `ConfigLoaderService` was updated for `auto_refresh_seconds` missing, valid, zero, negative, and invalid values.
+- Focused config-loader unit test passed.
+- Scoped whitespace validation passed for files touched by this change.
 
-## Documentation Requirements
+## Validation Skipped
 
-- Keep `README.md` configuration documentation accurate for `auto_refresh_minutes`.
-- Do not add documentation for a browser-side refresh-rate control, because that UI is out of scope.
+- Full build, full test suite, browser QA, and runtime database-backed QA are recorded as skipped in the matching plan according to the `$super-agent` short-validation workflow.
+
+## Documentation Changes
+
+- `README.md` now lists runtime environment variables, `config/app.yml` keys, and test-only environment variables with descriptions.
+- `AGENTS.md` now describes the current MySQL-backed architecture, active configuration keys, generated browser bundle expectations, and validation commands.

@@ -16,7 +16,7 @@ export class ServiceController {
         );
         res.json({
           expiry_warning_minutes: list.expiryWarningMinutes,
-          auto_refresh_minutes: list.autoRefreshMinutes,
+          auto_refresh_seconds: list.autoRefreshSeconds,
           services: list.services.map((svc) => ({
             service_id: svc.serviceId,
             label: svc.label,
