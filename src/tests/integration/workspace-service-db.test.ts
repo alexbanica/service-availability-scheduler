@@ -65,6 +65,15 @@ type ColumnInfo = RowDataPacket & {
 
 type PopupResource = 'users' | 'services' | 'owners' | 'environments';
 
+type PopupResourceRow =
+  | { name: string };
+
+function popupRowDisplayName(
+  row: PopupResourceRow,
+): string {
+  return row.name;
+}
+
 async function tableExists(db: mysql.Pool, tableName: string): Promise<boolean> {
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT TABLE_NAME
@@ -923,10 +932,10 @@ test(
       );
       assert.equal(users.length, 2);
       assert.deepEqual(
-        users.map((row) => row.email),
+        users.map((row) => row.name),
         ['admin@example.com', 'member@example.com'],
       );
-      assert.ok(users.every((row) => row.type === 'users'));
+      assert.ok(users.every((row) => typeof row.name === 'string'));
 
       const services = await workspaceService.listWorkspacePopupRows(
         workspace.id,
@@ -934,10 +943,10 @@ test(
         'services',
       );
       assert.equal(services.length, 2);
-      assert.deepEqual(
-        services.map((row) => row.serviceName),
-        ['Alpha Service', 'Beta Service'],
-      );
+      assert.deepEqual(services.map(popupRowDisplayName), [
+        'Alpha Service',
+        'Beta Service',
+      ]);
 
       if (hasOwnersTable) {
         const owners = await workspaceService.listWorkspacePopupRows(
@@ -946,10 +955,7 @@ test(
           'owners',
         );
         assert.equal(owners.length, 2);
-        assert.deepEqual(
-          owners.map((row) => row.ownerName),
-          ['Alpha Owner', 'Beta Owner'],
-        );
+        assert.deepEqual(owners.map(popupRowDisplayName), ['Alpha Owner', 'Beta Owner']);
       }
 
       const environments = await workspaceService.listWorkspacePopupRows(
@@ -959,9 +965,182 @@ test(
       );
       assert.equal(environments.length, 2);
       assert.deepEqual(
-        environments.map((row) => row.environmentName),
+        environments.map(popupRowDisplayName),
         ['Alpha Env', 'Zeta Env'],
       );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
+  'listWorkspacePopupRows returns popup rows ordered by display name from the database',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Ordered Popup Workspace',
+      );
+
+      const [memberResultOne] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['zeta@example.com', 'Zeta'],
+      );
+      const [memberResultTwo] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['amy@example.com', 'Amy'],
+      );
+      await db.query(
+        'INSERT INTO workspace_users (workspace_id, user_id, role) VALUES (?, ?, ?), (?, ?, ?)',
+        [
+          workspace.id,
+          memberResultOne.insertId,
+          'member',
+          workspace.id,
+          memberResultTwo.insertId,
+          'member',
+        ],
+      );
+
+      await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Workspace'],
+        label: 'Zulu Service',
+        defaultMinutes: 15,
+      });
+      await workspaceService.createService(workspace.id, adminUserId, {
+        environmentNames: ['Workspace'],
+        label: 'Alpha Service',
+        defaultMinutes: 15,
+      });
+
+      const hasOwners = await tableExists(db, 'owners');
+      if (hasOwners) {
+        await db.query(
+          'INSERT INTO owners (owner_id, workspace_id, name) VALUES (?, ?, ?), (?, ?, ?)',
+          [
+            randomUUID(),
+            workspace.id,
+            'Zulu Owner',
+            randomUUID(),
+            workspace.id,
+            'Alpha Owner',
+          ],
+        );
+      }
+
+      await workspaceService.createEnvironment(workspace.id, adminUserId, {
+        name: 'Zulu Environment',
+      });
+      await workspaceService.createEnvironment(workspace.id, adminUserId, {
+        name: 'Alpha Environment',
+      });
+
+      const users = await workspaceService.listWorkspacePopupRows(
+        workspace.id,
+        adminUserId,
+        'users',
+      );
+      assert.deepEqual(users.map(popupRowDisplayName), [
+        'admin@example.com',
+        'amy@example.com',
+        'zeta@example.com',
+      ]);
+
+      const services = await workspaceService.listWorkspacePopupRows(
+        workspace.id,
+        adminUserId,
+        'services',
+      );
+      assert.deepEqual(services.map(popupRowDisplayName), [
+        'Alpha Service',
+        'Zulu Service',
+      ]);
+
+      if (hasOwners) {
+        const owners = await workspaceService.listWorkspacePopupRows(
+          workspace.id,
+          adminUserId,
+          'owners',
+        );
+        assert.deepEqual(owners.map(popupRowDisplayName), [
+          'Alpha Owner',
+          'Zulu Owner',
+        ]);
+      }
+
+      const environments = await workspaceService.listWorkspacePopupRows(
+        workspace.id,
+        adminUserId,
+        'environments',
+      );
+      assert.deepEqual(environments.map(popupRowDisplayName), [
+        'Alpha Environment',
+        'Zulu Environment',
+      ]);
+
+      const emptyWorkspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Empty Popup Workspace',
+      );
+      const emptyServices = await workspaceService.listWorkspacePopupRows(
+        emptyWorkspace.id,
+        adminUserId,
+        'services',
+      );
+      assert.equal(emptyServices.length, 0);
+
+      const emptyEnvironments = await workspaceService.listWorkspacePopupRows(
+        emptyWorkspace.id,
+        adminUserId,
+        'environments',
+      );
+      assert.equal(emptyEnvironments.length, 0);
+
+      const hasOwnersTable = await tableExists(db, 'owners');
+      if (hasOwnersTable) {
+        const emptyOwners = await workspaceService.listWorkspacePopupRows(
+          emptyWorkspace.id,
+          adminUserId,
+          'owners',
+        );
+        assert.equal(emptyOwners.length, 0);
+      }
     } finally {
       if (ALLOW_TRUNCATE) {
         await truncateAll(db);

@@ -86,6 +86,13 @@ class FakeWorkspaceUserRepository {
 }
 
 class FakeServiceRepository {
+  private readonly listCallCount = {
+    users: 0,
+    services: 0,
+    owners: 0,
+    environments: 0,
+  };
+
   constructor(
     private readonly userRows = new Map<string, Array<{ userId: string; email: string }>>(),
     private readonly serviceRows = new Map<
@@ -99,6 +106,10 @@ class FakeServiceRepository {
     >(),
   ) {}
 
+  get listCalls(): Readonly<typeof this.listCallCount> {
+    return this.listCallCount;
+  }
+
   withConnection(): FakeServiceRepository {
     return this;
   }
@@ -106,24 +117,28 @@ class FakeServiceRepository {
   async listUsersByWorkspace(
     workspaceId: string,
   ): Promise<Array<{ userId: string; email: string }>> {
+    this.listCallCount.users += 1;
     return this.userRows.get(workspaceId) || [];
   }
 
   async listServiceSummariesByWorkspace(
     workspaceId: string,
   ): Promise<Array<{ serviceId: string; label: string }>> {
+    this.listCallCount.services += 1;
     return this.serviceRows.get(workspaceId) || [];
   }
 
   async listOwnersByWorkspace(
     workspaceId: string,
   ): Promise<Array<{ ownerId: string; name: string }>> {
+    this.listCallCount.owners += 1;
     return this.ownerRows.get(workspaceId) || [];
   }
 
   async listEnvironmentsByWorkspace(
     workspaceId: string,
   ): Promise<Array<{ environmentId: string; environmentName: string }>> {
+    this.listCallCount.environments += 1;
     return this.environmentRows.get(workspaceId) || [];
   }
 
@@ -210,6 +225,12 @@ function makeService(
     new FakeUserRepository(new Map([['user@example.com', 'user-2']])) as never,
     new FakeUserRoleRepository(new Set(['user-1'])) as never,
   );
+}
+
+function extractPopupRowName(row: {
+  name: string;
+}): string {
+  return row.name;
 }
 
 test('createService requires workspace admin', async () => {
@@ -469,18 +490,8 @@ test('listWorkspacePopupRows returns user rows with email for users', async () =
     'users',
   );
 
-  assert.deepEqual(rows, [
-    {
-      type: 'users',
-      userId: 'user-a',
-      email: 'alice@example.com',
-    },
-    {
-      type: 'users',
-      userId: 'user-b',
-      email: 'bob@example.com',
-    },
-  ]);
+  assert.deepEqual(rows, [{ name: 'alice@example.com' }, { name: 'bob@example.com' }]);
+  assert.deepEqual(rows.map(extractPopupRowName), ['alice@example.com', 'bob@example.com']);
 });
 
 test('listWorkspacePopupRows returns service name rows for services', async () => {
@@ -516,18 +527,8 @@ test('listWorkspacePopupRows returns service name rows for services', async () =
     'services',
   );
 
-  assert.deepEqual(rows, [
-    {
-      type: 'services',
-      serviceId: 'service-a',
-      serviceName: 'Auth API',
-    },
-    {
-      type: 'services',
-      serviceId: 'service-b',
-      serviceName: 'Billing',
-    },
-  ]);
+  assert.deepEqual(rows, [{ name: 'Auth API' }, { name: 'Billing' }]);
+  assert.deepEqual(rows.map(extractPopupRowName), ['Auth API', 'Billing']);
 });
 
 test('listWorkspacePopupRows returns owner name rows for owners', async () => {
@@ -564,18 +565,8 @@ test('listWorkspacePopupRows returns owner name rows for owners', async () => {
     'owners',
   );
 
-  assert.deepEqual(rows, [
-    {
-      type: 'owners',
-      ownerId: 'owner-a',
-      ownerName: 'Acme Team',
-    },
-    {
-      type: 'owners',
-      ownerId: 'owner-b',
-      ownerName: 'Team B',
-    },
-  ]);
+  assert.deepEqual(rows, [{ name: 'Acme Team' }, { name: 'Team B' }]);
+  assert.deepEqual(rows.map(extractPopupRowName), ['Acme Team', 'Team B']);
 });
 
 test('listWorkspacePopupRows returns environment name rows for environments', async () => {
@@ -613,29 +604,68 @@ test('listWorkspacePopupRows returns environment name rows for environments', as
     'environments',
   );
 
-  assert.deepEqual(rows, [
-    {
-      type: 'environments',
-      environmentId: 'environment-a',
-      environmentName: 'Dev',
-    },
-    {
-      type: 'environments',
-      environmentId: 'environment-b',
-      environmentName: 'Prod',
-    },
-  ]);
+  assert.deepEqual(rows, [{ name: 'Dev' }, { name: 'Prod' }]);
+  assert.deepEqual(rows.map(extractPopupRowName), ['Dev', 'Prod']);
 });
 
 test('listWorkspacePopupRows enforces membership authorization before returning rows', async () => {
+  const serviceRepository = new FakeServiceRepository(
+    new Map([
+      [
+        'workspace-1',
+        [
+          { userId: 'admin-user', email: 'admin@example.com' },
+          { userId: 'some-member', email: 'member@example.com' },
+        ],
+      ],
+    ]),
+    new Map([
+      [
+        'workspace-1',
+        [
+          { serviceId: 'service-a', label: 'Service A' },
+          { serviceId: 'service-b', label: 'Service B' },
+        ],
+      ],
+    ]),
+    new Map([
+      [
+        'workspace-1',
+        [
+          { ownerId: 'owner-a', name: 'Owner A' },
+          { ownerId: 'owner-b', name: 'Owner B' },
+        ],
+      ],
+    ]),
+    new Map([
+      [
+        'workspace-1',
+        [
+          { environmentId: 'environment-a', environmentName: 'Env A' },
+          { environmentId: 'environment-b', environmentName: 'Env B' },
+        ],
+      ],
+    ]),
+  );
   const service = makeService(
     new Map([
       ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
     ]),
+    new FakeWorkspaceUserRepository(),
+    undefined,
+    undefined,
+    serviceRepository,
   );
 
-  await assert.rejects(
-    () => service.listWorkspacePopupRows('workspace-1', 'user-2', 'users'),
-    /Not authorized for workspace/,
-  );
+  for (const resourceType of ['users', 'services', 'owners', 'environments'] as const) {
+    await assert.rejects(
+      () => service.listWorkspacePopupRows('workspace-1', 'user-2', resourceType),
+      /Not authorized for workspace/,
+    );
+  }
+
+  assert.equal(serviceRepository.listCalls.users, 0);
+  assert.equal(serviceRepository.listCalls.services, 0);
+  assert.equal(serviceRepository.listCalls.owners, 0);
+  assert.equal(serviceRepository.listCalls.environments, 0);
 });
