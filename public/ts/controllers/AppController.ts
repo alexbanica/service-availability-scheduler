@@ -395,10 +395,20 @@ export class AppController {
 
         const themeLabel = computed(() => ThemeHelper.getLabel(theme.value));
 
+        const normalizeAutoRefreshMinutes = (value: unknown): number => {
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed) || parsed < 1) {
+            return 1;
+          }
+          return parsed;
+        };
+
         const applyServiceResponse = (data: ServicesResponseDto) => {
           services.value = data.services;
           expiryWarningMinutes.value = data.expiryWarningMinutes;
-          autoRefreshMinutes.value = data.autoRefreshMinutes;
+          autoRefreshMinutes.value = normalizeAutoRefreshMinutes(
+            data.autoRefreshMinutes,
+          );
 
           const ownerKeys = new Set(owners.value.map((owner) => owner.value));
           if (
@@ -474,6 +484,8 @@ export class AppController {
             applyServiceResponse(data);
           } catch (err) {
             showToast((err as Error).message);
+          } finally {
+            scheduleAutoRefresh();
           }
         };
 
@@ -1473,10 +1485,6 @@ export class AppController {
           };
         };
 
-        const refresh = async () => {
-          await loadServices();
-        };
-
         const setView = (view: 'overview' | 'availability' | 'admin') => {
           currentView.value = view;
         };
@@ -1500,10 +1508,11 @@ export class AppController {
           if (this.refreshTimer) {
             window.clearTimeout(this.refreshTimer);
           }
-          const intervalMinutes = Math.max(autoRefreshMinutes.value || 1, 1);
+          const intervalMinutes = normalizeAutoRefreshMinutes(
+            autoRefreshMinutes.value,
+          );
           this.refreshTimer = window.setTimeout(async () => {
             await loadServices();
-            scheduleAutoRefresh();
           }, intervalMinutes * 60000);
         };
 
@@ -1524,7 +1533,6 @@ export class AppController {
             await loadServices();
             await loadAppInfo();
             initEvents();
-            scheduleAutoRefresh();
           } finally {
             isLoading.value = false;
           }
@@ -1606,7 +1614,6 @@ export class AppController {
           submitClaim,
           release,
           extend,
-          refresh,
           logout,
           currentView,
           adminSection,

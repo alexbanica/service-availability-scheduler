@@ -17,8 +17,10 @@ export class ReservationService {
     const asString = (value: unknown, fallback = ''): string =>
       typeof value === 'string' ? value : fallback;
 
-    const asNumber = (value: unknown, fallback = 0): number =>
-      typeof value === 'number' && !Number.isNaN(value) ? value : fallback;
+    const asNumber = (value: unknown, fallback = 0): number => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
 
     const asNullableString = (value: unknown): string | null =>
       typeof value === 'string' ? value : null;
