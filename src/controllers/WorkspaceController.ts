@@ -329,26 +329,71 @@ export class WorkspaceController {
     );
 
     app.get(
-      '/api/workspaces/:workspaceId/:resourceType',
+      '/api/workspaces/:workspaceId/detail/users',
       requireAuth,
       async (req: Request, res: Response) => {
         const workspaceId = String(req.params.workspaceId || '');
-        const resourceType = String(req.params.resourceType || '');
-        if (
-          !['users', 'services', 'owners', 'environments'].includes(
-            resourceType,
-          )
-        ) {
-          res.status(404).json({ error: 'Resource not found' });
-          return;
-        }
         try {
-          const rows = await this.workspaceService.listWorkspacePopupRows(
+          const items = await this.workspaceService.listWorkspacePopupRows(
             workspaceId,
             req.session.userId as string,
-            resourceType as 'users' | 'services' | 'owners' | 'environments',
+            'users',
           );
-          res.json({ rows });
+          res.json({ items });
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
+    app.get(
+      '/api/workspaces/:workspaceId/detail/services',
+      requireAuth,
+      async (req: Request, res: Response) => {
+        const workspaceId = String(req.params.workspaceId || '');
+        try {
+          const items = await this.workspaceService.listWorkspacePopupRows(
+            workspaceId,
+            req.session.userId as string,
+            'services',
+          );
+          res.json({ items });
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
+    app.get(
+      '/api/workspaces/:workspaceId/detail/owners',
+      requireAuth,
+      async (req: Request, res: Response) => {
+        const workspaceId = String(req.params.workspaceId || '');
+        try {
+          const items = await this.workspaceService.listWorkspacePopupRows(
+            workspaceId,
+            req.session.userId as string,
+            'owners',
+          );
+          res.json({ items });
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
+    app.get(
+      '/api/workspaces/:workspaceId/detail/environments',
+      requireAuth,
+      async (req: Request, res: Response) => {
+        const workspaceId = String(req.params.workspaceId || '');
+        try {
+          const items = await this.workspaceService.listWorkspacePopupRows(
+            workspaceId,
+            req.session.userId as string,
+            'environments',
+          );
+          res.json({ items });
         } catch (err) {
           this.writeWorkspaceError(res, (err as Error).message);
         }

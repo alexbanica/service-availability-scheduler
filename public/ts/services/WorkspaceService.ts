@@ -240,12 +240,11 @@ export class WorkspaceService {
   static async listWorkspaceRows(
     workspaceId: string,
     resourceType: WorkspaceResourceType,
-  ): Promise<Array<Record<string, unknown>>> {
-    const response = await ApiService.get(
-      `/api/workspaces/${workspaceId}/${resourceType}`,
-    );
+  ): Promise<Array<{ name: string }>> {
+    const path = `/api/workspaces/${workspaceId}/detail/${resourceType}`;
+    const response = await ApiService.get(path);
     const data = (await response.json()) as {
-      rows?: Array<Record<string, unknown>>;
+      items?: Array<Record<string, unknown>>;
       error?: string;
     };
     if (!response.ok) {
@@ -255,7 +254,11 @@ export class WorkspaceService {
           : 'Failed to load workspace details',
       );
     }
-    return data.rows || [];
+    return Array.isArray(data.items)
+      ? data.items.map((row) => ({
+          name: this.asString((row as { name?: unknown }).name, ''),
+        }))
+      : [];
   }
 
   static async listServiceCatalog(

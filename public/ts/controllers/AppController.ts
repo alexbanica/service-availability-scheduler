@@ -84,7 +84,7 @@ export class AppController {
           workspaceName: string;
           resourceType: WorkspaceResourceType;
           requestId: number;
-          rows: Array<Record<string, unknown>>;
+          rows: Array<{ name: string }>;
           loading: boolean;
           error: string;
         } | null>(null);
@@ -799,7 +799,7 @@ export class AppController {
           };
           try {
             const rows = await WorkspaceService.listWorkspaceRows(
-            workspace.id,
+              workspace.id,
               resourceType,
             );
             if (
@@ -837,21 +837,6 @@ export class AppController {
             return 'Owners';
           }
           return 'Environments';
-        };
-
-        const workspaceRowLabel = (row: Record<string, unknown>): string => {
-          const values = [
-            row.email,
-            row.serviceName,
-            row.ownerName,
-            row.environmentName,
-            row.userId,
-            row.serviceId,
-            row.ownerId,
-            row.environmentId,
-          ];
-          const value = values.find((entry) => typeof entry === 'string');
-          return typeof value === 'string' ? value : 'Unknown';
         };
 
         const cancelInvite = () => {
@@ -1489,6 +1474,11 @@ export class AppController {
           currentView.value = view;
         };
 
+        const openWorkspaceAvailability = (workspace: Workspace) => {
+          workspaceFilter.value = workspace.id;
+          currentView.value = 'availability';
+        };
+
         const setAdminSection = (
           section: 'workspace' | 'services' | 'users',
         ) => {
@@ -1618,6 +1608,7 @@ export class AppController {
           currentView,
           adminSection,
           setView,
+          openWorkspaceAvailability,
           setAdminSection,
           workspaces,
           selectedServiceWorkspaceId,
@@ -1670,7 +1661,6 @@ export class AppController {
           workspaceResourceLabel,
           openWorkspaceRowsModal,
           closeWorkspaceRowsModal,
-          workspaceRowLabel,
           createWorkspace,
           workspaceEnvironments,
           workspaceOwners,

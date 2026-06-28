@@ -11,11 +11,9 @@ import { WorkspaceInvitation } from '../entities/WorkspaceInvitation';
 
 export type WorkspaceResourceType = 'users' | 'services' | 'owners' | 'environments';
 
-type WorkspaceResourceRow =
-  | { type: 'users'; userId: string; email: string }
-  | { type: 'services'; serviceId: string; serviceName: string }
-  | { type: 'owners'; ownerId: string; ownerName: string }
-  | { type: 'environments'; environmentId: string; environmentName: string };
+type WorkspaceDetailItem = {
+  name: string;
+};
 
 type CreateServiceInput = {
   serviceId?: string | null;
@@ -311,47 +309,28 @@ export class WorkspaceService {
     workspaceId: string,
     userId: string,
     resourceType: WorkspaceResourceType,
-  ): Promise<WorkspaceResourceRow[]> {
+  ): Promise<WorkspaceDetailItem[]> {
     await this.assertWorkspaceMember(workspaceId, userId);
 
     if (resourceType === 'users') {
-      return this.workspaceRepository
-        .listUsersByWorkspace(workspaceId)
-        .then((rows) =>
-          rows.map((row) => ({
-            type: 'users',
-            userId: row.userId,
-            email: row.email,
-          })),
-        );
+      const users = await this.workspaceRepository.listUsersByWorkspace(workspaceId);
+      return users.map((user) => ({ name: user.email }));
     }
 
     if (resourceType === 'services') {
       const services = await this.serviceRepository.listServiceSummariesByWorkspace(
         workspaceId,
       );
-      return services.map((service) => ({
-        type: 'services',
-        serviceId: service.serviceId,
-        serviceName: service.label,
-      }));
+      return services.map((service) => ({ name: service.label }));
     }
 
     if (resourceType === 'owners') {
       const owners = await this.serviceRepository.listOwnersByWorkspace(workspaceId);
-      return owners.map((owner) => ({
-        type: 'owners',
-        ownerId: owner.ownerId,
-        ownerName: owner.name,
-      }));
+      return owners.map((owner) => ({ name: owner.name }));
     }
 
     const environments = await this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
-    return environments.map((environment) => ({
-      type: 'environments',
-      environmentId: environment.environmentId,
-      environmentName: environment.environmentName,
-    }));
+    return environments.map((environment) => ({ name: environment.environmentName }));
   }
 
   async deleteService(

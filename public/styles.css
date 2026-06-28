@@ -167,7 +167,7 @@ p {
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
-  margin-top: 0.75rem;
+  margin: 1.5rem 0 1.5rem;
 }
 
 .filters-row .owner-filter,
@@ -261,6 +261,20 @@ main {
   border-radius: 12px;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
+}
+
+.overview-workspace-link {
+  width: 100%;
+  color: var(--ink);
+  box-shadow: none;
+  text-align: left;
+}
+
+.overview-workspace-link:hover,
+.overview-workspace-link:focus-visible {
+  filter: none;
+  border-color: color-mix(in srgb, var(--accent-2), var(--border) 55%);
+  background: color-mix(in srgb, var(--surface), var(--accent-2) 8%);
 }
 
 .admin-layout {
@@ -757,7 +771,10 @@ main {
 
 .service-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.5rem;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .service-item {
@@ -769,6 +786,11 @@ main {
   border: 2px dashed transparent;
   background: var(--surface);
   transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.service-info {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .service-item.available {
@@ -1064,6 +1086,10 @@ input {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
+  }
+
+  .service-actions {
+    width: 100%;
   }
 
   .admin-workspace-info {

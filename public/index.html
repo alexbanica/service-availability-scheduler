@@ -110,10 +110,15 @@
               <div class="stat">{{ adminWorkspaces.length }}</div>
               <p class="muted">Invite teammates and manage access.</p>
               <div v-if="adminWorkspaces.length" class="overview-list">
-                <div v-for="workspace in adminWorkspaces" :key="workspace.id" class="overview-item">
+                <button
+                  v-for="workspace in adminWorkspaces"
+                  :key="workspace.id"
+                  class="overview-item overview-workspace-link"
+                  type="button"
+                  @click="openWorkspaceAvailability(workspace)"
+                >
                   <span>{{ workspace.name }}</span>
-                  <span class="muted">ID {{ workspace.id }}</span>
-                </div>
+                </button>
               </div>
               <p v-else class="muted">No workspaces yet.</p>
               <button type="button" @click="setView('admin')">Go to admin</button>
@@ -122,13 +127,6 @@
         </section>
 
         <section v-if="currentView === 'availability'">
-          <div class="section-header">
-            <div>
-              <h2>Service Availability</h2>
-              <p class="muted">Claim, extend, and release services per environment.</p>
-            </div>
-          </div>
-
           <div class="filters-row">
             <div class="owner-filter">
               <label for="workspace-filter">Workspace</label>
@@ -508,7 +506,7 @@
                                 v-model="serviceEditForm.environmentInput"
                                 list="edit-service-environment-options"
                                 type="text"
-                                placeholder="Type environment and press Enter, comma, space, or blur"
+                                :placeholder="serviceEditForm.environmentTags.length ? '' : 'Type environment and press Enter, comma, space, or blur'"
                                 @input="handleEditEnvironmentInput"
                                 @keydown="onEditEnvironmentKeydown"
                                 @blur="onEditEnvironmentBlur"
@@ -745,7 +743,7 @@
                   id="service-owner"
                   v-model="serviceCreateForm.ownerInput"
                   type="text"
-                  placeholder="Type or choose owner"
+                  :placeholder="createServiceOwnerName ? '' : 'Type or choose owner'"
                   list="create-service-owner-options"
                   autocomplete="off"
                   @input="onCreateOwnerInput"
@@ -783,7 +781,7 @@
                   v-model="serviceCreateForm.environmentInput"
                   list="create-service-environment-options"
                   type="text"
-                  placeholder="Type environment and press Enter, comma, space, or blur"
+                  :placeholder="serviceCreateForm.environmentTags.length ? '' : 'Type environment and press Enter, comma, space, or blur'"
                   @input="handleCreateEnvironmentInput"
                   @keydown="onCreateEnvironmentKeydown"
                   @blur="onCreateEnvironmentBlur"
@@ -890,7 +888,7 @@
           </p>
           <ul v-else class="modal-list">
             <li v-for="(row, index) in workspaceRowsModal.rows" :key="index">
-              {{ workspaceRowLabel(row) }}
+              {{ row.name }}
             </li>
           </ul>
         </div>
