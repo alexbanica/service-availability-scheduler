@@ -53,6 +53,7 @@ docker buildx build ${DEBUG} ${FORCE_OPTION} \
   -t "${LATEST_TAG}" \
   --build-arg GITHUB_REPO="${GITHUB_REPO}" \
   --build-arg RELEASE_TAG="${RELEASE_TAG}" \
+  --build-arg APP_VERSION="${RELEASE_TAG}" \
   --secret id=GITHUB_AUTH,src=secrets/.github_auth \
   -f - \
   ${PUSH_OPTION} \

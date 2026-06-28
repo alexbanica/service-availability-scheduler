@@ -14,9 +14,9 @@ export class PageController {
       res.sendFile(path.join(this.rootDir, 'public', 'login.html'));
     });
 
-    app.get('/api/app-info', requireAuth, (_req: Request, res: Response) => {
+    app.get('/api/app-info', (_req: Request, res: Response) => {
       res.json({
-        version: process.env.APP_VERSION || '',
+        version: process.env.APP_VERSION || 'development',
       });
     });
 

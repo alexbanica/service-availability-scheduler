@@ -41,7 +41,7 @@ Open `http://localhost:3000`.
 | `DATABASE_URL` | Yes | None | MariaDB connection string used by the server, for example `mysql://user:password@host:3306/database_name`. The database must already exist; tables are created automatically on startup. |
 | `SESSION_SECRET` | No | `dev-secret-change-me` | Express session signing secret. Set this outside local development. |
 | `PORT` | No | `3000` | HTTP port used by `npm start` and `npm run dev`. |
-| `APP_VERSION` | No | Empty string | Optional version string exposed to rendered pages. |
+| `APP_VERSION` | No | `development` | Version string exposed in page footers. Docker images built with `docker/build.sh --release <tag>` set this to the release tag automatically. |
 
 ### Application file config
 

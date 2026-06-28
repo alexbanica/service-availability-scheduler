@@ -32,6 +32,10 @@
         <div class="error">{{ error }}</div>
       </form>
     </main>
+    <footer class="site-footer login-footer">
+      <span>Service Availability Scheduler</span>
+      <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
+    </footer>
   </div>
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>

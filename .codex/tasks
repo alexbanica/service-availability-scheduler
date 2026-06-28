@@ -1,6 +1,5 @@
 1. Account UserManagement
-2. Sending email invitations to users/unregistered users
-3. Website Registrations
-4. Google Auth Register+Login
-5. Your active claims Overview - Workspace need to be mentioned. When clicked a popup asking if you want to unclaim it. If yes then unclaim it.
-
+2. Website Registrations
+3. Sending email invitations to users/unregistered users
+4. Update login to jwt. Allow bearer token to be sent in header.
+5. Google Auth Register+Login

@@ -27,6 +27,7 @@ RUN npm ci --omit=dev
 RUN npm run build
 
 FROM node:BASE_IMAGE_VERSION AS runtime
+ARG APP_VERSION
 
 WORKDIR /app
 COPY --from=builder /app/package*.json ./
@@ -38,5 +39,6 @@ COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3000
 
 ENV NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION}
 
 CMD ["npm", "start"]

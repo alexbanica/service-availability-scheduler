@@ -151,7 +151,16 @@ export class AppController {
           targetLabel: string;
           submitting: boolean;
         };
+        type PendingUnclaimAction = {
+          serviceKey: string;
+          serviceLabel: string;
+          environmentName: string;
+          workspaceName: string;
+          submitting: boolean;
+          error?: string;
+        };
         const pendingDeleteAction = ref<PendingDeleteAction | null>(null);
+        const pendingUnclaimAction = ref<PendingUnclaimAction | null>(null);
         const pendingDeleteError = ref('');
         const selectedServiceWorkspace = computed(
           () =>
@@ -635,6 +644,50 @@ export class AppController {
         const closeClaimModal = () => {
           claimModalOpen.value = false;
           resetClaimModal();
+        };
+
+        const openOverviewUnclaimConfirmation = (
+          serviceKey: string,
+          serviceLabel: string,
+          environmentName: string,
+          workspaceName: string,
+        ) => {
+          pendingUnclaimAction.value = {
+            serviceKey,
+            serviceLabel,
+            environmentName,
+            workspaceName,
+            submitting: false,
+            error: '',
+          };
+        };
+
+        const closeOverviewUnclaimConfirmation = () => {
+          pendingUnclaimAction.value = null;
+        };
+
+        const confirmOverviewUnclaim = async () => {
+          const action = pendingUnclaimAction.value;
+          if (!action || action.submitting) {
+            return;
+          }
+          pendingUnclaimAction.value = {
+            ...action,
+            submitting: true,
+            error: '',
+          };
+          try {
+            await ReservationService.release(action.serviceKey);
+            await loadServices();
+            pendingUnclaimAction.value = null;
+            showToast('Service released.');
+          } catch (err) {
+            pendingUnclaimAction.value = {
+              ...action,
+              submitting: false,
+              error: (err as Error).message,
+            };
+          }
         };
 
         const submitClaim = async () => {
@@ -1602,6 +1655,9 @@ export class AppController {
           openClaimModal,
           closeClaimModal,
           submitClaim,
+          openOverviewUnclaimConfirmation,
+          closeOverviewUnclaimConfirmation,
+          confirmOverviewUnclaim,
           release,
           extend,
           logout,
@@ -1681,6 +1737,7 @@ export class AppController {
           confirmDeleteAction,
           pendingDeleteAction,
           pendingDeleteError,
+          pendingUnclaimAction,
           onCreateEnvironmentKeydown,
           onEditEnvironmentKeydown,
           onCreateEnvironmentBlur,

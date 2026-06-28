@@ -88,10 +88,23 @@
               <div class="stat">{{ claimedByUser.length }}</div>
               <p class="muted">Services currently claimed by you.</p>
               <div v-if="claimedByUser.length" class="overview-list">
-                <div v-for="item in claimedByUser" :key="item.environment.serviceKey" class="overview-item">
-                  <span>{{ item.service.label }}</span>
-                  <span class="muted">{{ item.environment.environment }}</span>
-                </div>
+                <button
+                  v-for="item in claimedByUser"
+                  :key="item.environment.serviceKey"
+                  type="button"
+                  class="overview-item overview-claim-row"
+                  :aria-label="`Unclaim ${item.service.label} in ${item.environment.environment} for workspace ${item.service.workspaceName}`"
+                  @click="openOverviewUnclaimConfirmation(
+                    item.environment.serviceKey,
+                    item.service.label,
+                    item.environment.environment,
+                    item.service.workspaceName
+                  )"
+                >
+                  <span class="overview-claim-label">{{ item.service.label }}</span>
+                  <span class="muted overview-claim-environment">{{ item.environment.environment }}</span>
+                  <span class="muted overview-claim-workspace">Workspace: {{ item.service.workspaceName }}</span>
+                </button>
               </div>
               <p v-else class="muted">No active claims right now.</p>
             </div>
@@ -941,6 +954,61 @@
             :disabled="pendingDeleteAction.submitting"
           >
             {{ pendingDeleteAction.submitting ? 'Deleting...' : 'Delete service' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    <div
+      v-if="pendingUnclaimAction"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="unclaim-title"
+      aria-describedby="unclaim-description"
+    >
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="unclaim-title">Unclaim service</h3>
+          <button
+            class="modal-close"
+            type="button"
+            @click="closeOverviewUnclaimConfirmation"
+            :disabled="pendingUnclaimAction.submitting"
+            aria-label="Close unclaim confirmation"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <p id="unclaim-description">
+            Are you sure you want to unclaim
+            <strong>{{ pendingUnclaimAction.serviceLabel }}</strong> in
+            <strong>{{ pendingUnclaimAction.environmentName }}</strong> from
+            <strong>{{ pendingUnclaimAction.workspaceName }}</strong>?
+          </p>
+          <div
+            class="error"
+            role="status"
+            aria-live="polite"
+          >
+            {{ pendingUnclaimAction.error }}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button
+            class="secondary"
+            type="button"
+            :disabled="pendingUnclaimAction.submitting"
+            @click="closeOverviewUnclaimConfirmation"
+          >
+            No
+          </button>
+          <button
+            type="button"
+            :disabled="pendingUnclaimAction.submitting"
+            @click="confirmOverviewUnclaim"
+          >
+            {{ pendingUnclaimAction.submitting ? 'Unclaiming...' : 'Yes' }}
           </button>
         </div>
       </div>

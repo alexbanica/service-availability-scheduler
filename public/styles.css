@@ -261,6 +261,39 @@ main {
   border-radius: 12px;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
+  min-width: 0;
+}
+
+.overview-claim-row {
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 0.25rem;
+  justify-content: flex-start;
+  align-items: center;
+  cursor: pointer;
+}
+
+.overview-claim-row:hover,
+.overview-claim-row:focus-visible {
+  border-color: color-mix(in srgb, var(--accent), var(--border) 70%);
+}
+
+.overview-claim-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.overview-claim-environment,
+.overview-claim-workspace {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .overview-workspace-link {
@@ -1024,6 +1057,7 @@ input {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .admin-invite-modal .modal-body {
