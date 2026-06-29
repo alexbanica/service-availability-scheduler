@@ -48,7 +48,7 @@ export class LoginController {
           submitting.value = true;
           try {
             await LoginService.login(email.value.trim(), password.value);
-            window.location.replace('/');
+            window.location.replace('/overview');
           } catch (err) {
             error.value = (err as Error).message;
           } finally {
@@ -189,7 +189,7 @@ export class LoginController {
               challenge_answer: registerChallengeAnswer.value,
             });
             registerRequestSuccess.value = true;
-            window.location.replace('/');
+            window.location.replace('/overview');
           } catch (err) {
             registerRequestError.value = (err as Error).message;
           } finally {

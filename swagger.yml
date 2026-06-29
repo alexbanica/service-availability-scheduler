@@ -2,13 +2,15 @@ openapi: 3.0.3
 info:
   title: Service Availability Scheduler API
   version: 0.1.0
-  description: API for login, workspace administration, service availability, and reservations.
+  description: API for password login, registration, account activation, password reset, workspace administration, service availability, and reservations.
 servers:
   - url: http://localhost:3000
 security:
   - bearerAuth: []
 tags:
   - name: Auth
+  - name: Account
+  - name: Metadata
   - name: Services
   - name: Reservations
   - name: Workspaces
@@ -19,7 +21,7 @@ paths:
     post:
       tags: [Auth]
       security: []
-      summary: Log in by email and receive a bearer token.
+      summary: Log in by email and password and receive a bearer token.
       requestBody:
         required: true
         content:
@@ -36,6 +38,150 @@ paths:
         '400':
           $ref: '#/components/responses/Error'
         '403':
+          $ref: '#/components/responses/Error'
+  /api/password-reset/captcha:
+    post:
+      tags: [Account]
+      security: []
+      summary: Create a password-reset CAPTCHA challenge.
+      responses:
+        '200':
+          description: CAPTCHA challenge prompt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptchaResponse'
+  /api/password-reset/request:
+    post:
+      tags: [Account]
+      security: []
+      summary: Request a password-reset token after solving CAPTCHA.
+      description: Always returns ok for known and unknown emails; reset links are logged server-side until email delivery exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/password-reset/validate:
+    post:
+      tags: [Account]
+      security: []
+      summary: Validate a password-reset token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/password-reset:
+    post:
+      tags: [Account]
+      security: []
+      summary: Set a new password using a valid reset token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/register/captcha:
+    post:
+      tags: [Account]
+      security: []
+      summary: Create a registration CAPTCHA challenge.
+      responses:
+        '200':
+          description: CAPTCHA challenge prompt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptchaResponse'
+  /api/register:
+    post:
+      tags: [Account]
+      security: []
+      summary: Register a non-activated user and receive a bearer token.
+      description: Activation links are logged server-side until email delivery exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Registered user and bearer token with activated=false.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/account-activation/validate:
+    post:
+      tags: [Account]
+      security: []
+      summary: Validate an account-activation token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /api/account-activation:
+    post:
+      tags: [Account]
+      security: []
+      summary: Activate an account and receive a bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Activated user and bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '500':
           $ref: '#/components/responses/Error'
   /api/logout:
     post:
@@ -72,6 +218,18 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '401':
           $ref: '#/components/responses/Error'
+  /api/app-info:
+    get:
+      tags: [Metadata]
+      security: []
+      summary: Return public application metadata.
+      responses:
+        '200':
+          description: Application metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppInfoResponse'
   /api/services:
     get:
       tags: [Services]
@@ -84,6 +242,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ServicesResponse'
         '401':
+          $ref: '#/components/responses/Error'
+        '403':
           $ref: '#/components/responses/Error'
   /api/claim:
     post:
@@ -105,6 +265,8 @@ paths:
         '400':
           $ref: '#/components/responses/Error'
         '401':
+          $ref: '#/components/responses/Error'
+        '403':
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
@@ -169,6 +331,8 @@ paths:
                 type: string
         '401':
           $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
   /events:
     get:
       tags: [Reservations]
@@ -181,6 +345,8 @@ paths:
               schema:
                 type: string
         '401':
+          $ref: '#/components/responses/Error'
+        '403':
           $ref: '#/components/responses/Error'
   /api/workspaces:
     get:
@@ -508,11 +674,84 @@ components:
           type: string
     LoginRequest:
       type: object
-      required: [email]
+      required: [email, password]
       properties:
         email:
           type: string
           format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+    CaptchaResponse:
+      type: object
+      required: [ok, challenge_id, challenge_prompt]
+      properties:
+        ok:
+          type: boolean
+        challenge_id:
+          type: string
+        challenge_prompt:
+          type: string
+    PasswordResetRequest:
+      type: object
+      required: [email, challenge_id, challenge_answer]
+      properties:
+        email:
+          type: string
+          format: email
+        challenge_id:
+          type: string
+        challenge_answer:
+          type: string
+    TokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Also accepted as reset_token or activation_token by the matching endpoint.
+    ResetPasswordRequest:
+      type: object
+      required: [token, password, confirm_password]
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+          format: password
+          minLength: 8
+        confirm_password:
+          type: string
+          format: password
+          minLength: 8
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - nickname
+        - password
+        - confirm_password
+        - challenge_id
+        - challenge_answer
+      properties:
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        password:
+          type: string
+          format: password
+          minLength: 8
+        confirm_password:
+          type: string
+          format: password
+          minLength: 8
+        challenge_id:
+          type: string
+        challenge_answer:
+          type: string
     LoginResponse:
       type: object
       required: [ok, user, token, token_type, expires_in_seconds]
@@ -530,7 +769,7 @@ components:
           type: integer
     User:
       type: object
-      required: [id, email, nickname]
+      required: [id, email, nickname, activated]
       properties:
         id:
           type: string
@@ -543,6 +782,14 @@ components:
           type: string
           format: email
         nickname:
+          type: string
+        activated:
+          type: boolean
+    AppInfoResponse:
+      type: object
+      required: [version]
+      properties:
+        version:
           type: string
     ServiceKeyRequest:
       type: object

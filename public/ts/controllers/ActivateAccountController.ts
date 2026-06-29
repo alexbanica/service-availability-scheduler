@@ -81,7 +81,7 @@ export class ActivateAccountController {
               if (dashboardRedirectSeconds.value <= 0) {
                 window.clearInterval(dashboardRedirectTimer);
                 dashboardRedirectTimer = undefined;
-                window.location.assign('/');
+                window.location.assign('/overview');
               }
             }, 1000);
           } catch (err) {
@@ -96,7 +96,7 @@ export class ActivateAccountController {
         };
 
         const showDashboard = () => {
-          window.location.assign('/');
+          window.location.assign('/overview');
         };
 
         onMounted(async () => {

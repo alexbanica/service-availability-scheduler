@@ -1,7 +1,7 @@
 # AGENTS
 
 ## Scope
-This repository is a TypeScript/Node.js reservation app for claiming services per environment with email-only login, workspace administration, MySQL-backed service management, and timed reservations.
+This repository is a TypeScript/Node.js reservation app for claiming services per environment with password-based JWT login, registration and account activation, password reset, workspace administration, MySQL-backed service management, and timed reservations.
 
 ## Workflow
 - Read `~/workspace.md` before implementation work.
@@ -17,7 +17,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Dependency direction is inward: controllers and infrastructure adapters may depend on service/domain contracts; entities, DTOs, and core services must stay independent of Express, MySQL, browser DOM, and filesystem/runtime details.
 - `src/service-availability-scheduler.ts` is the server entrypoint and composition root.
 - `src/controllers`: Express controllers and middleware for auth, pages, service availability, reservations, and workspace administration.
-- `src/services`: application use cases for config loading, service availability, user login, workspace administration, and reservation lifecycle.
+- `src/services`: application use cases for config loading, service availability, user login, password hashing, CAPTCHA challenges, reset and activation tokens, workspace administration, and reservation lifecycle.
 - `src/repositories`: MySQL persistence adapters; `AbstractMysqlRepository` centralizes shared MySQL behavior.
 - `src/entities`: domain entities such as users, reservations, workspaces, owners, environments, and service definitions.
 - `src/dtos`: application and API data transfer objects.
@@ -30,12 +30,14 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 
 ## Configuration
 - Required runtime environment: `DATABASE_URL`.
-- Optional runtime environment: `SESSION_SECRET`, `PORT`, and `APP_VERSION`.
+- Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
 - Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
 - Test-only environment: `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_TRUNCATE`.
 - Runtime timing keys live in `config/app.yml`:
   - `expiry_warning_minutes`
   - `auto_refresh_seconds`
+  - `jwt_expires_in_seconds`
+  - `password_reset_token_expires_in_seconds`
 - Migration config key in `config/app.yml`:
   - `run_migrations_on_startup`
 - `config/services.yml` is not a runtime service catalog source; do not reintroduce YAML-backed service definitions.
@@ -43,7 +45,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 ## Database Migrations
 - Keep existing base schema bootstrap in `config/schema`.
 - Add post-release schema changes as deterministic SQL files under `config/migrations`.
-- Use deterministic table-scoped migration file names with stable ordering, e.g. `0001_users_add_password_hash.sql` and `0002_password_reset_tokens_create_table.sql`.
+- Use deterministic table-scoped migration file names with stable ordering, e.g. `0001_users-password-hash_users.sql` and `0002_password-reset-tokens-create-table_password_reset_tokens.sql`.
 - Keep a tracking table (`schema_migrations`) with migration IDs and applied timestamp.
 - Ensure the migration tracking table is created before migration discovery.
 - Run bootstrap migrations once at startup when enabled by config.

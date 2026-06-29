@@ -51,17 +51,25 @@ function createResponse(): {
 test('PageController disables browser caching for authenticated app page', () => {
   const app = express();
   new PageController('/repo').register(app);
-  const handler = getRouteHandler(app, '/');
-  const { response, headers } = createResponse();
+  for (const appPath of [
+    '/',
+    '/overview',
+    '/services',
+    '/administration',
+  ]) {
+    const handler = getRouteHandler(app, appPath);
+    const { response, headers, sentFiles } = createResponse();
 
-  handler({} as Request, response);
+    handler({} as Request, response);
 
-  assert.equal(
-    headers['Cache-Control'],
-    'no-store, no-cache, must-revalidate, private',
-  );
-  assert.equal(headers.Pragma, 'no-cache');
-  assert.equal(headers.Expires, '0');
+    assert.equal(
+      headers['Cache-Control'],
+      'no-store, no-cache, must-revalidate, private',
+    );
+    assert.equal(headers.Pragma, 'no-cache');
+    assert.equal(headers.Expires, '0');
+    assert.equal(sentFiles[0], '/repo/public/index.html');
+  }
 });
 
 test('PageController serves registration page under /register', () => {

@@ -31,11 +31,16 @@ export class PageController {
       });
     });
 
-    app.get('/', (_req: Request, res: Response) => {
-      this.disablePageCache(res);
-      res.sendFile(path.join(this.rootDir, 'public', 'index.html'));
-    });
+    app.get('/', this.serveAuthenticatedApp);
+    app.get('/overview', this.serveAuthenticatedApp);
+    app.get('/services', this.serveAuthenticatedApp);
+    app.get('/administration', this.serveAuthenticatedApp);
   }
+
+  private readonly serveAuthenticatedApp = (_req: Request, res: Response) => {
+    this.disablePageCache(res);
+    res.sendFile(path.join(this.rootDir, 'public', 'index.html'));
+  };
 
   private disablePageCache(res: Response): void {
     res.set({

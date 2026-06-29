@@ -36,6 +36,23 @@ export class AppController {
 
     createApp({
       setup: () => {
+        type AppView = 'overview' | 'availability' | 'admin';
+        const appViewPaths: Record<AppView, string> = {
+          overview: '/overview',
+          availability: '/services',
+          admin: '/administration',
+        };
+        const pathViewMap: Record<string, AppView> = {
+          '/': 'overview',
+          '/overview': 'overview',
+          '/services': 'availability',
+          '/administration': 'admin',
+        };
+        const viewFromPath = (pathname: string): AppView => {
+          const normalizedPath =
+            pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+          return pathViewMap[normalizedPath] || 'overview';
+        };
         const user = ref<User | null>(null);
         const services = ref<Service[]>([]);
         const expiryWarningMinutes = ref(5);
@@ -67,8 +84,8 @@ export class AppController {
         const teamNameError = ref('');
         const claimSubmitting = ref(false);
         const claimServiceKey = ref<string | null>(null);
-        const currentView = ref<'overview' | 'availability' | 'admin'>(
-          'overview',
+        const currentView = ref<AppView>(
+          viewFromPath(window.location.pathname),
         );
         const adminSection = ref<'workspace' | 'services' | 'users'>(
           'workspace',
@@ -1630,13 +1647,17 @@ export class AppController {
           };
         };
 
-        const setView = (view: 'overview' | 'availability' | 'admin') => {
+        const setView = (view: AppView) => {
           currentView.value = view;
+          const nextPath = appViewPaths[view];
+          if (window.location.pathname !== nextPath) {
+            window.history.pushState({}, '', nextPath);
+          }
         };
 
         const openWorkspaceAvailability = (workspace: Workspace) => {
           workspaceFilter.value = workspace.id;
-          currentView.value = 'availability';
+          setView('availability');
         };
 
         const setAdminSection = (
@@ -1690,6 +1711,9 @@ export class AppController {
 
         onMounted(async () => {
           applyTheme(theme.value);
+          window.addEventListener('popstate', () => {
+            currentView.value = viewFromPath(window.location.pathname);
+          });
           try {
             const loadedUser = await loadUser();
             if (!loadedUser) {

@@ -5,6 +5,9 @@
 @serviceKey = replace-with-service-key
 @environmentId = replace-with-environment-uuid
 @ownerId = replace-with-owner-uuid
+@resetToken = replace-with-reset-token
+@activationToken = replace-with-activation-token
+@captchaId = replace-with-captcha-id
 
 ### Login
 # @name login
@@ -12,7 +15,71 @@ POST {{host}}/api/login
 Content-Type: application/json
 
 {
-  "email": "admin@example.com"
+  "email": "admin@example.com",
+  "password": "replace-with-password"
+}
+
+### Password reset captcha
+POST {{host}}/api/password-reset/captcha
+
+### Request password reset
+POST {{host}}/api/password-reset/request
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "challenge_id": "{{captchaId}}",
+  "challenge_answer": "123"
+}
+
+### Validate password reset token
+POST {{host}}/api/password-reset/validate
+Content-Type: application/json
+
+{
+  "token": "{{resetToken}}"
+}
+
+### Complete password reset
+POST {{host}}/api/password-reset
+Content-Type: application/json
+
+{
+  "token": "{{resetToken}}",
+  "password": "new-password",
+  "confirm_password": "new-password"
+}
+
+### Registration captcha
+POST {{host}}/api/register/captcha
+
+### Register account
+POST {{host}}/api/register
+Content-Type: application/json
+
+{
+  "email": "new-user@example.com",
+  "nickname": "new-user",
+  "password": "new-password",
+  "confirm_password": "new-password",
+  "challenge_id": "{{captchaId}}",
+  "challenge_answer": "123"
+}
+
+### Validate account activation token
+POST {{host}}/api/account-activation/validate
+Content-Type: application/json
+
+{
+  "token": "{{activationToken}}"
+}
+
+### Activate account
+POST {{host}}/api/account-activation
+Content-Type: application/json
+
+{
+  "token": "{{activationToken}}"
 }
 
 ### Current user
@@ -26,6 +93,9 @@ Authorization: Bearer {{token}}
 ### Logout
 POST {{host}}/api/logout
 Authorization: Bearer {{token}}
+
+### App info
+GET {{host}}/api/app-info
 
 ### List service availability
 GET {{host}}/api/services
@@ -157,4 +227,3 @@ Content-Type: application/json
 {
   "email": "user@example.com"
 }
-

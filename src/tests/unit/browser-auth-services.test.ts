@@ -146,6 +146,15 @@ const LoginController = loadBuildService<{
   'LoginController',
 ).module;
 
+const AppController = loadBuildService<{
+  new (): {
+    bootstrap: (Vue: unknown) => void;
+  };
+}>(
+  path.join(buildRoot, 'controllers/AppController.js'),
+  'AppController',
+).module;
+
 function createMockResponse<T>(status: number, body: T): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -223,6 +232,13 @@ type LoginControllerState = {
   resetRegisterChallenge: () => void;
 };
 
+type AppView = 'overview' | 'availability' | 'admin';
+
+type AppControllerState = {
+  currentView: Ref<AppView>;
+  setView: (view: AppView) => void;
+};
+
 function createLoginControllerState(): LoginControllerState {
   if (!LoginController) {
     assert.fail('LoginController is not available in browser bundle');
@@ -253,6 +269,44 @@ function createLoginControllerState(): LoginControllerState {
 
   if (!state) {
     assert.fail('LoginController did not expose setup state');
+  }
+
+  return state;
+}
+
+function createAppControllerState(): AppControllerState {
+  if (!AppController) {
+    assert.fail('AppController is not available in browser bundle');
+  }
+
+  let state: AppControllerState | null = null;
+  const fakeVue = {
+    createApp: (options: { setup: () => AppControllerState }) => {
+      state = options.setup();
+      return {
+        mount: () => {
+          return;
+        },
+      };
+    },
+    ref: <T>(value: T): Ref<T> => ({ value }),
+    computed: <T>(fn: () => T) => ({
+      get value() {
+        return fn();
+      },
+    }),
+    onMounted: () => {
+      return;
+    },
+    watch: () => {
+      return;
+    },
+  };
+
+  new AppController().bootstrap(fakeVue);
+
+  if (!state) {
+    assert.fail('AppController did not expose setup state');
   }
 
   return state;
@@ -707,6 +761,43 @@ test('LoginController keeps registration mode under /register path', () => {
 
     assert.equal(getHref(), '/login');
     assert.equal(state.isLoginMode.value, true);
+  } finally {
+    restore();
+  }
+});
+
+test('AppController opens the view that matches the authenticated app path', () => {
+  const { restore, setHref } = createWindowAndStorage();
+  try {
+    setHref('/services');
+    assert.equal(createAppControllerState().currentView.value, 'availability');
+
+    setHref('/administration');
+    assert.equal(createAppControllerState().currentView.value, 'admin');
+
+    setHref('/overview');
+    assert.equal(createAppControllerState().currentView.value, 'overview');
+  } finally {
+    restore();
+  }
+});
+
+test('AppController updates the path when switching top-level views', () => {
+  const { restore, getHref } = createWindowAndStorage();
+  try {
+    const state = createAppControllerState();
+
+    state.setView('availability');
+    assert.equal(state.currentView.value, 'availability');
+    assert.equal(getHref(), '/services');
+
+    state.setView('admin');
+    assert.equal(state.currentView.value, 'admin');
+    assert.equal(getHref(), '/administration');
+
+    state.setView('overview');
+    assert.equal(state.currentView.value, 'overview');
+    assert.equal(getHref(), '/overview');
   } finally {
     restore();
   }
