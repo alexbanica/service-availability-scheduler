@@ -5,6 +5,7 @@ export type AuthenticatedUser = {
   userId: string;
   email: string;
   nickname: string;
+  activated: boolean;
 };
 
 type AuthenticatedRequest = Request & {
@@ -69,11 +70,31 @@ export async function requireAuth(
       userId: identity.userId,
       email: identity.email,
       nickname: identity.nickname,
+      activated: identity.activated,
     };
     next();
   } catch {
     unauthorized(req, res);
   }
+}
+
+export async function requireActivated(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.authenticatedUser?.userId) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  if (!authReq.authenticatedUser.activated) {
+    res.status(403).json({ error: 'Account not activated' });
+    return;
+  }
+
+  next();
 }
 
 export function assignJwtAuthService(

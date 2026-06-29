@@ -39,9 +39,11 @@ const { AppController } = requireFromRoot(
 ) as {
   AppController: {
     prototype: {
+      bootstrap: (vue: unknown) => void;
       scheduleTokenRenewal: () => void;
     };
     new (): {
+      bootstrap: (vue: unknown) => void;
       scheduleTokenRenewal: () => void;
     };
   };
@@ -53,8 +55,161 @@ const { AuthService } = requireFromRoot(
     hasToken: () => boolean;
     isTokenRenewalDue: () => boolean;
     renew: () => Promise<boolean>;
+    loadUser: () => Promise<{
+      id: string;
+      email: string;
+      nickname: string;
+      activated?: boolean;
+    } | null>;
+    isAuthenticated: () => boolean;
   };
 };
+
+const { WorkspaceService } = requireFromRoot(
+  path.join(buildRoot, 'services/WorkspaceService.js'),
+) as {
+  WorkspaceService: {
+    list: () => Promise<unknown[]>;
+    listEnvironments: (workspaceId: string) => Promise<unknown[]>;
+    listOwners: (workspaceId: string) => Promise<unknown[]>;
+    listServiceCatalog: (workspaceId: string) => Promise<unknown[]>;
+  };
+};
+
+const { ReservationService } = requireFromRoot(
+  path.join(buildRoot, 'services/ReservationService.js'),
+) as {
+  ReservationService: {
+    loadServices: () => Promise<{
+      expiryWarningMinutes: number;
+      autoRefreshSeconds: number;
+      services: unknown[];
+    }>;
+  };
+};
+
+const { ApiService } = requireFromRoot(
+  path.join(buildRoot, 'services/ApiService.js'),
+) as {
+  ApiService: {
+    get: (path: string) => Promise<Response>;
+  };
+};
+
+const { EventsService } = requireFromRoot(
+  path.join(buildRoot, 'services/EventsService.js'),
+) as {
+  EventsService: {
+    prototype: {
+      start: (onExpiring: unknown) => void;
+    };
+  };
+};
+
+function createMockResponse<T>(status: number, body: T): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers(),
+    json: async () => body,
+  } as Response;
+}
+
+type AppState = {
+  user: { value: { activated?: boolean } | null };
+  showActivationBanner?: { value: boolean };
+  canUseProtectedActions?: { value: boolean };
+};
+
+function installLocalStorage(): () => void {
+  const previousLocalStorage = (globalThis as { localStorage?: unknown })
+    .localStorage;
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  const previousDocument = (globalThis as { document?: unknown }).document;
+  const storage = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
+    removeItem: (key: string) => {
+      storage.delete(key);
+    },
+  };
+  (globalThis as { window?: unknown }).window = {
+    matchMedia: () => ({ matches: false }),
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+  };
+  (globalThis as { document?: unknown }).document = {
+    documentElement: {
+      dataset: {},
+    },
+  };
+
+  return () => {
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = previousWindow;
+    }
+
+    if (previousDocument === undefined) {
+      delete (globalThis as { document?: unknown }).document;
+    } else {
+      (globalThis as { document?: unknown }).document = previousDocument;
+    }
+
+    if (previousLocalStorage === undefined) {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+      return;
+    }
+    (globalThis as { localStorage?: unknown }).localStorage =
+      previousLocalStorage;
+  };
+}
+
+function createAppControllerWithFakeVue(): {
+  state: AppState;
+  runMounted: () => Promise<void>;
+} {
+  let state: AppState = { user: { value: null } };
+  let onMountedCallback: (() => Promise<void> | void) | null = null;
+
+  const fakeVue = {
+    createApp: (options: { setup: () => AppState }) => {
+      state = options.setup();
+      return {
+        mount: () => {
+          return;
+        },
+      };
+    },
+    ref: (value: unknown) => ({ value }),
+    computed: (fn: () => unknown) => ({
+      get value() {
+        return fn();
+      },
+    }),
+    onMounted: (callback: () => Promise<void> | void) => {
+      onMountedCallback = callback;
+    },
+    watch: () => undefined,
+  };
+
+  const controller = new AppController();
+  controller.bootstrap(fakeVue as never);
+
+  return {
+    state,
+    runMounted: async () => {
+      if (!onMountedCallback) {
+        return;
+      }
+      await onMountedCallback();
+    },
+  };
+}
 
 test('non-401 token renewal failure schedules a delayed retry', async () => {
   const previousWindow = (
@@ -109,4 +264,118 @@ test('non-401 token renewal failure schedules a delayed retry', async () => {
       configurable: true,
     });
   }
+});
+
+test('AppController exposes activation-banner state for non-activated user identity', async () => {
+  const restoreLocalStorage = installLocalStorage();
+  const originalLoadUser = AuthService.loadUser;
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalWorkspaceList = WorkspaceService.list;
+  const originalLoadServices = ReservationService.loadServices;
+  const originalApiGet = ApiService.get;
+  const originalEventsStart = EventsService.prototype.start;
+
+  AuthService.loadUser = async () =>
+    ({
+      id: 'user-1',
+      email: 'alice@example.com',
+      nickname: 'Alice',
+      activated: false,
+    }) as never;
+  AuthService.isAuthenticated = () => false;
+  WorkspaceService.list = async () => [];
+  ReservationService.loadServices = async () => ({
+    expiryWarningMinutes: 5,
+    autoRefreshSeconds: 30,
+    services: [],
+  });
+  ApiService.get = async () =>
+    Promise.resolve(
+      createMockResponse(200, {
+        id: 'user-1',
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        activated: false,
+      }),
+    );
+  EventsService.prototype.start = () => {
+    return;
+  };
+
+  const { state, runMounted } = createAppControllerWithFakeVue();
+  await runMounted();
+
+  assert.equal(state.user.value?.activated, false);
+  assert.equal(
+    typeof state.showActivationBanner,
+    'object',
+    'Expected AppController.showActivationBanner state when activation is implemented',
+  );
+  assert.equal(state.showActivationBanner?.value, true);
+  assert.equal(state.canUseProtectedActions?.value, false);
+
+  AuthService.loadUser = originalLoadUser;
+  AuthService.isAuthenticated = originalIsAuthenticated;
+  WorkspaceService.list = originalWorkspaceList;
+  ReservationService.loadServices = originalLoadServices;
+  ApiService.get = originalApiGet;
+  EventsService.prototype.start = originalEventsStart;
+  restoreLocalStorage();
+});
+
+test('AppController does not show activation banner for activated user identity', async () => {
+  const restoreLocalStorage = installLocalStorage();
+  const originalLoadUser = AuthService.loadUser;
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalWorkspaceList = WorkspaceService.list;
+  const originalLoadServices = ReservationService.loadServices;
+  const originalApiGet = ApiService.get;
+  const originalEventsStart = EventsService.prototype.start;
+
+  AuthService.loadUser = async () =>
+    ({
+      id: 'user-1',
+      email: 'alice@example.com',
+      nickname: 'Alice',
+      activated: true,
+    }) as never;
+  AuthService.isAuthenticated = () => false;
+  WorkspaceService.list = async () => [];
+  ReservationService.loadServices = async () => ({
+    expiryWarningMinutes: 5,
+    autoRefreshSeconds: 30,
+    services: [],
+  });
+  ApiService.get = async () =>
+    Promise.resolve(
+      createMockResponse(200, {
+        id: 'user-1',
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        activated: true,
+      }),
+    );
+  EventsService.prototype.start = () => {
+    return;
+  };
+
+  const { state, runMounted } = createAppControllerWithFakeVue();
+  await runMounted();
+
+  assert.equal(state.user.value?.activated, true);
+  assert.equal(
+    typeof state.showActivationBanner,
+    'object',
+    'Expected AppController.showActivationBanner state when activation is implemented',
+  );
+  assert.equal(state.showActivationBanner?.value, false);
+  assert.equal(state.canUseProtectedActions?.value, true);
+
+  AuthService.loadUser = originalLoadUser;
+  AuthService.isAuthenticated = originalIsAuthenticated;
+  WorkspaceService.list = originalWorkspaceList;
+  ReservationService.loadServices = originalLoadServices;
+  ApiService.get = originalApiGet;
+  EventsService.prototype.start = originalEventsStart;
+  restoreLocalStorage();
 });

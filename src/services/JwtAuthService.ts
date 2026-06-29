@@ -4,6 +4,7 @@ export type JwtIdentity = {
   userId: string;
   email: string;
   nickname: string;
+  activated: boolean;
 };
 
 export type JwtIdentityInput = {
@@ -11,6 +12,7 @@ export type JwtIdentityInput = {
   userId?: string;
   email?: string;
   nickname?: string;
+  activated?: boolean;
 };
 
 export type JwtPayload = {
@@ -18,6 +20,7 @@ export type JwtPayload = {
   id?: string;
   email?: string;
   nickname?: string;
+  activated?: boolean;
   iat?: number;
   exp?: number;
 };
@@ -40,6 +43,7 @@ export class JwtAuthService {
           userId: normalizedIdentity.userId,
           email: normalizedIdentity.email,
           nickname: normalizedIdentity.nickname,
+          activated: normalizedIdentity.activated,
         },
         this.jwtSecret,
         {
@@ -94,6 +98,7 @@ export class JwtAuthService {
       userId,
       email: identity.email,
       nickname: identity.nickname,
+      activated: identity.activated === true,
     };
   }
 
@@ -101,8 +106,15 @@ export class JwtAuthService {
     const userId = payload.userId ?? payload.id;
     const email = payload.email;
     const nickname = payload.nickname;
+    const activated = payload.activated;
+
+    const legacyActivated = activated === undefined;
 
     if (!userId || !email || !nickname) {
+      return null;
+    }
+
+    if (!legacyActivated && typeof activated !== 'boolean') {
       return null;
     }
 
@@ -110,6 +122,7 @@ export class JwtAuthService {
       userId,
       email,
       nickname,
+      activated: legacyActivated ? true : activated,
     };
   }
 }

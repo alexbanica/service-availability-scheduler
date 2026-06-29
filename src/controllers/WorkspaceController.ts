@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { WorkspaceService } from '../services/WorkspaceService';
-import { requireAuth } from './AuthMiddleware';
+import { requireActivated, requireAuth } from './AuthMiddleware';
 
 const getAuthenticatedUserId = (req: Request, res: Response): string | null => {
   const userId = (req as { authenticatedUser?: { userId?: string } })
@@ -19,6 +19,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -42,6 +43,7 @@ export class WorkspaceController {
     app.post(
       '/api/workspaces',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -79,6 +81,7 @@ export class WorkspaceController {
     app.post(
       '/api/workspaces/:workspaceId/services',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -136,6 +139,7 @@ export class WorkspaceController {
     app.patch(
       '/api/workspaces/:workspaceId/services/:serviceId',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -191,6 +195,7 @@ export class WorkspaceController {
     app.delete(
       '/api/workspaces/:workspaceId/services/:serviceId',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -227,6 +232,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/services',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -269,6 +275,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/environments',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -304,6 +311,7 @@ export class WorkspaceController {
     app.post(
       '/api/workspaces/:workspaceId/environments',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -328,6 +336,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/owners',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -363,6 +372,7 @@ export class WorkspaceController {
     app.post(
       '/api/workspaces/:workspaceId/owners',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -387,6 +397,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/detail/users',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -409,6 +420,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/detail/services',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -431,6 +443,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/detail/owners',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -453,6 +466,7 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/detail/environments',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -475,6 +489,7 @@ export class WorkspaceController {
     app.post(
       '/api/workspaces/:workspaceId/invitations',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {

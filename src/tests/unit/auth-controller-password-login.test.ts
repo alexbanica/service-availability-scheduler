@@ -119,10 +119,12 @@ type JwtUserIdentity = {
   userId: string;
   email: string;
   nickname: string;
+  activated: boolean;
 };
 
 class FakeJwtAuthService {
   private issueCount = 0;
+  private readonly issued = new Map<string, JwtUserIdentity>();
 
   constructor(private readonly jwtExpiresInSeconds: number) {}
 
@@ -131,16 +133,123 @@ class FakeJwtAuthService {
   }
 
   async issueToken(identity: JwtUserIdentity): Promise<string> {
-    return `token-${identity.userId}-${++this.issueCount}`;
+    const token = `token-${identity.userId}-${++this.issueCount}`;
+    this.issued.set(token, identity);
+    return token;
+  }
+
+  async verifyToken(token: string): Promise<JwtUserIdentity> {
+    const identity = this.issued.get(token);
+    if (!identity) {
+      throw new Error('Invalid token');
+    }
+    return identity;
   }
 }
 
 type PasswordAwareUser = User & {
   passwordHash?: string | null;
+  activated?: boolean;
 };
+
+type ActivationTokenValidation = {
+  tokenId: string;
+  userId: string;
+};
+
+class AccountActivationTokenServiceStub {
+  public createCount = 0;
+  public validateCalls = 0;
+  public consumeCalls = 0;
+  public updatedToken = '';
+  public createResult: string;
+  public validateMap: Record<string, ActivationTokenValidation | null> = {};
+  public consumeMap: Record<string, ActivationTokenValidation | null> = {};
+  public createConnections: Array<unknown | null> = [];
+  public consumeConnectionCalls: Array<unknown | null> = [];
+  public validateConnectionCalls: Array<unknown | null> = [];
+
+  constructor(
+    options: {
+      createResult?: string;
+      validateMap?: Record<string, ActivationTokenValidation | null>;
+      consumeMap?: Record<string, ActivationTokenValidation | null>;
+    } = {},
+  ) {
+    this.createResult = options.createResult ?? 'activation-token-abc';
+    this.validateMap = options.validateMap ?? {};
+    this.consumeMap = options.consumeMap ?? {};
+  }
+
+  async createTokenForUser(
+    userId: string,
+    connection?: unknown,
+  ): Promise<string> {
+    this.createCount += 1;
+    this.updatedToken = userId;
+    this.createConnections.push(connection ?? null);
+    return this.createResult;
+  }
+
+  async validateToken(
+    token: string,
+    connection?: unknown,
+  ): Promise<ActivationTokenValidation | null> {
+    this.validateCalls += 1;
+    this.validateConnectionCalls.push(connection ?? null);
+    return this.validateMap[token] ?? null;
+  }
+
+  async consumeToken(
+    token: string,
+    connection?: unknown,
+  ): Promise<ActivationTokenValidation | null> {
+    this.consumeCalls += 1;
+    this.consumeConnectionCalls.push(connection ?? null);
+    return this.consumeMap[token] ?? null;
+  }
+}
+
+class FakeMySqlConnection {
+  public beginTransactionCalls = 0;
+  public commitCalls = 0;
+  public rollbackCalls = 0;
+  public releaseCalls = 0;
+
+  async beginTransaction(): Promise<void> {
+    this.beginTransactionCalls += 1;
+  }
+
+  async commit(): Promise<void> {
+    this.commitCalls += 1;
+  }
+
+  async rollback(): Promise<void> {
+    this.rollbackCalls += 1;
+  }
+
+  async release(): Promise<void> {
+    this.releaseCalls += 1;
+  }
+}
+
+class FakeMySqlPool {
+  public getConnectionCalls = 0;
+  public readonly connection = new FakeMySqlConnection();
+
+  async getConnection(): Promise<FakeMySqlConnection> {
+    this.getConnectionCalls += 1;
+    return this.connection;
+  }
+}
 
 class FakeUserService {
   public updatedPasswordHash: string | null = null;
+  public activatedUserIds: string[] = [];
+  public roleGrantedUserIds: string[] = [];
+  public createdUsers: PasswordAwareUser[] = [];
+  public creationCalls = 0;
+  private readonly createdUserId = 'user-1';
 
   constructor(private readonly user: PasswordAwareUser | null) {}
 
@@ -166,6 +275,65 @@ class FakeUserService {
     passwordHash: string,
   ): Promise<void> {
     this.updatedPasswordHash = `${userId}:${passwordHash}`;
+  }
+
+  async createUser(
+    email: string,
+    nickname: string,
+    passwordHash: string,
+    activated = true,
+  ): Promise<User> {
+    this.creationCalls += 1;
+    const user = new User(this.createdUserId, email, nickname);
+    (user as PasswordAwareUser).passwordHash = passwordHash;
+    (user as PasswordAwareUser).activated = activated;
+    const created = user as PasswordAwareUser;
+    this.createdUsers.push(created);
+    return user;
+  }
+
+  async createWithPasswordHash(
+    email: string,
+    nickname: string,
+    passwordHash: string,
+    activated = true,
+  ): Promise<User> {
+    return this.createUser(email, nickname, passwordHash, activated);
+  }
+
+  async activateUser(userId: string): Promise<void> {
+    this.activatedUserIds.push(userId);
+  }
+
+  async setUserActivated(userId: string): Promise<void> {
+    this.activatedUserIds.push(userId);
+  }
+
+  async grantPlatformAdminRole(userId: string): Promise<void> {
+    this.roleGrantedUserIds.push(userId);
+  }
+
+  async setActivated(userId: string): Promise<void> {
+    this.activatedUserIds.push(userId);
+  }
+
+  async addRole(): Promise<void> {
+    return;
+  }
+}
+
+class TrackingUserService extends FakeUserService {
+  public createConnections: Array<unknown | null> = [];
+
+  async createUser(
+    email: string,
+    nickname: string,
+    passwordHash: string,
+    activated = true,
+    connection?: unknown,
+  ): Promise<User> {
+    this.createConnections.push(connection ?? null);
+    return super.createUser(email, nickname, passwordHash, activated);
   }
 }
 
@@ -216,16 +384,22 @@ function getRouteHandlers(
 
 function createRequest(options: {
   path: string;
-  method: 'POST';
+  method: 'POST' | 'GET';
   body?: Record<string, unknown>;
+  headers?: Record<string, string>;
   app: express.Express;
 }): Request {
+  const headers = options.headers ?? {};
   return {
     method: options.method,
     path: options.path,
     body: options.body ?? {},
     app: options.app,
-    header: () => '',
+    header: (name: string) =>
+      headers[name.toLowerCase()] ??
+      headers[name.toUpperCase()] ??
+      headers[name] ??
+      '',
   } as unknown as Request;
 }
 
@@ -268,12 +442,42 @@ function createLoginController(
     captchaService as unknown,
     passwordResetTokenService as unknown,
     resetLogger as unknown,
+    undefined,
   );
 }
 
-function createUser(email: string, hasHash: boolean): PasswordAwareUser {
+function createRegistrationController(
+  user: PasswordAwareUser | null,
+  acceptedPassword: string,
+  captchaService?: CaptchaServiceStub,
+  tokenService?: AccountActivationTokenServiceStub,
+  resetLogger?: ResetLoggerStub,
+  passwordResetTokenService?: PasswordResetTokenServiceStub,
+): AuthController {
+  const userService = new FakeUserService(user);
+  const fakePasswordService = new PasswordServiceStub(acceptedPassword);
+  return new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    new FakeJwtAuthService(3600),
+    fakePasswordService as unknown,
+    captchaService as unknown,
+    passwordResetTokenService as unknown,
+    resetLogger as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+  );
+}
+
+function createUser(
+  email: string,
+  hasHash: boolean,
+  activated = true,
+): PasswordAwareUser {
   const user = new User('user-1', email, 'Alice') as PasswordAwareUser;
   user.passwordHash = hasHash ? 'stored-hash' : null;
+  user.activated = activated;
   return user;
 }
 
@@ -467,8 +671,676 @@ test('POST /api/login normalizes email and returns token payload on success', as
   const user = (response.body as { user?: Record<string, unknown> }).user;
   assert.equal(user?.id, 'user-1');
   assert.equal(user?.userId, 'user-1');
+  assert.equal(user?.activated, true);
   assert.equal(user && 'password' in user, false);
   assert.equal(user && 'passwordHash' in user, false);
+});
+
+test('POST /api/register/captcha returns challenge data without answer', async () => {
+  const app = express();
+  app.use(express.json());
+  const captchaService = new CaptchaServiceStub(
+    () => ({
+      challengeId: 'register-challenge-id',
+      prompt: 'What is the capital of Canada?',
+    }),
+    true,
+  );
+  const controller = createRegistrationController(
+    null,
+    'ignored',
+    captchaService,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/register/captcha');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register/captcha',
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  const body = response.body as {
+    ok?: boolean;
+    challenge_id?: string;
+    challenge_prompt?: string;
+    answer?: unknown;
+    challenge_answer?: unknown;
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.challenge_id, 'register-challenge-id');
+  assert.equal(body.challenge_prompt, 'What is the capital of Canada?');
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'answer'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body, 'challenge_answer'),
+    false,
+  );
+});
+
+test('POST /api/register validates required fields and captcha', async () => {
+  const app = express();
+  app.use(express.json());
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    false,
+  );
+  const controller = createRegistrationController(
+    null,
+    'correct-password',
+    captchaService,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/register');
+
+  const missingEmail = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        nickname: 'Alice',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+  assert.equal(missingEmail.statusCode, 400);
+  assert.equal(
+    (missingEmail.body as { error?: string }).error,
+    'Email required',
+  );
+
+  const missingNickname = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'alice@example.com',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+  assert.equal(missingNickname.statusCode, 400);
+  assert.equal(
+    (missingNickname.body as { error?: string }).error,
+    'Nickname required',
+  );
+
+  const shortPassword = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        password: 'tiny',
+        confirm_password: 'tiny',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+  assert.equal(shortPassword.statusCode, 400);
+  assert.equal(
+    (shortPassword.body as { error?: string }).error,
+    'Password is too short',
+  );
+
+  const mismatchedPassword = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        password: 'long-enough-password',
+        confirm_password: 'different-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+  assert.equal(mismatchedPassword.statusCode, 400);
+  assert.equal(
+    (mismatchedPassword.body as { error?: string }).error,
+    'Password confirmation does not match',
+  );
+
+  const invalidCaptcha = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+  assert.equal(invalidCaptcha.statusCode, 400);
+  assert.equal(
+    (invalidCaptcha.body as { error?: string }).error,
+    'Invalid captcha',
+  );
+});
+
+test('POST /api/register returns duplicate email as 409 when user exists', async () => {
+  const app = express();
+  app.use(express.json());
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+  const controller = createRegistrationController(
+    createUser('alice@example.com', true),
+    'correct-password',
+    captchaService,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/register');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Email already registered',
+  );
+});
+
+test('POST /api/register creates user, token, and returns non-leaky success payload', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  const logger = new ResetLoggerStub();
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+
+  const userService = new FakeUserService(null);
+  const passwordService = new PasswordServiceStub('correct-password');
+  const jwtService = new FakeJwtAuthService(3600);
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    passwordService as unknown,
+    captchaService as unknown,
+    undefined as unknown,
+    logger as unknown,
+    tokenService as unknown,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/register');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: '  New User  ',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.body as { ok?: boolean }).ok, true);
+  const body = response.body as Record<string, unknown>;
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'token'), false);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body, 'activation_url'),
+    false,
+  );
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'reset_url'), false);
+  assert.equal(tokenService.createCount, 1);
+  assert.equal(tokenService.updatedToken, 'user-1');
+  assert.equal(userService.activatedUserIds.length, 0);
+  assert.equal(userService.creationCalls, 1);
+  assert.equal(userService.createdUsers[0]?.email, 'new@example.com');
+  assert.equal(userService.createdUsers[0]?.nickname, 'New User');
+  assert.equal(
+    logger.messages.some((message) =>
+      message.message.includes('/activate-account/activation-token-abc'),
+    ),
+    true,
+  );
+});
+
+test('POST /api/register uses one production transaction when a DB pool is available', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+  const userService = new TrackingUserService(null);
+  const passwordService = new PasswordServiceStub('correct-password');
+  const jwtService = new FakeJwtAuthService(3600);
+  const pool = new FakeMySqlPool();
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    passwordService as unknown,
+    captchaService as unknown,
+    undefined as unknown,
+    undefined as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+    pool as unknown,
+  );
+
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/register');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: 'New User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.body as { ok?: boolean }).ok, true);
+  assert.equal(pool.getConnectionCalls, 1);
+  assert.equal(pool.connection.beginTransactionCalls, 1);
+  assert.equal(pool.connection.commitCalls, 1);
+  assert.equal(pool.connection.rollbackCalls, 0);
+  assert.equal(pool.connection.releaseCalls, 1);
+  assert.equal(userService.creationCalls, 1);
+  assert.equal(tokenService.createCount, 1);
+  assert.equal(
+    userService.createConnections[0],
+    tokenService.createConnections[0],
+    'user and activation token creation should share the same connection',
+  );
+});
+
+test('POST /api/register rolls back and releases connection when activation token creation fails in production', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  tokenService.createTokenForUser = async (
+    _userId: string,
+    _connection?: unknown,
+  ) => {
+    tokenService.createCount += 1;
+    tokenService.createConnections.push(_connection ?? null);
+    throw new Error('creation failed');
+  };
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+  const userService = new TrackingUserService(null);
+  const passwordService = new PasswordServiceStub('correct-password');
+  const jwtService = new FakeJwtAuthService(3600);
+  const pool = new FakeMySqlPool();
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    passwordService as unknown,
+    captchaService as unknown,
+    undefined as unknown,
+    undefined as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+    pool as unknown,
+  );
+
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/register');
+
+  await assert.rejects(async () => {
+    await runHandlers(
+      route,
+      createRequest({
+        app,
+        method: 'POST',
+        path: '/api/register',
+        body: {
+          email: 'new@example.com',
+          nickname: 'New User',
+          password: 'long-enough-password',
+          confirm_password: 'long-enough-password',
+          challenge_id: 'register-challenge-id',
+          challenge_answer: '2',
+        },
+      }),
+    );
+  }, /creation failed/);
+
+  assert.equal(pool.getConnectionCalls, 1);
+  assert.equal(pool.connection.beginTransactionCalls, 1);
+  assert.equal(pool.connection.commitCalls, 0);
+  assert.equal(pool.connection.rollbackCalls, 1);
+  assert.equal(pool.connection.releaseCalls, 1);
+  assert.equal(userService.creationCalls, 1);
+});
+
+test('POST /api/login includes activation state in user payload', async () => {
+  const app = express();
+  app.use(express.json());
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    new FakeUserService(createUser('alice@example.com', true)),
+    new FakeJwtAuthService(3600),
+    new PasswordServiceStub('correct-password'),
+    new CaptchaServiceStub(
+      () => ({ challengeId: 'register-challenge-id', prompt: 'ignored' }),
+      true,
+    ),
+    undefined as unknown,
+    undefined as unknown,
+    undefined as unknown,
+  );
+  controller.register(app);
+
+  const login = getRouteHandlers(app, 'post', '/api/login');
+  const response = await runHandlers(
+    login,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/login',
+      body: {
+        email: 'alice@example.com',
+        password: 'correct-password',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  const user = (response.body as { user?: { activated?: boolean } }).user;
+  assert.equal(user?.activated, true);
+});
+
+test('GET /api/me includes activation state in current identity payload', async () => {
+  const app = express();
+  app.use(express.json());
+  const userService = new FakeUserService(
+    createUser('alice@example.com', true, false),
+  );
+  const jwtService = new FakeJwtAuthService(3600);
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    new PasswordServiceStub('correct-password'),
+    new CaptchaServiceStub(
+      () => ({ challengeId: 'register-challenge-id', prompt: 'ignored' }),
+      true,
+    ),
+    undefined as unknown,
+    undefined as unknown,
+    undefined as unknown,
+  );
+  controller.register(app);
+
+  const login = getRouteHandlers(app, 'post', '/api/login');
+  const loginResponse = await runHandlers(
+    login,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/login',
+      body: {
+        email: 'alice@example.com',
+        password: 'correct-password',
+      },
+    }),
+  );
+
+  const token = (loginResponse.body as { token?: string }).token as string;
+  const response = await runHandlers(
+    getRouteHandlers(app, 'get', '/api/me'),
+    createRequest({
+      app,
+      method: 'GET',
+      path: '/api/me',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    }),
+  );
+  assert.equal(response.statusCode, 200);
+  const body = response.body as {
+    activated?: boolean;
+    id?: string;
+  };
+  assert.equal(body.id, 'user-1');
+  assert.equal(body.activated, false);
+});
+
+test('POST /api/account-activation validates token outcome states', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    validateMap: {
+      validToken: { tokenId: 'token-1', userId: 'user-1' },
+      expiredToken: null,
+      usedToken: null,
+      invalidToken: null,
+    },
+  });
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    new FakeUserService(createUser('alice@example.com', true)),
+    new FakeJwtAuthService(3600),
+    new PasswordServiceStub('correct-password'),
+    new CaptchaServiceStub(
+      () => ({ challengeId: 'register-challenge-id', prompt: 'ignored' }),
+      true,
+    ),
+    undefined as unknown,
+    undefined as unknown,
+    tokenService as unknown,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(
+    app,
+    'post',
+    '/api/account-activation/validate',
+  );
+  const missing = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/account-activation/validate',
+      body: {},
+    }),
+  );
+  assert.equal(missing.statusCode, 400);
+  assert.equal(
+    (missing.body as { error?: string }).error,
+    'Invalid activation token',
+  );
+
+  const valid = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/account-activation/validate',
+      body: {
+        token: 'validToken',
+      },
+    }),
+  );
+  assert.equal(valid.statusCode, 200);
+  assert.equal((valid.body as { ok?: boolean }).ok, true);
+
+  const expired = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/account-activation/validate',
+      body: {
+        token: 'expiredToken',
+      },
+    }),
+  );
+  assert.equal(expired.statusCode, 400);
+  assert.equal(
+    (expired.body as { error?: string }).error,
+    'Invalid activation token',
+  );
+
+  const used = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/account-activation/validate',
+      body: {
+        token: 'usedToken',
+      },
+    }),
+  );
+  assert.equal(used.statusCode, 400);
+  assert.equal(
+    (used.body as { error?: string }).error,
+    'Invalid activation token',
+  );
+
+  const invalid = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/account-activation/validate',
+      body: {
+        token: 'invalidToken',
+      },
+    }),
+  );
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(
+    (invalid.body as { error?: string }).error,
+    'Invalid activation token',
+  );
+});
+
+test('POST /api/account-activation activates user, grants role, and marks token used', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    consumeMap: {
+      validToken: { tokenId: 'token-1', userId: 'user-1' },
+    },
+  });
+  const userService = new FakeUserService(
+    createUser('alice@example.com', true, false),
+  );
+  const logger = new ResetLoggerStub();
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    new FakeJwtAuthService(3600),
+    new PasswordServiceStub('correct-password'),
+    new CaptchaServiceStub(
+      () => ({ challengeId: 'register-challenge-id', prompt: 'ignored' }),
+      true,
+    ),
+    undefined as unknown,
+    logger as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/account-activation');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/account-activation',
+      body: {
+        token: 'validToken',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.body as { ok?: boolean }).ok, true);
+  assert.equal(tokenService.consumeCalls, 1);
+  assert.equal(userService.activatedUserIds.includes('user-1'), true);
+  assert.equal(userService.roleGrantedUserIds.includes('user-1'), true);
 });
 
 test('POST /api/password-reset/captcha returns challenge data without answer', async () => {

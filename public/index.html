@@ -94,6 +94,14 @@
         </div>
       </header>
 
+      <section v-if="showActivationBanner" class="activation-banner" style="margin: 0 1rem;">
+        <strong>Activation required</strong>
+        <p class="muted">
+          Your account is not activated yet. Use the activation link you received from the
+          server log to activate before you can claim services or manage workspaces.
+        </p>
+      </section>
+
       <main class="page-shell">
         <section v-if="currentView === 'overview'">
           <div class="overview-hero">
@@ -214,8 +222,21 @@
                   </p>
                 </div>
                 <div v-if="item.environment.claimedById === user?.id" class="service-actions">
-                  <button class="secondary" type="button" @click="extend(item.environment.serviceKey)">Extend</button>
-                  <button type="button" @click="release(item.environment.serviceKey)">Release</button>
+                  <button
+                    class="secondary"
+                    type="button"
+                    :disabled="!canUseProtectedActions"
+                    @click="extend(item.environment.serviceKey)"
+                  >
+                    Extend
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="!canUseProtectedActions"
+                    @click="release(item.environment.serviceKey)"
+                  >
+                    Release
+                  </button>
                 </div>
               </div>
             </div>
@@ -253,6 +274,7 @@
                     <button
                       v-if="!environment.active"
                       type="button"
+                      :disabled="!canUseProtectedActions"
                       @click="openClaimModal(environment.serviceKey)"
                     >
                       Claim
@@ -261,11 +283,16 @@
                       <button
                         class="secondary"
                         type="button"
+                        :disabled="!canUseProtectedActions"
                         @click="extend(environment.serviceKey)"
                       >
                         Extend
                       </button>
-                      <button type="button" @click="release(environment.serviceKey)">
+                      <button
+                        type="button"
+                        :disabled="!canUseProtectedActions"
+                        @click="release(environment.serviceKey)"
+                      >
                         Release
                       </button>
                     </template>
@@ -322,6 +349,7 @@
                   <button
                     type="button"
                     class="secondary"
+                    :disabled="!canUseProtectedActions"
                     @click="openCreateWorkspaceModal"
                   >
                     Create workspace
@@ -372,6 +400,7 @@
                         <button
                           class="secondary"
                           type="button"
+                          :disabled="!canUseProtectedActions"
                           @click="openInviteModal(workspace.id)"
                         >
                           Invite user
@@ -379,6 +408,7 @@
                         <button
                           class="secondary"
                           type="button"
+                          :disabled="!canUseProtectedActions"
                           @click="openOwnerModal(workspace.id)"
                         >
                           Create owner
@@ -386,6 +416,7 @@
                         <button
                           class="secondary"
                           type="button"
+                          :disabled="!canUseProtectedActions"
                           @click="openEnvironmentModal(workspace.id)"
                         >
                           Create environment
@@ -406,6 +437,7 @@
                     v-if="selectedServiceWorkspaceIsAdmin"
                     class="secondary"
                     type="button"
+                    :disabled="!canUseProtectedActions"
                     @click="openCreateServiceModal"
                   >
                     Create service
@@ -466,6 +498,7 @@
                         >
                           <button
                             type="button"
+                            :disabled="!canUseProtectedActions"
                             @click="openEditService(
                               service.serviceId,
                               service.label,
@@ -478,6 +511,7 @@
                           <button
                             type="button"
                             class="danger"
+                            :disabled="!canUseProtectedActions"
                             @click="openDeleteConfirmation(service.serviceId, service.label)"
                           >
                             Delete
@@ -534,6 +568,7 @@
                                 <button
                                   type="button"
                                   class="tag-remove"
+                                  :disabled="!canUseProtectedActions"
                                   @click="removeEditEnvironmentTag(env)"
                                   aria-label="Remove environment"
                                 >
@@ -562,20 +597,21 @@
                             <button
                               type="button"
                               class="secondary"
+                              :disabled="!canUseProtectedActions"
                               @click="cancelEditService"
                             >
                               Cancel
                             </button>
                             <button
                               type="submit"
-                              :disabled="serviceEditSubmitting"
+                              :disabled="serviceEditSubmitting || !canUseProtectedActions"
                             >
                               {{ serviceEditSubmitting ? 'Saving...' : 'Save Service' }}
                             </button>
                             <button
                               type="button"
                               class="danger"
-                              :disabled="serviceEditSubmitting"
+                              :disabled="serviceEditSubmitting || !canUseProtectedActions"
                               @click="openDeleteConfirmation(service.serviceId, service.label)"
                             >
                               Delete
@@ -640,7 +676,11 @@
         </div>
         <div class="modal-actions">
           <button class="secondary" type="button" @click="closeClaimModal">Cancel</button>
-          <button type="button" :disabled="claimSubmitting" @click="submitClaim">
+          <button
+            type="button"
+            :disabled="claimSubmitting || !canUseProtectedActions"
+            @click="submitClaim"
+          >
             {{ claimSubmitting ? 'Claiming...' : 'Claim service' }}
           </button>
         </div>
@@ -685,7 +725,7 @@
           </div>
           <div class="modal-actions">
             <button class="secondary" type="button" @click="cancelInvite">Cancel</button>
-            <button type="submit" :disabled="inviteSubmitting">
+            <button type="submit" :disabled="inviteSubmitting || !canUseProtectedActions">
               {{ inviteSubmitting ? 'Sending...' : 'Send invitation' }}
             </button>
           </div>
@@ -724,7 +764,10 @@
           </div>
           <div class="modal-actions">
             <button class="secondary" type="button" @click="cancelCreateWorkspace">Cancel</button>
-            <button type="submit" :disabled="workspaceSubmitting">
+            <button
+              type="submit"
+              :disabled="workspaceSubmitting || !canUseProtectedActions"
+            >
               {{ workspaceSubmitting ? 'Creating...' : 'Create workspace' }}
             </button>
           </div>
@@ -778,6 +821,7 @@
                   <button
                     type="button"
                     class="tag-remove"
+                    :disabled="!canUseProtectedActions"
                     @click="clearCreateOwner"
                     aria-label="Clear selected owner"
                   >
@@ -816,6 +860,7 @@
                   <button
                     type="button"
                     class="tag-remove"
+                    :disabled="!canUseProtectedActions"
                     @click="removeCreateEnvironmentTag(env)"
                     aria-label="Remove environment"
                   >
@@ -844,7 +889,10 @@
           </div>
           <div class="modal-actions">
             <button class="secondary" type="button" @click="closeCreateServiceModal">Cancel</button>
-            <button type="submit" :disabled="serviceCreateSubmitting">
+            <button
+              type="submit"
+              :disabled="serviceCreateSubmitting || !canUseProtectedActions"
+            >
               {{ serviceCreateSubmitting ? 'Creating...' : 'Create service' }}
             </button>
           </div>
@@ -873,7 +921,10 @@
           </div>
           <div class="modal-actions">
             <button class="secondary" type="button" @click="closeOwnerModal">Cancel</button>
-            <button type="submit" :disabled="ownerSubmitting">
+            <button
+              type="submit"
+              :disabled="ownerSubmitting || !canUseProtectedActions"
+            >
               {{ ownerSubmitting ? 'Creating...' : 'Create owner' }}
             </button>
           </div>
@@ -902,7 +953,10 @@
           </div>
           <div class="modal-actions">
             <button class="secondary" type="button" @click="closeEnvironmentModal">Cancel</button>
-            <button type="submit" :disabled="environmentSubmitting">
+            <button
+              type="submit"
+              :disabled="environmentSubmitting || !canUseProtectedActions"
+            >
               {{ environmentSubmitting ? 'Creating...' : 'Create environment' }}
             </button>
           </div>
@@ -976,14 +1030,14 @@
             class="secondary"
             type="button"
             @click="closeDeleteConfirmation"
-            :disabled="pendingDeleteAction.submitting"
+            :disabled="pendingDeleteAction.submitting || !canUseProtectedActions"
           >
             Cancel
           </button>
           <button
             type="button"
             @click="confirmDeleteAction"
-            :disabled="pendingDeleteAction.submitting"
+            :disabled="pendingDeleteAction.submitting || !canUseProtectedActions"
           >
             {{ pendingDeleteAction.submitting ? 'Deleting...' : 'Delete service' }}
           </button>
@@ -1030,14 +1084,14 @@
           <button
             class="secondary"
             type="button"
-            :disabled="pendingUnclaimAction.submitting"
+            :disabled="pendingUnclaimAction.submitting || !canUseProtectedActions"
             @click="closeOverviewUnclaimConfirmation"
           >
             No
           </button>
           <button
             type="button"
-            :disabled="pendingUnclaimAction.submitting"
+            :disabled="pendingUnclaimAction.submitting || !canUseProtectedActions"
             @click="confirmOverviewUnclaim"
           >
             {{ pendingUnclaimAction.submitting ? 'Unclaiming...' : 'Yes' }}

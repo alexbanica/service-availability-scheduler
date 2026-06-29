@@ -12,8 +12,14 @@ export class AuthService {
       id: string;
       email: string;
       nickname: string;
+      activated?: boolean;
     };
-    return new User(data.id, data.email, data.nickname);
+    return new User(
+      data.id,
+      data.email,
+      data.nickname,
+      data.activated ?? false,
+    );
   }
 
   static async logout(): Promise<void> {

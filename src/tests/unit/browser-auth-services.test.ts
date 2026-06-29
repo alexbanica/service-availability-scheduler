@@ -85,6 +85,58 @@ const { AuthService } = requireFromRoot(
   };
 };
 
+type ChallengePayload = {
+  challengeId: string;
+  challengePrompt: string;
+};
+
+type RegistrationPayload = {
+  email: string;
+  nickname: string;
+  password: string;
+  confirm_password: string;
+  challenge_id: string;
+  challenge_answer: string;
+};
+
+type ActivationPayload = {
+  token: string;
+};
+
+function loadBuildService<T>(
+  modulePath: string,
+  exportName: string,
+): { module: T | null } {
+  try {
+    const loaded = requireFromRoot(modulePath) as Record<string, unknown>;
+    const value = loaded[exportName];
+    if (typeof value === 'function') {
+      return { module: value as T };
+    }
+    return { module: null };
+  } catch {
+    return { module: null };
+  }
+}
+
+const RegistrationService = loadBuildService<{
+  requestChallenge: () => Promise<ChallengePayload>;
+  register: (payload: RegistrationPayload) => Promise<void>;
+}>(
+  path.join(buildRoot, 'services/RegistrationService.js'),
+  'RegistrationService',
+).module;
+
+const AccountActivationService = loadBuildService<{
+  validate: (payload: ActivationPayload) => Promise<boolean>;
+  activate: (payload: ActivationPayload) => Promise<void>;
+  validateActivationToken?: (payload: ActivationPayload) => Promise<boolean>;
+  activateAccount?: (payload: ActivationPayload) => Promise<void>;
+}>(
+  path.join(buildRoot, 'services/AccountActivationService.js'),
+  'AccountActivationService',
+).module;
+
 function createMockResponse<T>(status: number, body: T): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -405,6 +457,154 @@ test('ApiService does not send Authorization for unauthenticated reset/captcha e
   clear();
   restore();
   remove('auth_token');
+});
+
+test('ApiService does not send Authorization for registration and activation unauthenticated endpoints', async () => {
+  const { set, clear, remove, restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(createMockResponse(200, { ok: true })),
+  );
+
+  set('auth_token', 'stored-token');
+
+  const routes = [
+    '/api/register/captcha',
+    '/api/register',
+    '/api/account-activation/validate',
+    '/api/account-activation',
+  ];
+
+  for (const route of routes) {
+    await ApiService.post(route, { token: 'sample' });
+    assert.equal(
+      getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
+      null,
+    );
+  }
+
+  fetch.restore();
+  clear();
+  restore();
+  remove('auth_token');
+});
+
+test('RegistrationService requests challenge and registration payload through unauthenticated endpoints', async () => {
+  if (!RegistrationService) {
+    assert.fail('RegistrationService is not available in browser bundle');
+  }
+
+  const { restore } = createWindowAndStorage();
+  const request = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        challenge_id: 'register-challenge-id',
+        challenge_prompt: 'What is your favorite color?',
+        ok: true,
+      }),
+    ),
+  );
+
+  const challenge = await RegistrationService.requestChallenge();
+  assert.equal(challenge.challengeId, 'register-challenge-id');
+  assert.equal(challenge.challengePrompt, 'What is your favorite color?');
+  assert.equal(
+    getHeader(request.state[request.state.length - 1], 'Authorization'),
+    null,
+  );
+
+  const registrationPayload = {
+    email: 'alice@example.com',
+    nickname: 'Alice',
+    password: 'password123',
+    confirm_password: 'password123',
+    challenge_id: 'register-challenge-id',
+    challenge_answer: 'blue',
+  };
+
+  request.restore();
+  const register = setupFetchMock(() =>
+    Promise.resolve(createMockResponse(200, { ok: true })),
+  );
+  await RegistrationService.register(registrationPayload);
+
+  const registerBody = JSON.parse(
+    register.state.at(-1)?.body ?? '{}',
+  ) as Record<string, string>;
+  assert.equal(registerBody.email, registrationPayload.email);
+  assert.equal(registerBody.nickname, registrationPayload.nickname);
+  assert.equal(registerBody.password, registrationPayload.password);
+  assert.equal(
+    registerBody.confirm_password,
+    registrationPayload.confirm_password,
+  );
+  assert.equal(registerBody.challenge_id, registrationPayload.challenge_id);
+  assert.equal(
+    registerBody.challenge_answer,
+    registrationPayload.challenge_answer,
+  );
+  assert.equal(
+    getHeader(register.state[register.state.length - 1], 'Authorization'),
+    null,
+  );
+
+  register.restore();
+  restore();
+});
+
+test('AccountActivationService validates and activates tokens through unauthenticated endpoints', async () => {
+  if (!AccountActivationService) {
+    assert.fail('AccountActivationService is not available in browser bundle');
+  }
+
+  const { restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(createMockResponse(200, { ok: true })),
+  );
+
+  const validate =
+    AccountActivationService.validate ??
+    AccountActivationService.validateActivationToken;
+  if (!validate) {
+    fetch.restore();
+    restore();
+    assert.fail('AccountActivationService.validate is not available');
+  }
+
+  const tokenPayload = { token: 'activation-token' };
+  const isValid = await validate(tokenPayload);
+  assert.equal(isValid, true);
+
+  const validateBody = JSON.parse(
+    fetch.state[fetch.state.length - 1]?.body ?? '{}',
+  ) as Record<string, string>;
+  assert.equal(validateBody.token, tokenPayload.token);
+  assert.equal(
+    getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
+    null,
+  );
+
+  const activate =
+    AccountActivationService.activate ??
+    AccountActivationService.activateAccount;
+  if (!activate) {
+    fetch.restore();
+    restore();
+    assert.fail('AccountActivationService.activate is not available');
+  }
+
+  await activate(tokenPayload);
+
+  const activateBody = JSON.parse(
+    fetch.state[fetch.state.length - 1]?.body ?? '{}',
+  ) as Record<string, string>;
+  assert.equal(activateBody.token, tokenPayload.token);
+  assert.equal(
+    getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
+    null,
+  );
+
+  fetch.restore();
+  restore();
 });
 
 test('LoginService sends email and password to /api/login', async () => {

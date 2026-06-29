@@ -15,6 +15,11 @@ export class PageController {
       res.sendFile(path.join(this.rootDir, 'public', 'reset-password.html'));
     });
 
+    app.get('/activate-account/:token', (_req: Request, res: Response) => {
+      this.disablePageCache(res);
+      res.sendFile(path.join(this.rootDir, 'public', 'activate-account.html'));
+    });
+
     app.get('/api/app-info', (_req: Request, res: Response) => {
       res.json({
         version: process.env.APP_VERSION || 'development',

@@ -1,4 +1,9 @@
-import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type {
+  Pool,
+  PoolConnection,
+  RowDataPacket,
+  ResultSetHeader,
+} from 'mysql2/promise';
 
 export type MysqlConnection = Pool | PoolConnection;
 
@@ -21,7 +26,11 @@ export abstract class AbstractMysqlRepository {
     return rows;
   }
 
-  protected async run(sql: string, params: Array<unknown> = []): Promise<void> {
-    await this.db.query(sql, params);
+  protected async run(
+    sql: string,
+    params: Array<unknown> = [],
+  ): Promise<ResultSetHeader> {
+    const [result] = await this.db.query<ResultSetHeader>(sql, params);
+    return result;
   }
 }

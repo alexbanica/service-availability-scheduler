@@ -10,6 +10,7 @@ type UserRow = RowDataPacket & {
   email: string;
   nickname: string;
   password_hash: string | null;
+  activated_at: string | Date | null;
 };
 
 export type UserWithPasswordHash = User & {
@@ -23,20 +24,20 @@ export class UserRepository extends AbstractMysqlRepository {
 
   async findByEmail(email: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT user_id, email, nickname FROM users WHERE email = ?',
+      'SELECT user_id, email, nickname, activated_at FROM users WHERE email = ?',
       [email],
     );
     if (!row) {
       return null;
     }
-    return new User(row.user_id, row.email, row.nickname);
+    return new User(row.user_id, row.email, row.nickname, row.activated_at);
   }
 
   async findByEmailWithPasswordHash(
     email: string,
   ): Promise<UserWithPasswordHash | null> {
     const row = await this.get<UserRow>(
-      'SELECT user_id, email, nickname, password_hash FROM users WHERE email = ?',
+      'SELECT user_id, email, nickname, password_hash, activated_at FROM users WHERE email = ?',
       [email],
     );
     if (!row) {
@@ -47,6 +48,7 @@ export class UserRepository extends AbstractMysqlRepository {
       row.user_id,
       row.email,
       row.nickname,
+      row.activated_at,
     ) as UserWithPasswordHash;
     user.passwordHash = row.password_hash;
     return user;
@@ -54,10 +56,12 @@ export class UserRepository extends AbstractMysqlRepository {
 
   async findById(id: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT user_id, email, nickname FROM users WHERE user_id = ?',
+      'SELECT user_id, email, nickname, activated_at FROM users WHERE user_id = ?',
       [id],
     );
-    return row ? new User(row.user_id, row.email, row.nickname) : null;
+    return row
+      ? new User(row.user_id, row.email, row.nickname, row.activated_at)
+      : null;
   }
 
   async findByIds(ids: string[]): Promise<User[]> {
@@ -66,16 +70,31 @@ export class UserRepository extends AbstractMysqlRepository {
     }
     const placeholders = ids.map(() => '?').join(',');
     const rows = await this.all<UserRow>(
-      `SELECT user_id, email, nickname FROM users WHERE user_id IN (${placeholders})`,
+      `SELECT user_id, email, nickname, activated_at FROM users WHERE user_id IN (${placeholders})`,
       ids,
     );
-    return rows.map((row) => new User(row.user_id, row.email, row.nickname));
+    return rows.map(
+      (row) => new User(row.user_id, row.email, row.nickname, row.activated_at),
+    );
   }
 
   async insert(id: string, email: string, nickname: string): Promise<void> {
     await this.run(
-      'INSERT INTO users (user_id, email, nickname) VALUES (?, ?, ?)',
+      'INSERT INTO users (user_id, email, nickname, activated_at) VALUES (?, ?, ?, NULL)',
       [id, email, nickname],
+    );
+  }
+
+  async insertWithPasswordHash(
+    id: string,
+    email: string,
+    nickname: string,
+    passwordHash: string,
+    activatedAt: Date | null,
+  ): Promise<void> {
+    await this.run(
+      'INSERT INTO users (user_id, email, nickname, password_hash, activated_at) VALUES (?, ?, ?, ?, ?)',
+      [id, email, nickname, passwordHash, activatedAt],
     );
   }
 
@@ -85,6 +104,13 @@ export class UserRepository extends AbstractMysqlRepository {
   ): Promise<void> {
     await this.run('UPDATE users SET password_hash = ? WHERE user_id = ?', [
       passwordHash,
+      userId,
+    ]);
+  }
+
+  async setActivated(userId: string, activatedAt: Date | null): Promise<void> {
+    await this.run('UPDATE users SET activated_at = ? WHERE user_id = ?', [
+      activatedAt,
       userId,
     ]);
   }

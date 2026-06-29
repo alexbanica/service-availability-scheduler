@@ -12,7 +12,12 @@
       <div class="login-header">
         <div>
           <h1>Service Availability</h1>
-          <p>Log in with your email and password.</p>
+          <p>{{ registerModeTitle }}</p>
+        </div>
+        <div class="mode-switcher" style="display: flex; gap: 0.5rem; align-items: center;">
+          <button type="button" @click="openLoginMode" :disabled="isLoginMode">Log in</button>
+          <button type="button" @click="openRegisterMode" :disabled="isRegisterModeComputed">Register</button>
+          <button type="button" @click="openForgotMode" :disabled="isForgotMode">Reset password</button>
         </div>
         <button
           class="theme-toggle"
@@ -25,7 +30,7 @@
           <span v-else class="theme-icon moon" aria-hidden="true"></span>
         </button>
       </div>
-      <form v-if="!forgotMode" @submit.prevent="submit">
+      <form v-if="isLoginMode" @submit.prevent="submit">
         <label for="email">Email</label>
         <input
           id="email"
@@ -49,10 +54,9 @@
           {{ submitting ? 'Logging in...' : 'Log In' }}
         </button>
         <div class="error">{{ error }}</div>
-        <button type="button" @click="openForgotMode">Forgot password?</button>
       </form>
 
-      <form v-else @submit.prevent="requestResetLink">
+      <form v-if="isForgotMode" @submit.prevent="requestResetLink">
         <h2 style="margin: 0 0 0.5rem; font-size: 1.1rem;">Reset Password</h2>
         <p>Enter your email and solve the captcha challenge.</p>
         <label for="forgot-email">Email</label>
@@ -105,6 +109,88 @@
             Back to login
           </button>
         </div>
+      </form>
+
+      <form v-if="isRegisterModeComputed" @submit.prevent="register">
+        <h2 style="margin: 0 0 0.5rem; font-size: 1.1rem;">Create Account</h2>
+        <p>Your password-based account still needs activation.</p>
+        <label for="register-email">Email</label>
+        <input
+          id="register-email"
+          v-model="registerEmail"
+          type="email"
+          placeholder="you@example.com"
+          required
+        >
+
+        <label for="register-nickname">Nickname</label>
+        <input
+          id="register-nickname"
+          v-model="registerNickname"
+          type="text"
+          placeholder="Your nickname"
+          required
+        >
+
+        <label for="register-password">Password</label>
+        <input
+          id="register-password"
+          v-model="registerPassword"
+          type="password"
+          placeholder="At least 8 characters"
+          autocomplete="new-password"
+          required
+        >
+
+        <label for="register-confirm-password">Confirm password</label>
+        <input
+          id="register-confirm-password"
+          v-model="registerConfirmPassword"
+          type="password"
+          placeholder="Repeat password"
+          autocomplete="new-password"
+          required
+        >
+
+        <template v-if="!registerChallengePrompt">
+          <button
+            type="button"
+            @click="loadRegisterChallenge"
+            :disabled="registerRequestSubmitting"
+          >
+            {{ registerRequestSubmitting ? 'Loading challenge...' : 'Load Captcha' }}
+          </button>
+        </template>
+
+        <template v-else>
+          <p>{{ registerChallengePrompt }}</p>
+          <label for="register-answer">Answer</label>
+          <input
+            id="register-answer"
+            v-model="registerChallengeAnswer"
+            type="text"
+            placeholder="Enter answer"
+            required
+          >
+          <button
+            type="submit"
+            :disabled="registerRequestSubmitting"
+          >
+            {{ registerRequestSubmitting ? 'Creating account...' : 'Create account' }}
+          </button>
+        </template>
+
+        <div v-if="registerRequestError" class="error">
+          {{ registerRequestError }}
+        </div>
+
+        <div v-if="registerRequestSuccess" class="toast" :style="{ position: 'static', width: '100%', display: 'inline-block', textAlign: 'center' }">
+          Registration is complete. Your account is not activated yet.
+        </div>
+
+        <button type="button" class="secondary" @click="openLoginMode">
+          Back to login
+        </button>
       </form>
     </main>
     <footer class="site-footer login-footer">

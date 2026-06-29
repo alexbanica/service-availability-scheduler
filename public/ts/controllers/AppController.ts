@@ -51,6 +51,12 @@ export class AppController {
         const toastMessage = ref('');
         const toastVisible = ref(false);
         const isLoading = ref(true);
+        const showActivationBanner = computed(() =>
+          Boolean(user.value && user.value.activated === false),
+        );
+        const canUseProtectedActions = computed(() =>
+          Boolean(user.value && user.value.activated),
+        );
         const appVersion = ref('');
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
         const claimModalOpen = ref(false);
@@ -1653,6 +1659,8 @@ export class AppController {
 
         return {
           user,
+          showActivationBanner,
+          canUseProtectedActions,
           services,
           inUseServices,
           groupedServices,

@@ -8,9 +8,15 @@ export class ThemeHelper {
     if (stored === 'light' || stored === 'dark') {
       return stored;
     }
-    const prefersDark =
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (
+      typeof window === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return 'light';
+    }
+    const prefersDark = window.matchMedia(
+      '(prefers-color-scheme: dark)',
+    ).matches;
     return prefersDark ? 'dark' : 'light';
   }
 
