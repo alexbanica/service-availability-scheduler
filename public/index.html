@@ -303,9 +303,14 @@
             </div>
           </div>
 
-          <div class="admin-layout">
+          <div v-if="!canAccessAdministration" class="admin-panel">
+            <p class="error">Not authorized</p>
+          </div>
+
+          <div v-else class="admin-layout">
             <aside class="admin-menu" aria-label="Administration sections">
               <button
+                v-if="adminWorkspaces.length"
                 class="admin-tab"
                 :class="{ active: adminSection === 'workspace' }"
                 type="button"
@@ -322,6 +327,7 @@
                 Service Management
               </button>
               <button
+                v-if="adminWorkspaces.length"
                 class="admin-tab"
                 :class="{ active: adminSection === 'users' }"
                 type="button"
@@ -332,7 +338,7 @@
             </aside>
 
             <div class="admin-content">
-              <div v-if="adminSection === 'workspace'" class="admin-panel">
+              <div v-if="adminSection === 'workspace' && adminWorkspaces.length" class="admin-panel">
                 <div class="admin-header">
                   <div>
                     <h3>Workspace management</h3>
@@ -419,7 +425,7 @@
                 </div>
               </div>
 
-              <div v-else-if="adminSection === 'services'" class="admin-panel">
+              <div v-else-if="adminSection === 'services' || !adminWorkspaces.length" class="admin-panel">
                 <div class="admin-header">
                   <div>
                     <h3>Service Management</h3>
@@ -434,15 +440,33 @@
                   >
                     Create service
                   </button>
+                  <button
+                    v-if="selectedServiceWorkspaceIsAdmin && selectedServiceWorkspaceId"
+                    class="secondary"
+                    type="button"
+                    :disabled="!canUseProtectedActions"
+                    @click="openOwnerModal(selectedServiceWorkspaceId)"
+                  >
+                    Create owner
+                  </button>
+                  <button
+                    v-if="selectedServiceWorkspaceIsAdmin && selectedServiceWorkspaceId"
+                    class="secondary"
+                    type="button"
+                    :disabled="!canUseProtectedActions"
+                    @click="openEnvironmentModal(selectedServiceWorkspaceId)"
+                  >
+                    Create environment
+                  </button>
                 </div>
-                <div v-if="!workspaces.length" class="muted">
-                  You are not in any workspaces yet.
+                <div v-if="!resourceAdminWorkspaces.length" class="muted">
+                  Not authorized
                 </div>
                 <div v-else class="admin-card">
                   <label class="admin-service-select">
                     <span>Workspace</span>
                     <select v-model="selectedServiceWorkspaceId">
-                      <option v-for="workspace in workspaces" :key="workspace.id" :value="workspace.id">
+                      <option v-for="workspace in resourceAdminWorkspaces" :key="workspace.id" :value="workspace.id">
                         {{ workspace.name }}
                       </option>
                     </select>
@@ -453,7 +477,7 @@
                       Services for <strong>{{ selectedServiceWorkspace.name }}</strong>
                     </p>
                     <p v-if="!selectedServiceWorkspaceIsAdmin" class="error">
-                      You need admin access to manage services in this workspace.
+                      Not authorized
                     </p>
 
                     <div class="admin-service-list">
@@ -624,9 +648,59 @@
                     <p class="muted">Review roles and access assignments.</p>
                   </div>
                 </div>
-                <div class="admin-card">
-                  <p class="muted">User management tools will live here.</p>
-                  <button type="button">Request access changes</button>
+                <div v-if="!adminWorkspaces.length" class="admin-card">
+                  <p class="error">Not authorized</p>
+                </div>
+                <div v-else class="admin-card">
+                  <label class="admin-service-select">
+                    <span>Workspace</span>
+                    <select v-model="selectedUserWorkspaceId">
+                      <option v-for="workspace in adminWorkspaces" :key="workspace.id" :value="workspace.id">
+                        {{ workspace.name }}
+                      </option>
+                    </select>
+                  </label>
+                  <p v-if="workspaceUsersLoading" class="muted">Loading users...</p>
+                  <p v-else-if="workspaceUsersError" class="error">
+                    {{ workspaceUsersError }}
+                  </p>
+                  <p v-else-if="selectedWorkspaceUsers.length === 0" class="muted">
+                    No users in this workspace.
+                  </p>
+                  <div v-else class="admin-list">
+                    <div
+                      v-for="workspaceUser in selectedWorkspaceUsers"
+                      :key="workspaceUser.userId"
+                      class="admin-workspace"
+                    >
+                      <div class="admin-workspace-identity">
+                        <strong>{{ workspaceUser.email }}</strong>
+                        <span class="admin-workspace-id muted">{{ workspaceUser.userId }}</span>
+                      </div>
+                      <div class="admin-workspace-actions">
+                        <select
+                          :value="workspaceUser.role"
+                          :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
+                          @change="updateWorkspaceUserRole(workspaceUser.userId, $event.target.value)"
+                        >
+                          <option value="admin">admin</option>
+                          <option value="manager">manager</option>
+                          <option value="member">member</option>
+                        </select>
+                        <button
+                          type="button"
+                          class="danger"
+                          :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
+                          @click="removeWorkspaceUser(workspaceUser.userId)"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="error" role="status" aria-live="polite">
+                    {{ workspaceUserActionError }}
+                  </div>
                 </div>
               </div>
             </div>

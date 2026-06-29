@@ -227,3 +227,20 @@ Content-Type: application/json
 {
   "email": "user@example.com"
 }
+
+### List workspace users for administration
+GET {{host}}/api/workspaces/{{workspaceId}}/users
+Authorization: Bearer {{token}}
+
+### Update workspace user role
+PATCH {{host}}/api/workspaces/{{workspaceId}}/users/{{userId}}/role
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "role": "manager"
+}
+
+### Remove workspace user
+DELETE {{host}}/api/workspaces/{{workspaceId}}/users/{{userId}}
+Authorization: Bearer {{token}}

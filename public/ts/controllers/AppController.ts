@@ -12,7 +12,7 @@ import {
   WorkspaceOwnerOption,
   WorkspaceService,
 } from '../services/WorkspaceService.js';
-import { Workspace } from '../entities/Workspace.js';
+import { Workspace, WorkspaceRole } from '../entities/Workspace.js';
 
 export class AppController {
   private refreshTimer: number | null = null;
@@ -84,9 +84,8 @@ export class AppController {
         const teamNameError = ref('');
         const claimSubmitting = ref(false);
         const claimServiceKey = ref<string | null>(null);
-        const currentView = ref<AppView>(
-          viewFromPath(window.location.pathname),
-        );
+        const currentPath = (): string => window.location?.pathname || '/';
+        const currentView = ref<AppView>(viewFromPath(currentPath()));
         const adminSection = ref<'workspace' | 'services' | 'users'>(
           'workspace',
         );
@@ -118,6 +117,17 @@ export class AppController {
           error: string;
         } | null>(null);
         const workspaceRowsRequestId = ref(0);
+        const selectedUserWorkspaceId = ref<string | null>(null);
+        const workspaceUsers = ref<
+          Record<
+            string,
+            Array<{ userId: string; email: string; role: WorkspaceRole }>
+          >
+        >({});
+        const workspaceUsersLoading = ref(false);
+        const workspaceUsersError = ref('');
+        const workspaceUserActionError = ref('');
+        const workspaceUserActionPending = ref<string | null>(null);
         const workspaceEnvironments = ref<
           Record<
             string,
@@ -209,19 +219,24 @@ export class AppController {
               []
             : [],
         );
+        const workspaceRole = (workspaceId: string | null) =>
+          workspaceId
+            ? workspaces.value.find((workspace) => workspace.id === workspaceId)
+                ?.currentUserRole || null
+            : null;
         const isWorkspaceAdmin = (workspaceId: string | null): boolean =>
-          !!user.value &&
-          !!workspaceId &&
-          !!workspaces.value.find(
-            (workspace) =>
-              workspace.id === workspaceId &&
-              workspace.adminUserId === user.value?.id,
-          );
-        const selectedServiceWorkspaceIsAdmin = computed(
-          () =>
-            !!user.value &&
-            selectedServiceWorkspace.value?.adminUserId === user.value?.id,
+          workspaceRole(workspaceId) === 'admin';
+        const isWorkspaceResourceAdmin = (
+          workspaceId: string | null,
+        ): boolean => {
+          const role = workspaceRole(workspaceId);
+          return role === 'admin' || role === 'manager';
+        };
+        const selectedServiceWorkspaceCanManage = computed(() =>
+          isWorkspaceResourceAdmin(selectedServiceWorkspaceId.value),
         );
+        const selectedServiceWorkspaceIsAdmin =
+          selectedServiceWorkspaceCanManage;
         const createServiceOwnerName = computed(() => {
           const workspaceId = selectedServiceWorkspaceId.value;
           if (!workspaceId) {
@@ -356,14 +371,21 @@ export class AppController {
           () => parsedServiceRegex.value.error,
         );
 
-        const adminWorkspaces = computed(() => {
-          if (!user.value) {
-            return [];
-          }
-          return workspaces.value.filter(
-            (workspace) => workspace.adminUserId === user.value?.id,
-          );
-        });
+        const adminWorkspaces = computed(() =>
+          workspaces.value.filter(
+            (workspace) => workspace.currentUserRole === 'admin',
+          ),
+        );
+        const resourceAdminWorkspaces = computed(() =>
+          workspaces.value.filter(
+            (workspace) =>
+              workspace.currentUserRole === 'admin' ||
+              workspace.currentUserRole === 'manager',
+          ),
+        );
+        const canAccessAdministration = computed(
+          () => resourceAdminWorkspaces.value.length > 0,
+        );
         const selectedInviteWorkspace = computed(() =>
           inviteWorkspaceId.value === null
             ? null
@@ -375,7 +397,7 @@ export class AppController {
         const selectedOwnerWorkspace = computed(() =>
           ownerModalWorkspaceId.value === null
             ? null
-            : adminWorkspaces.value.find(
+            : resourceAdminWorkspaces.value.find(
                 (workspace) => workspace.id === ownerModalWorkspaceId.value,
               ) || null,
         );
@@ -383,10 +405,22 @@ export class AppController {
         const selectedEnvironmentWorkspace = computed(() =>
           environmentModalWorkspaceId.value === null
             ? null
-            : adminWorkspaces.value.find(
+            : resourceAdminWorkspaces.value.find(
                 (workspace) =>
                   workspace.id === environmentModalWorkspaceId.value,
               ) || null,
+        );
+        const selectedUserWorkspace = computed(() =>
+          selectedUserWorkspaceId.value === null
+            ? null
+            : adminWorkspaces.value.find(
+                (workspace) => workspace.id === selectedUserWorkspaceId.value,
+              ) || null,
+        );
+        const selectedWorkspaceUsers = computed(() =>
+          selectedUserWorkspaceId.value
+            ? workspaceUsers.value[selectedUserWorkspaceId.value] || []
+            : [],
         );
 
         const claimedByUser = computed(() => {
@@ -500,11 +534,12 @@ export class AppController {
             const persistedWorkspaceId =
               localStorage.getItem(serviceManagementWorkspaceStorageKey) ||
               null;
+            const serviceWorkspaces = resourceAdminWorkspaces.value;
             const firstWorkspaceId =
-              workspaces.value.length > 0 ? workspaces.value[0].id : null;
+              serviceWorkspaces.length > 0 ? serviceWorkspaces[0].id : null;
             if (
               selectedServiceWorkspaceId.value !== null &&
-              workspaces.value.some(
+              serviceWorkspaces.some(
                 (workspace) =>
                   workspace.id === selectedServiceWorkspaceId.value,
               )
@@ -513,7 +548,7 @@ export class AppController {
             }
             if (
               persistedWorkspaceId &&
-              workspaces.value.some(
+              serviceWorkspaces.some(
                 (workspace) => workspace.id === persistedWorkspaceId,
               )
             ) {
@@ -521,6 +556,13 @@ export class AppController {
               return;
             }
             selectedServiceWorkspaceId.value = firstWorkspaceId;
+            if (
+              adminSection.value !== 'services' &&
+              adminWorkspaces.value.length === 0 &&
+              resourceAdminWorkspaces.value.length > 0
+            ) {
+              adminSection.value = 'services';
+            }
           } catch (err) {
             showToast((err as Error).message);
           }
@@ -602,6 +644,31 @@ export class AppController {
           }
         };
 
+        const loadWorkspaceUsers = async (workspaceId: string | null) => {
+          workspaceUsersError.value = '';
+          workspaceUserActionError.value = '';
+          if (!isProtectedActionAllowed() || !workspaceId) {
+            return;
+          }
+          if (!isWorkspaceAdmin(workspaceId)) {
+            workspaceUsersError.value = 'Not authorized';
+            return;
+          }
+          workspaceUsersLoading.value = true;
+          try {
+            const users =
+              await WorkspaceService.listWorkspaceUsers(workspaceId);
+            workspaceUsers.value = {
+              ...workspaceUsers.value,
+              [workspaceId]: users,
+            };
+          } catch (err) {
+            workspaceUsersError.value = (err as Error).message;
+          } finally {
+            workspaceUsersLoading.value = false;
+          }
+        };
+
         const resetClaimModal = () => {
           claimType.value = 'self';
           teamName.value = '';
@@ -654,12 +721,20 @@ export class AppController {
           if (!isProtectedActionAllowed()) {
             return;
           }
+          if (!isWorkspaceResourceAdmin(workspaceId)) {
+            showToast('Not authorized for workspace');
+            return;
+          }
           resetOwnerModal();
           ownerModalWorkspaceId.value = workspaceId;
         };
 
         const openEnvironmentModal = (workspaceId: string) => {
           if (!isProtectedActionAllowed()) {
+            return;
+          }
+          if (!isWorkspaceResourceAdmin(workspaceId)) {
+            showToast('Not authorized for workspace');
             return;
           }
           resetEnvironmentModal();
@@ -1598,7 +1673,7 @@ export class AppController {
           if (!action || action.submitting) {
             return;
           }
-          if (!isWorkspaceAdmin(action.workspaceId)) {
+          if (!isWorkspaceResourceAdmin(action.workspaceId)) {
             showToast('Not authorized for workspace');
             resetPendingDelete();
             return;
@@ -1650,8 +1725,8 @@ export class AppController {
         const setView = (view: AppView) => {
           currentView.value = view;
           const nextPath = appViewPaths[view];
-          if (window.location.pathname !== nextPath) {
-            window.history.pushState({}, '', nextPath);
+          if (currentPath() !== nextPath) {
+            window.history?.pushState({}, '', nextPath);
           }
         };
 
@@ -1663,7 +1738,81 @@ export class AppController {
         const setAdminSection = (
           section: 'workspace' | 'services' | 'users',
         ) => {
+          if (section === 'services') {
+            if (resourceAdminWorkspaces.value.length > 0) {
+              adminSection.value = section;
+              return;
+            }
+            showToast('Not authorized');
+            return;
+          }
+          if (section === 'workspace' || section === 'users') {
+            if (adminWorkspaces.value.length > 0) {
+              adminSection.value = section;
+              if (section === 'users') {
+                const workspaceId =
+                  selectedUserWorkspaceId.value || adminWorkspaces.value[0].id;
+                selectedUserWorkspaceId.value = workspaceId;
+                loadWorkspaceUsers(workspaceId).catch((err) => {
+                  showToast((err as Error).message);
+                });
+              }
+              return;
+            }
+            showToast('Not authorized');
+            return;
+          }
           adminSection.value = section;
+        };
+
+        const updateWorkspaceUserRole = async (
+          targetUserId: string,
+          role: WorkspaceRole,
+        ) => {
+          const workspaceId = selectedUserWorkspaceId.value;
+          if (!workspaceId || !isWorkspaceAdmin(workspaceId)) {
+            workspaceUserActionError.value = 'Not authorized';
+            return;
+          }
+          workspaceUserActionPending.value = targetUserId;
+          workspaceUserActionError.value = '';
+          try {
+            await WorkspaceService.updateWorkspaceUserRole(
+              workspaceId,
+              targetUserId,
+              role,
+            );
+            await loadWorkspaceUsers(workspaceId);
+            await loadWorkspaces();
+            showToast('User role updated.');
+          } catch (err) {
+            workspaceUserActionError.value = (err as Error).message;
+          } finally {
+            workspaceUserActionPending.value = null;
+          }
+        };
+
+        const removeWorkspaceUser = async (targetUserId: string) => {
+          const workspaceId = selectedUserWorkspaceId.value;
+          if (!workspaceId || !isWorkspaceAdmin(workspaceId)) {
+            workspaceUserActionError.value = 'Not authorized';
+            return;
+          }
+          workspaceUserActionPending.value = targetUserId;
+          workspaceUserActionError.value = '';
+          try {
+            await WorkspaceService.removeWorkspaceUser(
+              workspaceId,
+              targetUserId,
+            );
+            await loadWorkspaceUsers(workspaceId);
+            await loadWorkspaces();
+            showToast('User removed.');
+          } catch (err) {
+            workspaceUserActionError.value = (err as Error).message;
+          } finally {
+            workspaceUserActionPending.value = null;
+          }
         };
 
         const formatClaimedBy = (
@@ -1711,8 +1860,8 @@ export class AppController {
 
         onMounted(async () => {
           applyTheme(theme.value);
-          window.addEventListener('popstate', () => {
-            currentView.value = viewFromPath(window.location.pathname);
+          window.addEventListener?.('popstate', () => {
+            currentView.value = viewFromPath(currentPath());
           });
           try {
             const loadedUser = await loadUser();
@@ -1760,6 +1909,23 @@ export class AppController {
               });
             }
           }
+          if (value === 'users' && isProtectedActionAllowed()) {
+            const workspaceId =
+              selectedUserWorkspaceId.value || adminWorkspaces.value[0]?.id;
+            selectedUserWorkspaceId.value = workspaceId || null;
+            loadWorkspaceUsers(selectedUserWorkspaceId.value).catch((err) => {
+              showToast((err as Error).message);
+            });
+          }
+        });
+
+        watch(selectedUserWorkspaceId, (workspaceId) => {
+          if (adminSection.value !== 'users') {
+            return;
+          }
+          loadWorkspaceUsers(workspaceId).catch((err) => {
+            showToast((err as Error).message);
+          });
         });
 
         watch(selectedServiceWorkspaceId, (workspaceId) => {
@@ -1829,8 +1995,10 @@ export class AppController {
           selectedServiceWorkspace,
           selectedServiceCatalog,
           selectedServiceWorkspaceIsAdmin,
+          canAccessAdministration,
           createServiceOwnerName,
           adminWorkspaces,
+          resourceAdminWorkspaces,
           claimedByUser,
           totalServicesCount,
           claimedServicesCount,
@@ -1851,6 +2019,15 @@ export class AppController {
           inviteError,
           inviteSubmitting,
           selectedInviteWorkspace,
+          selectedUserWorkspaceId,
+          selectedUserWorkspace,
+          selectedWorkspaceUsers,
+          workspaceUsersLoading,
+          workspaceUsersError,
+          workspaceUserActionError,
+          workspaceUserActionPending,
+          updateWorkspaceUserRole,
+          removeWorkspaceUser,
           openInviteModal,
           closeInviteModal,
           cancelInvite,

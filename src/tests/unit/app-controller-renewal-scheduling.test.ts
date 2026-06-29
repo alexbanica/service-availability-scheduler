@@ -73,6 +73,7 @@ const { WorkspaceService } = requireFromRoot(
     listEnvironments: (workspaceId: string) => Promise<unknown[]>;
     listOwners: (workspaceId: string) => Promise<unknown[]>;
     listServiceCatalog: (workspaceId: string) => Promise<unknown[]>;
+    listWorkspaceUsers: (workspaceId: string) => Promise<unknown[]>;
   };
 };
 
@@ -119,6 +120,14 @@ type AppState = {
   user: { value: { activated?: boolean } | null };
   showActivationBanner?: { value: boolean };
   canUseProtectedActions?: { value: boolean };
+  adminWorkspaces?: { value: unknown[] };
+  resourceAdminWorkspaces?: { value: unknown[] };
+  canAccessAdministration?: { value: boolean };
+  selectedServiceWorkspaceId?: { value: string | null };
+  selectedServiceWorkspaceIsAdmin?: { value: boolean };
+  selectedUserWorkspaceId?: { value: string | null };
+  selectedWorkspaceUsers?: { value: unknown[] };
+  setAdminSection?: (section: 'workspace' | 'services' | 'users') => void;
 };
 
 function installLocalStorage(): () => void {
@@ -374,6 +383,138 @@ test('AppController does not show activation banner for activated user identity'
   AuthService.loadUser = originalLoadUser;
   AuthService.isAuthenticated = originalIsAuthenticated;
   WorkspaceService.list = originalWorkspaceList;
+  ReservationService.loadServices = originalLoadServices;
+  ApiService.get = originalApiGet;
+  EventsService.prototype.start = originalEventsStart;
+  restoreLocalStorage();
+});
+
+test('AppController exposes manager resource controls without user administration', async () => {
+  const restoreLocalStorage = installLocalStorage();
+  const originalLoadUser = AuthService.loadUser;
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalWorkspaceList = WorkspaceService.list;
+  const originalLoadServices = ReservationService.loadServices;
+  const originalListEnvironments = WorkspaceService.listEnvironments;
+  const originalListOwners = WorkspaceService.listOwners;
+  const originalListServiceCatalog = WorkspaceService.listServiceCatalog;
+  const originalApiGet = ApiService.get;
+  const originalEventsStart = EventsService.prototype.start;
+
+  AuthService.loadUser = async () =>
+    ({
+      id: 'manager-user',
+      email: 'manager@example.com',
+      nickname: 'Manager',
+      activated: true,
+    }) as never;
+  AuthService.isAuthenticated = () => false;
+  WorkspaceService.list = async () =>
+    [
+      {
+        id: 'workspace-1',
+        name: 'Managed Workspace',
+        adminUserId: 'admin-user',
+        currentUserRole: 'manager',
+      },
+    ] as never;
+  WorkspaceService.listEnvironments = async () => [];
+  WorkspaceService.listOwners = async () => [];
+  WorkspaceService.listServiceCatalog = async () => [];
+  ReservationService.loadServices = async () => ({
+    expiryWarningMinutes: 5,
+    autoRefreshSeconds: 30,
+    services: [],
+  });
+  ApiService.get = async () => createMockResponse(200, { version: 'test' });
+  EventsService.prototype.start = () => {
+    return;
+  };
+
+  const { state, runMounted } = createAppControllerWithFakeVue();
+  await runMounted();
+
+  assert.equal(state.canAccessAdministration?.value, true);
+  assert.equal(state.adminWorkspaces?.value.length, 0);
+  assert.equal(state.resourceAdminWorkspaces?.value.length, 1);
+  assert.equal(state.selectedServiceWorkspaceId?.value, 'workspace-1');
+  assert.equal(state.selectedServiceWorkspaceIsAdmin?.value, true);
+  state.setAdminSection?.('users');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(state.selectedUserWorkspaceId?.value, null);
+  assert.equal(state.selectedWorkspaceUsers?.value.length, 0);
+
+  AuthService.loadUser = originalLoadUser;
+  AuthService.isAuthenticated = originalIsAuthenticated;
+  WorkspaceService.list = originalWorkspaceList;
+  WorkspaceService.listEnvironments = originalListEnvironments;
+  WorkspaceService.listOwners = originalListOwners;
+  WorkspaceService.listServiceCatalog = originalListServiceCatalog;
+  ReservationService.loadServices = originalLoadServices;
+  ApiService.get = originalApiGet;
+  EventsService.prototype.start = originalEventsStart;
+  restoreLocalStorage();
+});
+
+test('AppController exposes admin-only workspace user administration state', async () => {
+  const restoreLocalStorage = installLocalStorage();
+  const originalLoadUser = AuthService.loadUser;
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalWorkspaceList = WorkspaceService.list;
+  const originalWorkspaceUsers = WorkspaceService.listWorkspaceUsers;
+  const originalLoadServices = ReservationService.loadServices;
+  const originalApiGet = ApiService.get;
+  const originalEventsStart = EventsService.prototype.start;
+
+  AuthService.loadUser = async () =>
+    ({
+      id: 'admin-user',
+      email: 'admin@example.com',
+      nickname: 'Admin',
+      activated: true,
+    }) as never;
+  AuthService.isAuthenticated = () => false;
+  WorkspaceService.list = async () =>
+    [
+      {
+        id: 'workspace-1',
+        name: 'Admin Workspace',
+        adminUserId: 'admin-user',
+        currentUserRole: 'admin',
+      },
+    ] as never;
+  WorkspaceService.listWorkspaceUsers = async () =>
+    [
+      {
+        userId: 'member-user',
+        email: 'member@example.com',
+        role: 'member',
+      },
+    ] as never;
+  ReservationService.loadServices = async () => ({
+    expiryWarningMinutes: 5,
+    autoRefreshSeconds: 30,
+    services: [],
+  });
+  ApiService.get = async () => createMockResponse(200, { version: 'test' });
+  EventsService.prototype.start = () => {
+    return;
+  };
+
+  const { state, runMounted } = createAppControllerWithFakeVue();
+  await runMounted();
+  assert.equal(state.adminWorkspaces?.value.length, 1);
+
+  state.setAdminSection?.('users');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(state.selectedUserWorkspaceId?.value, 'workspace-1');
+  assert.equal(state.selectedWorkspaceUsers?.value.length, 1);
+
+  AuthService.loadUser = originalLoadUser;
+  AuthService.isAuthenticated = originalIsAuthenticated;
+  WorkspaceService.list = originalWorkspaceList;
+  WorkspaceService.listWorkspaceUsers = originalWorkspaceUsers;
   ReservationService.loadServices = originalLoadServices;
   ApiService.get = originalApiGet;
   EventsService.prototype.start = originalEventsStart;

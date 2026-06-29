@@ -1,5 +1,5 @@
 import { ApiService } from './ApiService.js';
-import { Workspace } from '../entities/Workspace.js';
+import { Workspace, WorkspaceRole } from '../entities/Workspace.js';
 
 export type WorkspaceOwnerOption = {
   ownerId: string;
@@ -32,6 +32,7 @@ export class WorkspaceService {
           this.asNumber(workspace.service_count, 0),
           this.asNumber(workspace.owner_count, 0),
           this.asNumber(workspace.environment_count, 0),
+          this.asWorkspaceRole(workspace.current_user_role),
         ),
     );
   }
@@ -54,6 +55,7 @@ export class WorkspaceService {
       this.asNumber(data.service_count, 0),
       this.asNumber(data.owner_count, 0),
       this.asNumber(data.environment_count, 0),
+      this.asWorkspaceRole(data.current_user_role),
     );
   }
 
@@ -259,6 +261,72 @@ export class WorkspaceService {
       : [];
   }
 
+  static async listWorkspaceUsers(
+    workspaceId: string,
+  ): Promise<Array<{ userId: string; email: string; role: WorkspaceRole }>> {
+    const response = await ApiService.get(
+      `/api/workspaces/${workspaceId}/users`,
+    );
+    const data = (await response.json()) as {
+      users?: Array<Record<string, unknown>>;
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to load workspace users',
+      );
+    }
+    return Array.isArray(data.users)
+      ? data.users.map((userRow) => ({
+          userId: this.asString(userRow.user_id, ''),
+          email: this.asString(userRow.email, ''),
+          role: this.asWorkspaceRole(userRow.role),
+        }))
+      : [];
+  }
+
+  static async updateWorkspaceUserRole(
+    workspaceId: string,
+    userId: string,
+    role: WorkspaceRole,
+  ): Promise<{ userId: string; role: WorkspaceRole }> {
+    const response = await ApiService.patch(
+      `/api/workspaces/${workspaceId}/users/${encodeURIComponent(userId)}/role`,
+      { role },
+    );
+    const data = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to update workspace user role',
+      );
+    }
+    return {
+      userId: this.asString(data.user_id, userId),
+      role: this.asWorkspaceRole(data.role),
+    };
+  }
+
+  static async removeWorkspaceUser(
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
+    const response = await ApiService.delete(
+      `/api/workspaces/${workspaceId}/users/${encodeURIComponent(userId)}`,
+    );
+    if (!response.ok) {
+      const data = (await response.json()) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to remove workspace user',
+      );
+    }
+  }
+
   static async listServiceCatalog(workspaceId: string): Promise<
     Array<{
       serviceId: string;
@@ -313,5 +381,11 @@ export class WorkspaceService {
       return Number.isFinite(parsed) ? parsed : fallback;
     }
     return fallback;
+  }
+
+  private static asWorkspaceRole(value: unknown): WorkspaceRole {
+    return value === 'admin' || value === 'manager' || value === 'member'
+      ? value
+      : 'member';
   }
 }

@@ -27,7 +27,7 @@ test('migrations directory contains table-scoped migration SQL files', () => {
   );
 
   const namePattern =
-    /^\d+_[a-z0-9-]+_(users|password_reset_tokens|account_activation_tokens)\.sql$/;
+    /^\d+_[a-z0-9-]+_(users|password_reset_tokens|account_activation_tokens|workspace_users)\.sql$/;
   for (const file of files) {
     assert.ok(
       namePattern.test(file),
@@ -46,6 +46,7 @@ test('migrations directory contains table-scoped migration SQL files', () => {
     { label: 'users', required: true },
     { label: 'password_reset_tokens', required: true },
     { label: 'account_activation_tokens', required: true },
+    { label: 'workspace_users', required: true },
   ];
 
   for (const expectation of expectations) {
