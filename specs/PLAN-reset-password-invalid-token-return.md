@@ -15,16 +15,17 @@ Approved spec reference: `specs/SPEC-reset-password-invalid-token-return.md`
 ## Implementation Steps Performed
 
 1. Updated the reset-password header helper copy so it is hidden while an invalid-token state is shown.
-2. Replaced the plain invalid-token error-only block with an invalid-token state that includes the error, a 5-second return message, and a button-style `Return to login` anchor.
+2. Replaced the plain invalid-token error-only block with an invalid-token state that includes the error, a visible countdown return message, and a button-style `Return to login` anchor.
 3. Added invalid-token state spacing that matches the existing success-state spacing.
-4. Added a shared reset-password controller helper to schedule a `/login` redirect after 5000 milliseconds.
-5. Scheduled the login redirect when token validation fails because the token is missing or rejected by the validation API.
-6. Kept the existing successful-reset `/login` redirect behavior through the shared helper and existing unmount cleanup.
-7. Created completed-work `$super-agent` spec and plan artifacts.
+4. Added a shared reset-password controller helper to count down from 5 seconds and redirect to `/login` when the countdown reaches zero.
+5. Scheduled the login redirect countdown when token validation fails because the token is missing or rejected by the validation API.
+6. Kept the successful-reset `/login` redirect behavior through the shared countdown helper and existing unmount cleanup.
+7. Regenerated the ignored browser JavaScript bundle with `npx tsc -p tsconfig.client.json` so the served `/public/js/controllers/ResetPasswordController.js` matches the TypeScript source during local runtime.
+8. Created completed-work `$super-agent` spec and plan artifacts.
 
 ## Validation Run
 
-- `npx tsc -p tsconfig.client.json --noEmit`
+- `npx tsc -p tsconfig.client.json`
 - `git diff --check`
 
 ## Validation Skipped

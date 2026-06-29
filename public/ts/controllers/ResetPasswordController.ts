@@ -26,15 +26,22 @@ export class ResetPasswordController {
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
         const token = window.location.pathname.split('/').pop() || '';
         const isTokenValid = ref(false);
-        let loginRedirectTimeout: number | undefined;
+        const loginRedirectSeconds = ref(5);
+        let loginRedirectTimer: number | undefined;
 
         const scheduleLoginRedirect = () => {
-          if (loginRedirectTimeout !== undefined) {
-            window.clearTimeout(loginRedirectTimeout);
+          if (loginRedirectTimer !== undefined) {
+            window.clearInterval(loginRedirectTimer);
           }
-          loginRedirectTimeout = window.setTimeout(() => {
-            window.location.href = '/login';
-          }, 5000);
+          loginRedirectSeconds.value = 5;
+          loginRedirectTimer = window.setInterval(() => {
+            loginRedirectSeconds.value -= 1;
+            if (loginRedirectSeconds.value <= 0) {
+              window.clearInterval(loginRedirectTimer);
+              loginRedirectTimer = undefined;
+              window.location.assign('/login');
+            }
+          }, 1000);
         };
 
         const applyTheme = (value: Theme) => {
@@ -114,8 +121,8 @@ export class ResetPasswordController {
         });
 
         onBeforeUnmount(() => {
-          if (loginRedirectTimeout !== undefined) {
-            window.clearTimeout(loginRedirectTimeout);
+          if (loginRedirectTimer !== undefined) {
+            window.clearInterval(loginRedirectTimer);
           }
         });
 
@@ -128,6 +135,7 @@ export class ResetPasswordController {
           error,
           tokenError,
           isTokenValid,
+          loginRedirectSeconds,
           appVersion,
           theme,
           themeLabel,

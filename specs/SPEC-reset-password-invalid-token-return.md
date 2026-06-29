@@ -35,10 +35,10 @@ When a reset-password token is missing, unknown, expired, or used, the reset-pas
 
 - Before token validation fails, the page can continue to show `Set a new password for your account.`.
 - After token validation fails, that helper copy is no longer rendered.
-- After token validation fails, the page shows the invalid-token error, a short 5-second return message, and a `Return to login` button-style link.
-- After token validation fails because the token is missing or rejected by the validation API, the controller sets `window.location.href` to `/login` after 5000 milliseconds.
-- If the Vue app unmounts before the timeout fires, the pending redirect timeout is cleared.
-- Successful password reset continues to use the existing 5-second login redirect behavior.
+- After token validation fails, the page shows the invalid-token error, a countdown return message, and a `Return to login` button-style link.
+- After token validation fails because the token is missing or rejected by the validation API, the controller counts down from 5 seconds and redirects to `/login` when the countdown reaches zero.
+- If the Vue app unmounts before the countdown finishes, the pending countdown timer is cleared.
+- Successful password reset uses the same visible 5-second countdown and redirect behavior.
 
 ## Assumptions
 
@@ -49,7 +49,7 @@ When a reset-password token is missing, unknown, expired, or used, the reset-pas
 
 - The change is limited to reset-password page presentation and browser-side invalid-token navigation.
 - Token validation and reset API behavior are unchanged.
-- The redirect scheduling helper is shared by invalid-token and successful-reset states, preserving the existing cleanup behavior.
+- The redirect countdown helper is shared by invalid-token and successful-reset states, preserving the existing cleanup behavior.
 
 ## Validation Performed
 
