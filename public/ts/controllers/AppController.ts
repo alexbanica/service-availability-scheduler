@@ -57,6 +57,8 @@ export class AppController {
         const canUseProtectedActions = computed(() =>
           Boolean(user.value && user.value.activated),
         );
+        const isProtectedActionAllowed = (): boolean =>
+          canUseProtectedActions.value;
         const appVersion = ref('');
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
         const claimModalOpen = ref(false);
@@ -471,6 +473,11 @@ export class AppController {
         };
 
         const loadWorkspaces = async () => {
+          if (!isProtectedActionAllowed()) {
+            workspaces.value = [];
+            selectedServiceWorkspaceId.value = null;
+            return;
+          }
           try {
             workspaces.value = await WorkspaceService.list();
             const persistedWorkspaceId =
@@ -503,6 +510,10 @@ export class AppController {
         };
 
         const loadServices = async () => {
+          if (!isProtectedActionAllowed()) {
+            services.value = [];
+            return;
+          }
           try {
             const data = await ReservationService.loadServices();
             applyServiceResponse(data);
@@ -528,6 +539,9 @@ export class AppController {
         };
 
         const loadEnvironments = async (workspaceId: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           try {
             const environments =
               await WorkspaceService.listEnvironments(workspaceId);
@@ -541,6 +555,9 @@ export class AppController {
         };
 
         const loadOwners = async (workspaceId: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           try {
             const owners = await WorkspaceService.listOwners(workspaceId);
             workspaceOwners.value = {
@@ -553,6 +570,9 @@ export class AppController {
         };
 
         const loadServiceCatalog = async (workspaceId: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           try {
             const catalog =
               await WorkspaceService.listServiceCatalog(workspaceId);
@@ -603,6 +623,9 @@ export class AppController {
         };
 
         const openInviteModal = (workspaceId: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           inviteWorkspaceId.value = workspaceId;
           inviteEmail.value = '';
           inviteError.value = '';
@@ -611,11 +634,17 @@ export class AppController {
         };
 
         const openOwnerModal = (workspaceId: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           resetOwnerModal();
           ownerModalWorkspaceId.value = workspaceId;
         };
 
         const openEnvironmentModal = (workspaceId: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           resetEnvironmentModal();
           environmentModalWorkspaceId.value = workspaceId;
         };
@@ -637,6 +666,9 @@ export class AppController {
         };
 
         const openCreateWorkspaceModal = () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           resetCreateWorkspaceModal();
           isCreateWorkspaceModalOpen.value = true;
         };
@@ -650,6 +682,9 @@ export class AppController {
         };
 
         const openClaimModal = (serviceKey: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           claimServiceKey.value = serviceKey;
           claimModalOpen.value = true;
         };
@@ -665,6 +700,9 @@ export class AppController {
           environmentName: string,
           workspaceName: string,
         ) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           pendingUnclaimAction.value = {
             serviceKey,
             serviceLabel,
@@ -680,6 +718,9 @@ export class AppController {
         };
 
         const confirmOverviewUnclaim = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const action = pendingUnclaimAction.value;
           if (!action || action.submitting) {
             return;
@@ -704,6 +745,9 @@ export class AppController {
         };
 
         const submitClaim = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           if (!claimServiceKey.value) {
             return;
           }
@@ -735,6 +779,9 @@ export class AppController {
         };
 
         const release = async (serviceKey: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           try {
             await ReservationService.release(serviceKey);
             await loadServices();
@@ -745,6 +792,9 @@ export class AppController {
         };
 
         const extend = async (serviceKey: string) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           try {
             await ReservationService.extend(serviceKey);
             await loadServices();
@@ -760,6 +810,9 @@ export class AppController {
         };
 
         const createWorkspace = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const trimmed = workspaceName.value.trim();
           workspaceError.value = '';
           if (!trimmed) {
@@ -780,6 +833,9 @@ export class AppController {
         };
 
         const submitInvite = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const workspaceId = inviteWorkspaceId.value;
           if (!workspaceId) {
             return;
@@ -802,6 +858,9 @@ export class AppController {
         };
 
         const createOwner = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const workspaceId = ownerModalWorkspaceId.value;
           const name = ownerName.value.trim();
           ownerError.value = '';
@@ -826,6 +885,9 @@ export class AppController {
         };
 
         const createEnvironment = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const workspaceId = environmentModalWorkspaceId.value;
           const name = environmentName.value.trim();
           environmentError.value = '';
@@ -853,6 +915,9 @@ export class AppController {
           workspace: Workspace,
           resourceType: WorkspaceResourceType,
         ) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const requestId = ++workspaceRowsRequestId.value;
           workspaceRowsModal.value = {
             workspaceId: workspace.id,
@@ -931,6 +996,9 @@ export class AppController {
         };
 
         const openCreateServiceModal = () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           resetServiceCreateForm();
           isCreateServiceModalOpen.value = true;
         };
@@ -938,6 +1006,9 @@ export class AppController {
         const loadServiceManagementWorkspaceData = async (
           workspaceId: string,
         ) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const selectedWorkspace = workspaces.value.find(
             (workspace) => workspace.id === workspaceId,
           );
@@ -1277,6 +1348,9 @@ export class AppController {
         const resolveCreateOwnerId = async (
           workspaceId: string,
         ): Promise<string | null> => {
+          if (!isProtectedActionAllowed()) {
+            return null;
+          }
           if (serviceCreateForm.value.ownerId) {
             return serviceCreateForm.value.ownerId;
           }
@@ -1309,6 +1383,9 @@ export class AppController {
         };
 
         const createService = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           if (!selectedServiceWorkspaceId.value) {
             return;
           }
@@ -1376,6 +1453,9 @@ export class AppController {
             environmentName: string;
           }>,
         ) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           if (editingServiceId.value === serviceId) {
             resetServiceEditForm();
             return;
@@ -1402,6 +1482,9 @@ export class AppController {
         };
 
         const editService = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const serviceId = editingServiceId.value;
           if (!serviceId || !selectedServiceWorkspaceId.value) {
             return;
@@ -1466,6 +1549,9 @@ export class AppController {
           serviceId: string,
           serviceLabel: string | null,
         ) => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           if (!selectedServiceWorkspaceId.value) {
             return;
           }
@@ -1488,6 +1574,9 @@ export class AppController {
         };
 
         const confirmDeleteAction = async () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           const action = pendingDeleteAction.value;
           if (!action || action.submitting) {
             return;
@@ -1571,6 +1660,10 @@ export class AppController {
           if (this.refreshTimer) {
             window.clearTimeout(this.refreshTimer);
           }
+          if (!isProtectedActionAllowed()) {
+            this.refreshTimer = null;
+            return;
+          }
           const intervalSeconds = normalizeAutoRefreshSeconds(
             autoRefreshSeconds.value,
           );
@@ -1580,6 +1673,9 @@ export class AppController {
         };
 
         const initEvents = () => {
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           this.eventsService.start((data) => {
             const message = `${data.environment} / ${data.service_name} expires in ${data.minutes_left} minute(s). Extend?`;
             if (confirm(message)) {
@@ -1603,10 +1699,12 @@ export class AppController {
             if (AuthService.isAuthenticated()) {
               scheduleTokenRenewal();
             }
-            await loadWorkspaces();
-            await loadServices();
             await loadAppInfo();
-            initEvents();
+            if (isProtectedActionAllowed()) {
+              await loadWorkspaces();
+              await loadServices();
+              initEvents();
+            }
           } finally {
             isLoading.value = false;
           }
@@ -1629,7 +1727,7 @@ export class AppController {
         });
 
         watch(adminSection, (value) => {
-          if (value === 'services') {
+          if (value === 'services' && isProtectedActionAllowed()) {
             if (selectedServiceWorkspaceId.value !== null) {
               loadServiceManagementWorkspaceData(
                 selectedServiceWorkspaceId.value,
@@ -1642,6 +1740,9 @@ export class AppController {
 
         watch(selectedServiceWorkspaceId, (workspaceId) => {
           resetPendingDelete();
+          if (!isProtectedActionAllowed()) {
+            return;
+          }
           if (workspaceId === null) {
             localStorage.removeItem(serviceManagementWorkspaceStorageKey);
             return;

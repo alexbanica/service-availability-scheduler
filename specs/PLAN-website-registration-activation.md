@@ -218,8 +218,9 @@ Assignment:
    - Add `RegistrationService` for challenge and registration calls.
    - Add registration and activation endpoints to `ApiService` unauthenticated
      route handling.
-   - Do not claim email was sent; success copy must reflect that activation is
-     required and the temporary link is logged server-side.
+   - Do not claim email was sent.
+   - On successful registration, store the returned bearer token and redirect to
+     the authenticated app shell so the activation-required banner is visible.
 
 7. Browser activation page
    - Add `public/activate-account.html` and `public/ts/activate-account.ts`.
@@ -280,7 +281,8 @@ Required manual QA when a local database/dev server is available:
 - Load a registration captcha and register a new account.
 - Confirm server logs include an activation URL with a TODO and the registration
   response does not include the URL.
-- Log in before activation.
+- Confirm successful registration automatically logs in and redirects to the app
+  shell before activation.
 - Confirm activation banner is visible.
 - Confirm protected app data/actions are blocked for the non-activated account.
 - Open the logged `/activate-account/<token>` URL and activate the account.

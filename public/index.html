@@ -94,14 +94,6 @@
         </div>
       </header>
 
-      <section v-if="showActivationBanner" class="activation-banner" style="margin: 0 1rem;">
-        <strong>Activation required</strong>
-        <p class="muted">
-          Your account is not activated yet. Use the activation link you received from the
-          server log to activate before you can claim services or manage workspaces.
-        </p>
-      </section>
-
       <main class="page-shell">
         <section v-if="currentView === 'overview'">
           <div class="overview-hero">
@@ -641,6 +633,21 @@
           </div>
         </section>
       </main>
+
+      <div class="app-bottom-banners">
+        <section
+          v-if="showActivationBanner"
+          class="activation-banner app-bottom-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>Activation required</strong>
+          <p class="muted">
+            Your account is not activated yet. Use the activation link you received from the
+            server log to activate before you can claim services or manage workspaces.
+          </p>
+        </section>
+      </div>
 
       <footer class="site-footer">
         <span>Service Availability Scheduler</span>

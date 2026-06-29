@@ -39,8 +39,8 @@
       </div>
 
       <div v-if="submitted" class="reset-success">
-        <p>Account activated. You can now sign in and use the app.</p>
-        <a class="button-link" href="/login">Go to login</a>
+        <p>Account activated. Redirecting to the dashboard in {{ dashboardRedirectSeconds }} seconds.</p>
+        <button type="button" @click="showDashboard">Show dashboard</button>
       </div>
 
       <footer class="site-footer login-footer" v-if="submitted || !loading || error">

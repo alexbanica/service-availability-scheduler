@@ -137,6 +137,15 @@ const AccountActivationService = loadBuildService<{
   'AccountActivationService',
 ).module;
 
+const LoginController = loadBuildService<{
+  new (): {
+    bootstrap: (Vue: unknown) => void;
+  };
+}>(
+  path.join(buildRoot, 'controllers/LoginController.js'),
+  'LoginController',
+).module;
+
 function createMockResponse<T>(status: number, body: T): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -184,6 +193,69 @@ function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
       globalThis.fetch = originalFetch;
     },
   };
+}
+
+type Ref<T> = { value: T };
+
+type LoginControllerState = {
+  mode: Ref<'login' | 'register' | 'forgot'>;
+  isLoginMode: Ref<boolean>;
+  isForgotMode: Ref<boolean>;
+  isRegisterModeComputed: Ref<boolean>;
+  forgotEmail: Ref<string>;
+  forgotChallengeId: Ref<string>;
+  forgotChallengePrompt: Ref<string>;
+  forgotChallengeAnswer: Ref<string>;
+  forgotRequestError: Ref<string>;
+  forgotRequestSuccess: Ref<boolean>;
+  registerEmail: Ref<string>;
+  registerChallengeId: Ref<string>;
+  registerChallengePrompt: Ref<string>;
+  registerChallengeAnswer: Ref<string>;
+  registerRequestError: Ref<string>;
+  registerRequestSuccess: Ref<boolean>;
+  openLoginMode: () => void;
+  openForgotMode: () => void;
+  openRegisterMode: () => void;
+  loadResetChallenge: () => Promise<void>;
+  resetForgotChallenge: () => void;
+  loadRegisterChallenge: () => Promise<void>;
+  resetRegisterChallenge: () => void;
+};
+
+function createLoginControllerState(): LoginControllerState {
+  if (!LoginController) {
+    assert.fail('LoginController is not available in browser bundle');
+  }
+
+  let state: LoginControllerState | null = null;
+  const fakeVue = {
+    createApp: (options: { setup: () => LoginControllerState }) => {
+      state = options.setup();
+      return {
+        mount: () => {
+          return;
+        },
+      };
+    },
+    ref: <T>(value: T): Ref<T> => ({ value }),
+    computed: <T>(fn: () => T) => ({
+      get value() {
+        return fn();
+      },
+    }),
+    onMounted: () => {
+      return;
+    },
+  };
+
+  new LoginController().bootstrap(fakeVue);
+
+  if (!state) {
+    assert.fail('LoginController did not expose setup state');
+  }
+
+  return state;
 }
 
 function createWindowAndStorage(): {
@@ -238,7 +310,15 @@ function createWindowAndStorage(): {
         set href(nextHref: string) {
           href = nextHref;
         },
+        get pathname() {
+          return new URL(href, 'http://localhost').pathname;
+        },
         replace(nextHref: string) {
+          href = nextHref;
+        },
+      },
+      history: {
+        pushState: (_state: object, _unused: string, nextHref: string) => {
           href = nextHref;
         },
       },
@@ -249,6 +329,7 @@ function createWindowAndStorage(): {
   Object.defineProperty(globalThis, 'document', {
     value: {
       documentElement: {
+        dataset: {},
         classList: {
           add: (className: string): void => {
             classes.add(className);
@@ -493,7 +574,7 @@ test('RegistrationService requests challenge and registration payload through un
     assert.fail('RegistrationService is not available in browser bundle');
   }
 
-  const { restore } = createWindowAndStorage();
+  const { get, restore } = createWindowAndStorage();
   const request = setupFetchMock(() =>
     Promise.resolve(
       createMockResponse(200, {
@@ -523,7 +604,14 @@ test('RegistrationService requests challenge and registration payload through un
 
   request.restore();
   const register = setupFetchMock(() =>
-    Promise.resolve(createMockResponse(200, { ok: true })),
+    Promise.resolve(
+      createMockResponse(200, {
+        ok: true,
+        token: 'registered-token',
+        token_type: 'Bearer',
+        expires_in_seconds: 900,
+      }),
+    ),
   );
   await RegistrationService.register(registrationPayload);
 
@@ -546,9 +634,116 @@ test('RegistrationService requests challenge and registration payload through un
     getHeader(register.state[register.state.length - 1], 'Authorization'),
     null,
   );
+  assert.equal(get('auth_token'), 'registered-token');
+  assert.ok(get('auth_token_expires_at_ms'));
 
   register.restore();
   restore();
+});
+
+test('LoginController resets loaded registration captcha when registration fields change', async () => {
+  if (!RegistrationService) {
+    assert.fail('RegistrationService is not available in browser bundle');
+  }
+
+  const { restore } = createWindowAndStorage();
+  const originalRequestChallenge = RegistrationService.requestChallenge;
+  RegistrationService.requestChallenge = async () => ({
+    challengeId: 'register-challenge-id',
+    challengePrompt: '1 + 1?',
+  });
+
+  try {
+    const state = createLoginControllerState();
+
+    state.openRegisterMode();
+    await state.loadRegisterChallenge();
+
+    assert.equal(state.registerChallengeId.value, 'register-challenge-id');
+    assert.equal(state.registerChallengePrompt.value, '1 + 1?');
+
+    state.registerRequestError.value = 'Passwords do not match';
+    state.registerRequestSuccess.value = true;
+    state.registerChallengeAnswer.value = '2';
+    state.registerEmail.value = 'updated@example.com';
+    state.resetRegisterChallenge();
+
+    assert.equal(state.registerChallengeId.value, '');
+    assert.equal(state.registerChallengePrompt.value, '');
+    assert.equal(state.registerChallengeAnswer.value, '');
+    assert.equal(state.registerRequestError.value, '');
+    assert.equal(state.registerRequestSuccess.value, false);
+  } finally {
+    RegistrationService.requestChallenge = originalRequestChallenge;
+    restore();
+  }
+});
+
+test('LoginController opens registration mode when served from /register', () => {
+  const { restore, setHref } = createWindowAndStorage();
+  try {
+    setHref('/register');
+    const state = createLoginControllerState();
+
+    assert.equal(state.mode.value, 'register');
+    assert.equal(state.isRegisterModeComputed.value, true);
+    assert.equal(state.isLoginMode.value, false);
+  } finally {
+    restore();
+  }
+});
+
+test('LoginController keeps registration mode under /register path', () => {
+  const { restore, getHref } = createWindowAndStorage();
+  try {
+    const state = createLoginControllerState();
+
+    state.openRegisterMode();
+
+    assert.equal(getHref(), '/register');
+    assert.equal(state.isRegisterModeComputed.value, true);
+
+    state.openLoginMode();
+
+    assert.equal(getHref(), '/login');
+    assert.equal(state.isLoginMode.value, true);
+  } finally {
+    restore();
+  }
+});
+
+test('LoginController resets loaded password reset captcha when email changes', async () => {
+  const originalRequestChallenge = PasswordResetService.requestChallenge;
+  PasswordResetService.requestChallenge = async () => ({
+    challengeId: 'reset-challenge-id',
+    challengePrompt: '2 + 2?',
+  });
+
+  const { restore } = createWindowAndStorage();
+  try {
+    const state = createLoginControllerState();
+
+    state.openForgotMode();
+    await state.loadResetChallenge();
+
+    assert.equal(state.forgotChallengeId.value, 'reset-challenge-id');
+    assert.equal(state.forgotChallengePrompt.value, '2 + 2?');
+
+    state.forgotRequestError.value = 'Invalid captcha';
+    state.forgotRequestSuccess.value = true;
+    state.forgotChallengeAnswer.value = '4';
+    state.forgotEmail.value = 'updated@example.com';
+    state.resetForgotChallenge();
+
+    assert.equal(state.forgotChallengeId.value, '');
+    assert.equal(state.forgotChallengePrompt.value, '');
+    assert.equal(state.forgotChallengeAnswer.value, '');
+    assert.equal(state.forgotRequestError.value, '');
+    assert.equal(state.forgotRequestSuccess.value, false);
+  } finally {
+    PasswordResetService.requestChallenge = originalRequestChallenge;
+    restore();
+  }
 });
 
 test('AccountActivationService validates and activates tokens through unauthenticated endpoints', async () => {

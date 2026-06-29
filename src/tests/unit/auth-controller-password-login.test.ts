@@ -885,7 +885,7 @@ test('POST /api/register returns duplicate email as 409 when user exists', async
   );
 });
 
-test('POST /api/register creates user, token, and returns non-leaky success payload', async () => {
+test('POST /api/register creates user, token, and returns authenticated non-activated payload', async () => {
   const app = express();
   app.use(express.json());
   const tokenService = new AccountActivationTokenServiceStub({
@@ -935,12 +935,21 @@ test('POST /api/register creates user, token, and returns non-leaky success payl
   assert.equal(response.statusCode, 200);
   assert.equal((response.body as { ok?: boolean }).ok, true);
   const body = response.body as Record<string, unknown>;
-  assert.equal(Object.prototype.hasOwnProperty.call(body, 'token'), false);
   assert.equal(
     Object.prototype.hasOwnProperty.call(body, 'activation_url'),
     false,
   );
   assert.equal(Object.prototype.hasOwnProperty.call(body, 'reset_url'), false);
+  assert.equal(body.token, 'token-user-1-1');
+  assert.equal(body.token_type, 'Bearer');
+  assert.equal(body.expires_in_seconds, 3600);
+  assert.deepEqual(body.user, {
+    id: 'user-1',
+    userId: 'user-1',
+    email: 'new@example.com',
+    nickname: 'New User',
+    activated: false,
+  });
   assert.equal(tokenService.createCount, 1);
   assert.equal(tokenService.updatedToken, 'user-1');
   assert.equal(userService.activatedUserIds.length, 0);

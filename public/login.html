@@ -14,11 +14,6 @@
           <h1>Service Availability</h1>
           <p>{{ registerModeTitle }}</p>
         </div>
-        <div class="mode-switcher" style="display: flex; gap: 0.5rem; align-items: center;">
-          <button type="button" @click="openLoginMode" :disabled="isLoginMode">Log in</button>
-          <button type="button" @click="openRegisterMode" :disabled="isRegisterModeComputed">Register</button>
-          <button type="button" @click="openForgotMode" :disabled="isForgotMode">Reset password</button>
-        </div>
         <button
           class="theme-toggle"
           type="button"
@@ -53,6 +48,17 @@
         <button type="submit" :disabled="submitting">
           {{ submitting ? 'Logging in...' : 'Log In' }}
         </button>
+        <div class="login-action-stack">
+          <button type="button" class="secondary" @click="openForgotMode">
+            Reset Password
+          </button>
+          <div class="login-choice-divider" aria-hidden="true">
+            <span>or</span>
+          </div>
+          <button type="button" class="secondary" @click="openRegisterMode">
+            Create new Account
+          </button>
+        </div>
         <div class="error">{{ error }}</div>
       </form>
 
@@ -63,6 +69,7 @@
         <input
           id="forgot-email"
           v-model="forgotEmail"
+          @input="resetForgotChallenge"
           type="email"
           placeholder="you@example.com"
           required
@@ -118,6 +125,7 @@
         <input
           id="register-email"
           v-model="registerEmail"
+          @input="resetRegisterChallenge"
           type="email"
           placeholder="you@example.com"
           required
@@ -127,6 +135,7 @@
         <input
           id="register-nickname"
           v-model="registerNickname"
+          @input="resetRegisterChallenge"
           type="text"
           placeholder="Your nickname"
           required
@@ -136,6 +145,7 @@
         <input
           id="register-password"
           v-model="registerPassword"
+          @input="resetRegisterChallenge"
           type="password"
           placeholder="At least 8 characters"
           autocomplete="new-password"
@@ -146,6 +156,7 @@
         <input
           id="register-confirm-password"
           v-model="registerConfirmPassword"
+          @input="resetRegisterChallenge"
           type="password"
           placeholder="Repeat password"
           autocomplete="new-password"

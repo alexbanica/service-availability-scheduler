@@ -10,6 +10,11 @@ export class PageController {
       res.sendFile(path.join(this.rootDir, 'public', 'login.html'));
     });
 
+    app.get('/register', (_req: Request, res: Response) => {
+      this.disablePageCache(res);
+      res.sendFile(path.join(this.rootDir, 'public', 'login.html'));
+    });
+
     app.get('/reset-password/:token', (_req: Request, res: Response) => {
       this.disablePageCache(res);
       res.sendFile(path.join(this.rootDir, 'public', 'reset-password.html'));

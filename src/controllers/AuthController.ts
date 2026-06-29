@@ -38,6 +38,37 @@ export class AuthController {
 
   private readonly activationLogger: Logger;
 
+  private async sendAuthenticatedResponse(
+    res: Response,
+    user: {
+      userId: string;
+      email: string;
+      nickname: string;
+      activated: boolean;
+    },
+  ): Promise<void> {
+    const token = await this.jwtAuthService.issueToken({
+      userId: user.userId,
+      email: user.email,
+      nickname: user.nickname,
+      activated: user.activated,
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        id: user.userId,
+        userId: user.userId,
+        email: user.email,
+        nickname: user.nickname,
+        activated: user.activated,
+      },
+      token,
+      token_type: 'Bearer',
+      expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
+    });
+  }
+
   register(app: Express): void {
     app.post('/api/login', async (req: Request, res: Response) => {
       const email = String(req.body.email || '')
@@ -71,26 +102,7 @@ export class AuthController {
         return;
       }
 
-      const token = await this.jwtAuthService.issueToken({
-        userId: user.userId,
-        email: user.email,
-        nickname: user.nickname,
-        activated: user.activated,
-      });
-
-      res.json({
-        ok: true,
-        user: {
-          id: user.userId,
-          userId: user.userId,
-          email: user.email,
-          nickname: user.nickname,
-          activated: user.activated,
-        },
-        token,
-        token_type: 'Bearer',
-        expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
-      });
+      await this.sendAuthenticatedResponse(res, user);
     });
 
     app.post(
@@ -331,11 +343,22 @@ export class AuthController {
         this.activationLogger.info(
           `Activation requested for ${user.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
         );
-        res.json({ ok: true });
+        await this.sendAuthenticatedResponse(res, {
+          userId: user.userId,
+          email: user.email,
+          nickname: user.nickname,
+          activated: false,
+        });
         return;
       }
 
       const connection = await this.db.getConnection();
+      let createdUser: {
+        userId: string;
+        email: string;
+        nickname: string;
+      };
+      let activationToken: string;
       try {
         await connection.beginTransaction();
         const user = await this.userService.createUser(
@@ -345,22 +368,29 @@ export class AuthController {
           false,
           connection,
         );
-        const activationToken =
+        activationToken =
           await accountActivationTokenService.createTokenForUser(
             user.userId,
             connection,
           );
+        createdUser = user;
         await connection.commit();
-        this.activationLogger.info(
-          `Activation requested for ${user.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
-        );
-        res.json({ ok: true });
       } catch (error) {
         await connection.rollback();
         throw error;
       } finally {
         connection.release();
       }
+
+      this.activationLogger.info(
+        `Activation requested for ${createdUser.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
+      );
+      await this.sendAuthenticatedResponse(res, {
+        userId: createdUser.userId,
+        email: createdUser.email,
+        nickname: createdUser.nickname,
+        activated: false,
+      });
     });
 
     app.post(
@@ -423,7 +453,18 @@ export class AuthController {
         await this.userService.grantPlatformAdminRole(valid.userId);
       }
 
-      res.json({ ok: true });
+      const activatedUser = await this.userService.findById(valid.userId);
+      if (!activatedUser) {
+        res.status(500).json({ error: 'Activated user not found' });
+        return;
+      }
+
+      await this.sendAuthenticatedResponse(res, {
+        userId: activatedUser.userId,
+        email: activatedUser.email,
+        nickname: activatedUser.nickname,
+        activated: true,
+      });
     });
 
     app.post(

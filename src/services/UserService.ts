@@ -23,6 +23,10 @@ export class UserService {
     return this.userRepository.findByEmail(email);
   }
 
+  async findById(userId: string): Promise<User | null> {
+    return this.userRepository.findById(userId);
+  }
+
   async findByEmailWithPasswordHash(
     email: string,
   ): Promise<UserWithPasswordHash | null> {

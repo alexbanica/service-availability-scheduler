@@ -20,7 +20,9 @@ export class LoginController {
         const password = ref('');
         const error = ref('');
         const submitting = ref(false);
-        const mode = ref<'login' | 'register' | 'forgot'>('login');
+        const initialMode =
+          window.location.pathname === '/register' ? 'register' : 'login';
+        const mode = ref<'login' | 'register' | 'forgot'>(initialMode);
         const registerEmail = ref('');
         const registerNickname = ref('');
         const registerPassword = ref('');
@@ -55,11 +57,17 @@ export class LoginController {
         };
 
         const openLoginMode = () => {
+          if (window.location.pathname === '/register') {
+            window.history.pushState({}, '', '/login');
+          }
           mode.value = 'login';
           error.value = '';
         };
 
         const openForgotMode = () => {
+          if (window.location.pathname === '/register') {
+            window.history.pushState({}, '', '/login');
+          }
           mode.value = 'forgot';
           forgotEmail.value = email.value;
           forgotRequestError.value = '';
@@ -79,6 +87,9 @@ export class LoginController {
         };
 
         const openRegisterMode = () => {
+          if (window.location.pathname !== '/register') {
+            window.history.pushState({}, '', '/register');
+          }
           mode.value = 'register';
           registerEmail.value = '';
           registerNickname.value = '';
@@ -95,15 +106,28 @@ export class LoginController {
         const loadResetChallenge = async () => {
           forgotRequestSubmitting.value = true;
           forgotRequestError.value = '';
+          forgotRequestSuccess.value = false;
           try {
             const challenge = await PasswordResetService.requestChallenge();
             forgotChallengeId.value = challenge.challengeId;
             forgotChallengePrompt.value = challenge.challengePrompt;
+            forgotChallengeAnswer.value = '';
           } catch (err) {
             forgotRequestError.value = (err as Error).message;
           } finally {
             forgotRequestSubmitting.value = false;
           }
+        };
+
+        const resetForgotChallenge = () => {
+          if (!forgotChallengePrompt.value && !forgotChallengeId.value) {
+            return;
+          }
+          forgotChallengeId.value = '';
+          forgotChallengePrompt.value = '';
+          forgotChallengeAnswer.value = '';
+          forgotRequestError.value = '';
+          forgotRequestSuccess.value = false;
         };
 
         const loadRegisterChallenge = async () => {
@@ -114,11 +138,23 @@ export class LoginController {
             const challenge = await RegistrationService.requestChallenge();
             registerChallengeId.value = challenge.challengeId;
             registerChallengePrompt.value = challenge.challengePrompt;
+            registerChallengeAnswer.value = '';
           } catch (err) {
             registerRequestError.value = (err as Error).message;
           } finally {
             registerRequestSubmitting.value = false;
           }
+        };
+
+        const resetRegisterChallenge = () => {
+          if (!registerChallengePrompt.value && !registerChallengeId.value) {
+            return;
+          }
+          registerChallengeId.value = '';
+          registerChallengePrompt.value = '';
+          registerChallengeAnswer.value = '';
+          registerRequestError.value = '';
+          registerRequestSuccess.value = false;
         };
 
         const requestResetLink = async () => {
@@ -153,6 +189,7 @@ export class LoginController {
               challenge_answer: registerChallengeAnswer.value,
             });
             registerRequestSuccess.value = true;
+            window.location.replace('/');
           } catch (err) {
             registerRequestError.value = (err as Error).message;
           } finally {
@@ -239,7 +276,9 @@ export class LoginController {
           openLoginMode,
           openRegisterMode,
           resetForgotMode,
+          resetForgotChallenge,
           loadRegisterChallenge,
+          resetRegisterChallenge,
           loadResetChallenge,
           requestResetLink,
           register,

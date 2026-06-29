@@ -24,6 +24,8 @@ is no account activation gate before giving a self-registered user the
 - Log the activation link server-side using the same temporary approach as
   password reset links, including a TODO to replace logging with email delivery.
 - Let registered users log in before activation.
+- Automatically log in newly registered users after successful registration so
+  the authenticated activation banner is shown immediately.
 - Restrict non-activated users from protected app actions that require account
   activation.
 - Show a banner in the authenticated app informing non-activated users that
@@ -76,6 +78,8 @@ is no account activation gate before giving a self-registered user the
   configuration unless a future spec introduces a separate activation-token
   lifetime.
 - Activation links must not be returned from registration API responses.
+- Successful registration API responses must include the normal bearer token,
+  expiration, and user payload with `activated: false`.
 - Token values must be stored hashed, not in plaintext.
 - A user may have only one active activation token; issuing a new activation
   token for the same user invalidates prior active activation tokens.
@@ -103,11 +107,14 @@ is no account activation gate before giving a self-registered user the
   - creates an activation token;
   - logs the activation URL server-side with a TODO to replace logging with email
     delivery;
-  - returns generic success without returning the activation URL or token.
+  - returns the normal authenticated session payload without returning the
+    activation URL or activation token.
 
 ### Login And Identity
 
 - Registered users with a valid password can log in before activation.
+- After registration succeeds, the browser must persist the returned session
+  token and navigate to the authenticated app shell.
 - Login response and `/api/me` must expose whether the account is activated.
 - Authenticated browser state must retain enough user identity to render the
   activation banner deterministically after page load or token renewal.
@@ -186,8 +193,8 @@ is no account activation gate before giving a self-registered user the
 - Unit-test registration validation failures for missing fields, invalid captcha,
   duplicate email, short password, and mismatched confirmation.
 - Unit-test successful registration stores a hashed password, creates an
-  activation token, logs the activation URL, and omits the URL/token from the
-  response.
+  activation token, logs the activation URL, omits the activation URL/token from
+  the response, and returns a non-activated authenticated session payload.
 - Unit-test login and `/api/me` expose activation state.
 - Unit-test non-activated users receive `403` from protected app data and
   mutation endpoints while allowed auth/app/activation endpoints remain usable.
@@ -197,6 +204,7 @@ is no account activation gate before giving a self-registered user the
   `platform_admin`.
 - Unit-test browser services treat registration and activation endpoints as
   unauthenticated where required.
+- Unit-test browser registration stores the returned bearer token.
 - Unit-test the app controller/banner state for non-activated versus activated
   users.
 - Integration-test schema and migration behavior for activation fields and token

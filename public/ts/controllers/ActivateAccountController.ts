@@ -22,6 +22,8 @@ export class ActivateAccountController {
         const submitted = ref(false);
         const activating = ref(false);
         const appVersion = ref('');
+        const dashboardRedirectSeconds = ref(5);
+        let dashboardRedirectTimer: number | undefined;
 
         const applyTheme = (value: Theme) => {
           theme.value = value;
@@ -70,6 +72,18 @@ export class ActivateAccountController {
           try {
             await AccountActivationService.activate({ token });
             submitted.value = true;
+            dashboardRedirectSeconds.value = 5;
+            if (dashboardRedirectTimer !== undefined) {
+              window.clearInterval(dashboardRedirectTimer);
+            }
+            dashboardRedirectTimer = window.setInterval(() => {
+              dashboardRedirectSeconds.value -= 1;
+              if (dashboardRedirectSeconds.value <= 0) {
+                window.clearInterval(dashboardRedirectTimer);
+                dashboardRedirectTimer = undefined;
+                window.location.assign('/');
+              }
+            }, 1000);
           } catch (err) {
             error.value = (err as Error).message;
           } finally {
@@ -81,6 +95,10 @@ export class ActivateAccountController {
           window.location.assign('/login');
         };
 
+        const showDashboard = () => {
+          window.location.assign('/');
+        };
+
         onMounted(async () => {
           applyTheme(theme.value);
           await validateToken();
@@ -88,7 +106,9 @@ export class ActivateAccountController {
         });
 
         onBeforeUnmount(() => {
-          return;
+          if (dashboardRedirectTimer !== undefined) {
+            window.clearInterval(dashboardRedirectTimer);
+          }
         });
 
         return {
@@ -99,8 +119,10 @@ export class ActivateAccountController {
           error,
           submitted,
           activating,
+          dashboardRedirectSeconds,
           appVersion,
           goLogin,
+          showDashboard,
           activate,
           token,
         };
