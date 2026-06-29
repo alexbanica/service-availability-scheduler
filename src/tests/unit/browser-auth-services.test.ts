@@ -751,52 +751,67 @@ test('AccountActivationService validates and activates tokens through unauthenti
     assert.fail('AccountActivationService is not available in browser bundle');
   }
 
-  const { restore } = createWindowAndStorage();
+  const { get, restore } = createWindowAndStorage();
   const fetch = setupFetchMock(() =>
-    Promise.resolve(createMockResponse(200, { ok: true })),
+    Promise.resolve(
+      createMockResponse(200, {
+        ok: true,
+        token: 'activated-token',
+        token_type: 'Bearer',
+        expires_in_seconds: 600,
+      }),
+    ),
   );
+  const originalNow = Date.now;
+  (Date as { now: () => number }).now = () => 2_000;
 
-  const validate =
-    AccountActivationService.validate ??
-    AccountActivationService.validateActivationToken;
-  if (!validate) {
-    fetch.restore();
-    restore();
-    assert.fail('AccountActivationService.validate is not available');
+  try {
+    const validate =
+      AccountActivationService.validate ??
+      AccountActivationService.validateActivationToken;
+    if (!validate) {
+      fetch.restore();
+      restore();
+      assert.fail('AccountActivationService.validate is not available');
+    }
+
+    const tokenPayload = { token: 'activation-token' };
+    const isValid = await validate(tokenPayload);
+    assert.equal(isValid, true);
+
+    const validateBody = JSON.parse(
+      fetch.state[fetch.state.length - 1]?.body ?? '{}',
+    ) as Record<string, string>;
+    assert.equal(validateBody.token, tokenPayload.token);
+    assert.equal(
+      getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
+      null,
+    );
+
+    const activate =
+      AccountActivationService.activate ??
+      AccountActivationService.activateAccount;
+    if (!activate) {
+      fetch.restore();
+      restore();
+      assert.fail('AccountActivationService.activate is not available');
+    }
+
+    await activate(tokenPayload);
+
+    const activateBody = JSON.parse(
+      fetch.state[fetch.state.length - 1]?.body ?? '{}',
+    ) as Record<string, string>;
+    assert.equal(activateBody.token, tokenPayload.token);
+    assert.equal(
+      getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
+      null,
+    );
+    assert.equal(get('auth_token'), 'activated-token');
+    assert.equal(get('auth_token_expires_at_ms'), String(2_000 + 600_000));
+  } finally {
+    (Date as { now: () => number }).now = originalNow;
   }
-
-  const tokenPayload = { token: 'activation-token' };
-  const isValid = await validate(tokenPayload);
-  assert.equal(isValid, true);
-
-  const validateBody = JSON.parse(
-    fetch.state[fetch.state.length - 1]?.body ?? '{}',
-  ) as Record<string, string>;
-  assert.equal(validateBody.token, tokenPayload.token);
-  assert.equal(
-    getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
-    null,
-  );
-
-  const activate =
-    AccountActivationService.activate ??
-    AccountActivationService.activateAccount;
-  if (!activate) {
-    fetch.restore();
-    restore();
-    assert.fail('AccountActivationService.activate is not available');
-  }
-
-  await activate(tokenPayload);
-
-  const activateBody = JSON.parse(
-    fetch.state[fetch.state.length - 1]?.body ?? '{}',
-  ) as Record<string, string>;
-  assert.equal(activateBody.token, tokenPayload.token);
-  assert.equal(
-    getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
-    null,
-  );
 
   fetch.restore();
   restore();

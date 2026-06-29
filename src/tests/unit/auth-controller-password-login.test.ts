@@ -260,6 +260,15 @@ class FakeUserService {
     return this.user;
   }
 
+  async findById(userId: string): Promise<PasswordAwareUser | null> {
+    if (this.user?.userId === userId) {
+      return this.user;
+    }
+
+    const created = this.createdUsers.find((user) => user.userId === userId);
+    return created ?? null;
+  }
+
   async findByEmailWithPasswordHash(
     email: string,
   ): Promise<PasswordAwareUser | null> {
@@ -1347,6 +1356,19 @@ test('POST /api/account-activation activates user, grants role, and marks token 
 
   assert.equal(response.statusCode, 200);
   assert.equal((response.body as { ok?: boolean }).ok, true);
+  assert.equal((response.body as { token?: string }).token, 'token-user-1-1');
+  assert.equal((response.body as { token_type?: string }).token_type, 'Bearer');
+  assert.equal(
+    (response.body as { expires_in_seconds?: number }).expires_in_seconds,
+    3600,
+  );
+  assert.deepEqual((response.body as { user?: unknown }).user, {
+    id: 'user-1',
+    userId: 'user-1',
+    email: 'alice@example.com',
+    nickname: 'Alice',
+    activated: true,
+  });
   assert.equal(tokenService.consumeCalls, 1);
   assert.equal(userService.activatedUserIds.includes('user-1'), true);
   assert.equal(userService.roleGrantedUserIds.includes('user-1'), true);
