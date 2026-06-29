@@ -863,7 +863,8 @@ button.danger {
   font-size: 0.9rem;
 }
 
-button {
+button,
+.button-link {
   appearance: none;
   border: none;
   border-radius: 999px;
@@ -873,6 +874,13 @@ button {
   background: var(--accent);
   color: #fff;
   box-shadow: 0 6px 16px rgba(242, 95, 76, 0.3);
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 button.secondary {
@@ -925,6 +933,7 @@ button:hover {
 }
 
 button:focus-visible,
+.button-link:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent), #fff 20%);
@@ -959,6 +968,18 @@ select:focus-visible {
 }
 
 .login-card form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.reset-success {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.reset-invalid {
   display: grid;
   gap: 0.75rem;
   margin-top: 1rem;

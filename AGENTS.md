@@ -31,11 +31,23 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 ## Configuration
 - Required runtime environment: `DATABASE_URL`.
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, and `APP_VERSION`.
+- Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
 - Test-only environment: `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_TRUNCATE`.
 - Runtime timing keys live in `config/app.yml`:
   - `expiry_warning_minutes`
   - `auto_refresh_seconds`
+- Migration config key in `config/app.yml`:
+  - `run_migrations_on_startup`
 - `config/services.yml` is not a runtime service catalog source; do not reintroduce YAML-backed service definitions.
+
+## Database Migrations
+- Keep existing base schema bootstrap in `config/schema`.
+- Add post-release schema changes as deterministic SQL files under `config/migrations`.
+- Use deterministic table-scoped migration file names with stable ordering, e.g. `0001_users_add_password_hash.sql` and `0002_password_reset_tokens_create_table.sql`.
+- Keep a tracking table (`schema_migrations`) with migration IDs and applied timestamp.
+- Ensure the migration tracking table is created before migration discovery.
+- Run bootstrap migrations once at startup when enabled by config.
+- Provide an explicit npm migration job (`npm run migrate`) that runs pending migrations using the same tracking table regardless of startup flag.
 
 ## Naming Standards
 - Interfaces are suffixed with `Interface`.

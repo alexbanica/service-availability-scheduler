@@ -50,7 +50,28 @@ const { LoginService } = requireFromRoot(
   path.join(buildRoot, 'services/LoginService.js'),
 ) as {
   LoginService: {
-    login: (email: string) => Promise<void>;
+    login: (email: string, password: string) => Promise<void>;
+  };
+};
+
+const { PasswordResetService } = requireFromRoot(
+  path.join(buildRoot, 'services/PasswordResetService.js'),
+) as {
+  PasswordResetService: {
+    requestChallenge: () => Promise<{
+      challengeId: string;
+      challengePrompt: string;
+    }>;
+    requestPasswordReset: (
+      email: string,
+      challengeId: string,
+      challengeAnswer: string,
+    ) => Promise<void>;
+    resetPassword: (
+      token: string,
+      password: string,
+      confirmPassword: string,
+    ) => Promise<void>;
   };
 };
 
@@ -74,6 +95,7 @@ function createMockResponse<T>(status: number, body: T): Response {
 type FetchState = {
   url: string;
   headers: Record<string, string>;
+  body?: string;
 };
 
 function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
@@ -96,6 +118,7 @@ function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
     const fetchState: FetchState = {
       url,
       headers,
+      body: init?.body?.toString(),
     };
     state.push(fetchState);
     return resolver(fetchState);
@@ -203,7 +226,10 @@ test('ApiService does not send Authorization for /api/login', async () => {
 
   set('auth_token', 'stored-token');
 
-  await ApiService.post('/api/login', { email: 'alice@example.com' });
+  await ApiService.post('/api/login', {
+    email: 'alice@example.com',
+    password: 'secret-password',
+  });
 
   assert.equal(fetch.state.length, 1);
   const tokenHeader = getHeader(fetch.state[0], 'Authorization');
@@ -250,7 +276,7 @@ test('LoginService stores token returned by /api/login', async () => {
   (Date as { now: () => number }).now = () => 1_000;
 
   try {
-    await LoginService.login('alice@example.com');
+    await LoginService.login('alice@example.com', 'secret-password');
   } finally {
     (Date as { now: () => number }).now = originalNow;
   }
@@ -260,6 +286,110 @@ test('LoginService stores token returned by /api/login', async () => {
 
   fetch.restore();
   clear();
+  restore();
+});
+
+test('PasswordResetService.requestPasswordReset sends email and captcha payload', async () => {
+  const { restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        ok: true,
+        challenge_id: 'challenge-id',
+        challenge_prompt: 'Any?',
+      }),
+    ),
+  );
+
+  await PasswordResetService.requestPasswordReset(
+    'alice@example.com',
+    'challenge-id',
+    'answer',
+  );
+
+  const request = fetch.state[0];
+  const payload = JSON.parse(request.body ?? '{}');
+  assert.equal(payload.email, 'alice@example.com');
+  assert.equal(payload.challenge_id, 'challenge-id');
+  assert.equal(payload.challenge_answer, 'answer');
+
+  fetch.restore();
+  restore();
+});
+
+test('PasswordResetService.resetPassword submits token, password, and confirmation', async () => {
+  const { restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        ok: true,
+      }),
+    ),
+  );
+
+  await PasswordResetService.resetPassword(
+    'token-123',
+    'new-password',
+    'confirm-password',
+  );
+
+  const payload = JSON.parse(fetch.state[0]?.body ?? '{}');
+  assert.equal(payload.token, 'token-123');
+  assert.equal(payload.password, 'new-password');
+  assert.equal(payload.confirm_password, 'confirm-password');
+
+  fetch.restore();
+  restore();
+});
+
+test('ApiService does not send Authorization for unauthenticated reset/captcha endpoints', async () => {
+  const { set, clear, remove, restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(createMockResponse(200, { ok: true })),
+  );
+
+  set('auth_token', 'stored-token');
+
+  const routes = [
+    '/api/password-reset/captcha',
+    '/api/password-reset/request',
+    '/api/password-reset/validate',
+    '/api/password-reset',
+  ];
+
+  for (const route of routes) {
+    await ApiService.post(route, { value: 'x' });
+    assert.equal(
+      getHeader(fetch.state[fetch.state.length - 1], 'Authorization'),
+      null,
+    );
+  }
+
+  fetch.restore();
+  clear();
+  restore();
+  remove('auth_token');
+});
+
+test('LoginService sends email and password to /api/login', async () => {
+  const { restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        token: 'issued-token',
+        token_type: 'Bearer',
+        expires_in_seconds: 3600,
+      }),
+    ),
+  );
+
+  await LoginService.login('alice@example.com', 'secret-password');
+
+  const payload = JSON.parse(fetch.state[0]?.body ?? '{}');
+  assert.equal(payload.email, 'alice@example.com');
+  assert.equal(payload.password, 'secret-password');
+
+  fetch.restore();
   restore();
 });
 

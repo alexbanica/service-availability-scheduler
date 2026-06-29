@@ -1,3 +1,5 @@
 expiry_warning_minutes: 5
 auto_refresh_seconds: 60
 jwt_expires_in_seconds: 3600
+password_reset_token_expires_in_seconds: 3600
+run_migrations_on_startup: true

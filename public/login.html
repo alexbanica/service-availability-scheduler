@@ -12,7 +12,7 @@
       <div class="login-header">
         <div>
           <h1>Service Availability</h1>
-          <p>Log in with your email address.</p>
+          <p>Log in with your email and password.</p>
         </div>
         <button
           class="theme-toggle"
@@ -25,11 +25,86 @@
           <span v-else class="theme-icon moon" aria-hidden="true"></span>
         </button>
       </div>
-      <form @submit.prevent="submit">
+      <form v-if="!forgotMode" @submit.prevent="submit">
         <label for="email">Email</label>
-        <input id="email" v-model="email" type="email" name="email" placeholder="you@example.com" required>
-        <button type="submit" :disabled="submitting">{{ submitting ? 'Logging in...' : 'Log In' }}</button>
+        <input
+          id="email"
+          v-model="email"
+          type="email"
+          name="email"
+          placeholder="you@example.com"
+          required
+        >
+        <label for="password">Password</label>
+        <input
+          id="password"
+          v-model="password"
+          type="password"
+          name="password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          required
+        >
+        <button type="submit" :disabled="submitting">
+          {{ submitting ? 'Logging in...' : 'Log In' }}
+        </button>
         <div class="error">{{ error }}</div>
+        <button type="button" @click="openForgotMode">Forgot password?</button>
+      </form>
+
+      <form v-else @submit.prevent="requestResetLink">
+        <h2 style="margin: 0 0 0.5rem; font-size: 1.1rem;">Reset Password</h2>
+        <p>Enter your email and solve the captcha challenge.</p>
+        <label for="forgot-email">Email</label>
+        <input
+          id="forgot-email"
+          v-model="forgotEmail"
+          type="email"
+          placeholder="you@example.com"
+          required
+        >
+
+        <template v-if="!forgotChallengePrompt">
+          <button
+            type="button"
+            @click="loadResetChallenge"
+            :disabled="forgotRequestSubmitting"
+          >
+            {{ forgotRequestSubmitting ? 'Loading challenge...' : 'Load Captcha' }}
+          </button>
+        </template>
+
+        <template v-else>
+          <p>{{ forgotChallengePrompt }}</p>
+          <label for="forgot-answer">Answer</label>
+          <input
+            id="forgot-answer"
+            v-model="forgotChallengeAnswer"
+            type="text"
+            placeholder="Enter answer"
+            required
+          >
+          <button
+            type="submit"
+            :disabled="forgotRequestSubmitting"
+          >
+            {{ forgotRequestSubmitting ? 'Sending...' : 'Send reset link' }}
+          </button>
+        </template>
+
+        <div v-if="forgotRequestError" class="error">
+          {{ forgotRequestError }}
+        </div>
+
+        <div v-if="forgotRequestSuccess" class="toast" :style="{ position: 'static', width: '100%', display: 'inline-block', textAlign: 'center' }">
+          If this email exists, a password reset link has been sent.
+        </div>
+
+        <div>
+          <button type="button" class="secondary" @click="resetForgotMode">
+            Back to login
+          </button>
+        </div>
       </form>
     </main>
     <footer class="site-footer login-footer">
