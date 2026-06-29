@@ -52,6 +52,24 @@ class FakeJwtAuthService {
   }
 }
 
+class PasswordServiceStub {
+  validatePassword(password: string): boolean {
+    return typeof password === 'string' && password.length >= 8;
+  }
+
+  async hashPassword(password: string): Promise<string> {
+    return `hash-${password}`;
+  }
+
+  async verifyPassword(
+    password: string,
+    _passwordHash: string,
+  ): Promise<boolean> {
+    void _passwordHash;
+    return password === 'correct-password';
+  }
+}
+
 class FakeUserService {
   async getNicknamesByIds(): Promise<Map<string, string>> {
     return new Map();
@@ -63,12 +81,30 @@ class FakeUserService {
     }
     return null;
   }
+
+  async findByEmailWithPasswordHash(
+    email: string,
+  ): Promise<(User & { passwordHash: string | null }) | null> {
+    if (email === 'alice@example.com') {
+      const user = new User('user-1', email, 'Alice') as User & {
+        passwordHash: string;
+      };
+      user.passwordHash = 'stored-hash';
+      return user;
+    }
+
+    return null;
+  }
 }
 
 function createAuthController(jwtService: FakeJwtAuthService): AuthController {
   return new (AuthController as unknown as {
-    new (...args: [unknown, unknown]): AuthController;
-  })(new FakeUserService() as unknown, jwtService);
+    new (...args: [unknown, unknown, unknown]): AuthController;
+  })(
+    new FakeUserService() as unknown,
+    jwtService,
+    new PasswordServiceStub() as unknown,
+  );
 }
 
 function getRouteHandlers(
@@ -173,7 +209,7 @@ test('POST /api/login does not require Authorization and returns token fields', 
     app,
     method: 'POST',
     path: '/api/login',
-    body: { email: 'alice@example.com' },
+    body: { email: 'alice@example.com', password: 'correct-password' },
   });
 
   const response = await runHandlers(login, req);
@@ -207,7 +243,7 @@ test('Protected middleware accepts valid bearer token', async () => {
       app,
       method: 'POST',
       path: '/api/login',
-      body: { email: 'alice@example.com' },
+      body: { email: 'alice@example.com', password: 'correct-password' },
     }),
   );
   const token = (login.body as { token?: string }).token as string;
@@ -348,7 +384,7 @@ test('Protected renew endpoint accepts valid token and returns replacement token
       app,
       method: 'POST',
       path: '/api/login',
-      body: { email: 'alice@example.com' },
+      body: { email: 'alice@example.com', password: 'correct-password' },
     }),
   );
   const token = (loginResponse.body as { token?: string }).token;

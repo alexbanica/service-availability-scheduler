@@ -61,6 +61,7 @@ async function listSqlFiles(
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     const order = new Map<string, number>([
       ['users', 10],
+      ['password_reset_tokens', 15],
       ['user_roles', 20],
       ['workspaces', 30],
       ['workspace_users', 40],

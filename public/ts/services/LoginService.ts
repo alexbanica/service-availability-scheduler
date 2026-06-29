@@ -2,8 +2,8 @@ import { ApiService } from './ApiService.js';
 import { AuthTokenStorage } from './AuthTokenStorage.js';
 
 export class LoginService {
-  static async login(email: string): Promise<void> {
-    const response = await ApiService.post('/api/login', { email });
+  static async login(email: string, password: string): Promise<void> {
+    const response = await ApiService.post('/api/login', { email, password });
     const data = (await response.json()) as {
       token?: string;
       token_type?: string;

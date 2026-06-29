@@ -4,6 +4,10 @@ import type { Pool } from 'mysql2/promise';
 import { initDb } from './db';
 import { ConfigLoaderService } from './services/ConfigLoaderService';
 import { JwtAuthService } from './services/JwtAuthService';
+import { PasswordService } from './services/PasswordService';
+import { PasswordResetTokenService } from './services/PasswordResetTokenService';
+import { PasswordResetTokenRepository } from './repositories/PasswordResetTokenRepository';
+import { CaptchaService } from './services/CaptchaService';
 import { UserService } from './services/UserService';
 import { ReservationService } from './services/ReservationService';
 import { WorkspaceService } from './services/WorkspaceService';
@@ -47,6 +51,7 @@ async function start() {
   const workspaceUserRepository = new WorkspaceUserRepository(db);
   const invitationRepository = new WorkspaceInvitationRepository(db);
   const userRoleRepository = new UserRoleRepository(db);
+  const passwordResetTokenRepository = new PasswordResetTokenRepository(db);
 
   const userService = new UserService(userRepository);
   const reservationService = new ReservationService(
@@ -59,6 +64,12 @@ async function start() {
   const jwtAuthService = new JwtAuthService(
     SESSION_SECRET,
     config.jwtExpiresInSeconds,
+  );
+  const passwordService = new PasswordService();
+  const captchaService = new CaptchaService();
+  const passwordResetTokenService = new PasswordResetTokenService(
+    passwordResetTokenRepository,
+    config.passwordResetTokenExpiresInSeconds,
   );
   const workspaceService = new WorkspaceService(
     db,
@@ -77,7 +88,14 @@ async function start() {
   }, CLEANUP_INTERVAL_MS);
 
   new PageController(ROOT_DIR).register(app);
-  new AuthController(userService, jwtAuthService).register(app);
+  new AuthController(
+    userService,
+    jwtAuthService,
+    passwordService,
+    captchaService,
+    passwordResetTokenService,
+    console,
+  ).register(app);
   new WorkspaceController(workspaceService).register(app);
   new ServiceController(reservationService).register(app);
   new ReservationController(reservationService).register(app);

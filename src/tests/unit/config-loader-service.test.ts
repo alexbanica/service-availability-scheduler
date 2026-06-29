@@ -10,6 +10,7 @@ type AppConfigWithJwt = {
   autoRefreshSeconds: number;
   expiryWarningMinutes: number;
   jwtExpiresInSeconds: number;
+  passwordResetTokenExpiresInSeconds: number;
 };
 
 function writeTempAppConfig(yamlContent: string): string {
@@ -159,6 +160,150 @@ test('non-numeric jwt_expires_in_seconds is rejected', () => {
       new ConfigLoaderService().loadConfig(configPath);
     }, /jwt_expires_in_seconds/);
   } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing password_reset_token_expires_in_seconds uses default value', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.passwordResetTokenExpiresInSeconds, 3600);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('password_reset_token_expires_in_seconds is parsed from app.yml', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: 900\n',
+  );
+  try {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.passwordResetTokenExpiresInSeconds, 900);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS env var overrides app.yml value', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: 900\n',
+  );
+  const previous = process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+  process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = '1200';
+  try {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.passwordResetTokenExpiresInSeconds, 1200);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('zero password_reset_token_expires_in_seconds is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: 0\n',
+  );
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /password_reset_token_expires_in_seconds/);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('negative password_reset_token_expires_in_seconds is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: -120\n',
+  );
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /password_reset_token_expires_in_seconds/);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('non-numeric password_reset_token_expires_in_seconds is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: bad\n',
+  );
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /password_reset_token_expires_in_seconds/);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('non-numeric PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS is rejected', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  const previous = process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+  process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = 'bad';
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('zero PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: 900\n',
+  );
+  const previous = process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+  process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = '0';
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('negative PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\npassword_reset_token_expires_in_seconds: 900\n',
+  );
+  const previous = process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+  process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = '-90';
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS = previous;
+    }
     cleanupConfig(configPath);
   }
 });

@@ -34,8 +34,16 @@ export class ApiService {
       'Content-Type': 'application/json',
     };
 
+    const isUnauthenticatedRoute = [
+      '/api/login',
+      '/api/password-reset/captcha',
+      '/api/password-reset/request',
+      '/api/password-reset/validate',
+      '/api/password-reset',
+    ].includes(path);
+
     const token = AuthTokenStorage.getToken();
-    if (token && path !== '/api/login') {
+    if (token && !isUnauthenticatedRoute) {
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -48,7 +56,7 @@ export class ApiService {
           : undefined,
     });
 
-    if (response.status === 401 && path !== '/api/login') {
+    if (response.status === 401 && !isUnauthenticatedRoute) {
       AuthTokenStorage.clearToken();
       window.location.href = '/login';
       return response;

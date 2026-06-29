@@ -1,10 +1,11 @@
 # Service Availability Scheduler
 
-Minimal Node.js app to claim services per environment with email-only login and timed reservations.
+Minimal Node.js app to claim services per environment with password-based login and
+timed reservations.
 
-Authentication uses email + bearer JWT tokens. Clients call `POST /api/login` to
-receive a signed token, then send that token with protected API calls using the
-`Authorization: Bearer <token>` header.
+Authentication uses email + password + bearer JWT tokens. Clients call
+`POST /api/login` to receive a signed token, then send that token with protected
+API calls using the `Authorization: Bearer <token>` header.
 
 ## Setup
 
@@ -56,9 +57,14 @@ Edit `config/app.yml` for app timing behavior.
 | `expiry_warning_minutes` | `5` | minutes | Lead time for reservation expiry warning events. |
 | `auto_refresh_seconds` | `60` | seconds | Browser service-availability auto-refresh interval returned by `/api/services`. Values below `1` second are clamped by the browser scheduler. |
 | `jwt_expires_in_seconds` | `3600` | seconds | JWT access token lifetime in seconds. |
+| `password_reset_token_expires_in_seconds` | `3600` | seconds | Password reset token lifetime in seconds. |
 
 `JWT_EXPIRES_IN_SECONDS` (environment variable) takes precedence over
 `jwt_expires_in_seconds` in `config/app.yml`.
+
+`PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS` (environment variable) takes
+precedence over `password_reset_token_expires_in_seconds` in
+`config/app.yml`.
 
 Workspace admins define workspace owners, environments, and services from the
 admin UI. Service creation selects existing workspace-scoped owners and
@@ -66,12 +72,18 @@ environments; it does not create them inline.
 
 ## Authentication API Contract
 
-- `POST /api/login`: accepts `{ "email": "user@example.com" }`, returns:
+- `POST /api/login`: accepts `{ "email": "user@example.com", "password": "secret" }`, returns:
   - `ok: true`
   - `user`
   - `token`
   - `token_type: "Bearer"`
   - `expires_in_seconds`
+- `POST /api/password-reset/captcha`: returns `challenge_id` and `challenge_prompt`.
+- `POST /api/password-reset/request`: validates CAPTCHA and creates or replaces an
+  active reset token for existing users. Response is generic and does not expose
+  whether an account exists.
+- `POST /api/password-reset/validate`: validates `{ "token" }` and returns `ok: true` for active tokens.
+- `POST /api/password-reset`: accepts `{ "token": "...", "password": "..." }`, sets the user password, and returns generic success.
 - `POST /api/renew`: protected endpoint that issues a replacement token and
   returns the same response shape.
 - `POST /api/logout`: protected endpoint maintained for compatibility; server-side
@@ -83,6 +95,10 @@ environments; it does not create them inline.
 Client stores the token in `localStorage` (`auth_token`) and calls
 `/api/renew` before expiry when possible. A failed authorized call (`401`) clears
 the token and redirects to `/login`.
+
+Reset URLs are currently logged temporarily for existing users and include a TODO
+note to replace this with email delivery. Reset URLs are never returned in API
+responses.
 
 ### Test environment
 
