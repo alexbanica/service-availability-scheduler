@@ -1,5 +1,6 @@
 import { LoginService } from '../services/LoginService.js';
 import { PasswordResetService } from '../services/PasswordResetService.js';
+import { RegistrationService } from '../services/RegistrationService.js';
 import { ThemeHelper, Theme } from '../helpers/ThemeHelper.js';
 
 export class LoginController {
@@ -19,7 +20,19 @@ export class LoginController {
         const password = ref('');
         const error = ref('');
         const submitting = ref(false);
-        const forgotMode = ref(false);
+        const initialMode =
+          window.location.pathname === '/register' ? 'register' : 'login';
+        const mode = ref<'login' | 'register' | 'forgot'>(initialMode);
+        const registerEmail = ref('');
+        const registerNickname = ref('');
+        const registerPassword = ref('');
+        const registerConfirmPassword = ref('');
+        const registerChallengeId = ref('');
+        const registerChallengePrompt = ref('');
+        const registerChallengeAnswer = ref('');
+        const registerRequestSubmitting = ref(false);
+        const registerRequestError = ref('');
+        const registerRequestSuccess = ref(false);
         const forgotEmail = ref('');
         const forgotChallengeId = ref('');
         const forgotChallengePrompt = ref('');
@@ -43,8 +56,19 @@ export class LoginController {
           }
         };
 
+        const openLoginMode = () => {
+          if (window.location.pathname === '/register') {
+            window.history.pushState({}, '', '/login');
+          }
+          mode.value = 'login';
+          error.value = '';
+        };
+
         const openForgotMode = () => {
-          forgotMode.value = true;
+          if (window.location.pathname === '/register') {
+            window.history.pushState({}, '', '/login');
+          }
+          mode.value = 'forgot';
           forgotEmail.value = email.value;
           forgotRequestError.value = '';
           forgotRequestSuccess.value = false;
@@ -54,7 +78,7 @@ export class LoginController {
         };
 
         const resetForgotMode = () => {
-          forgotMode.value = false;
+          mode.value = 'login';
           forgotRequestError.value = '';
           forgotRequestSuccess.value = false;
           forgotChallengeId.value = '';
@@ -62,18 +86,75 @@ export class LoginController {
           forgotChallengeAnswer.value = '';
         };
 
+        const openRegisterMode = () => {
+          if (window.location.pathname !== '/register') {
+            window.history.pushState({}, '', '/register');
+          }
+          mode.value = 'register';
+          registerEmail.value = '';
+          registerNickname.value = '';
+          registerPassword.value = '';
+          registerConfirmPassword.value = '';
+          registerChallengeId.value = '';
+          registerChallengePrompt.value = '';
+          registerChallengeAnswer.value = '';
+          registerRequestError.value = '';
+          registerRequestSuccess.value = false;
+          error.value = '';
+        };
+
         const loadResetChallenge = async () => {
           forgotRequestSubmitting.value = true;
           forgotRequestError.value = '';
+          forgotRequestSuccess.value = false;
           try {
             const challenge = await PasswordResetService.requestChallenge();
             forgotChallengeId.value = challenge.challengeId;
             forgotChallengePrompt.value = challenge.challengePrompt;
+            forgotChallengeAnswer.value = '';
           } catch (err) {
             forgotRequestError.value = (err as Error).message;
           } finally {
             forgotRequestSubmitting.value = false;
           }
+        };
+
+        const resetForgotChallenge = () => {
+          if (!forgotChallengePrompt.value && !forgotChallengeId.value) {
+            return;
+          }
+          forgotChallengeId.value = '';
+          forgotChallengePrompt.value = '';
+          forgotChallengeAnswer.value = '';
+          forgotRequestError.value = '';
+          forgotRequestSuccess.value = false;
+        };
+
+        const loadRegisterChallenge = async () => {
+          registerRequestSubmitting.value = true;
+          registerRequestError.value = '';
+          registerRequestSuccess.value = false;
+          try {
+            const challenge = await RegistrationService.requestChallenge();
+            registerChallengeId.value = challenge.challengeId;
+            registerChallengePrompt.value = challenge.challengePrompt;
+            registerChallengeAnswer.value = '';
+          } catch (err) {
+            registerRequestError.value = (err as Error).message;
+          } finally {
+            registerRequestSubmitting.value = false;
+          }
+        };
+
+        const resetRegisterChallenge = () => {
+          if (!registerChallengePrompt.value && !registerChallengeId.value) {
+            return;
+          }
+          registerChallengeId.value = '';
+          registerChallengePrompt.value = '';
+          registerChallengeAnswer.value = '';
+          registerRequestError.value = '';
+          registerRequestSuccess.value = false;
         };
 
         const requestResetLink = async () => {
@@ -93,6 +174,44 @@ export class LoginController {
             forgotRequestSubmitting.value = false;
           }
         };
+
+        const register = async () => {
+          registerRequestError.value = '';
+          registerRequestSuccess.value = false;
+          registerRequestSubmitting.value = true;
+          try {
+            await RegistrationService.register({
+              email: registerEmail.value.trim(),
+              nickname: registerNickname.value.trim(),
+              password: registerPassword.value,
+              confirm_password: registerConfirmPassword.value,
+              challenge_id: registerChallengeId.value,
+              challenge_answer: registerChallengeAnswer.value,
+            });
+            registerRequestSuccess.value = true;
+            window.location.replace('/');
+          } catch (err) {
+            registerRequestError.value = (err as Error).message;
+          } finally {
+            registerRequestSubmitting.value = false;
+          }
+        };
+
+        const isLoginMode = computed(() => mode.value === 'login');
+        const isForgotMode = computed(() => mode.value === 'forgot');
+        const isRegisterModeComputed = computed(
+          () => mode.value === 'register',
+        );
+
+        const registerModeTitle = computed(() => {
+          if (mode.value === 'register') {
+            return 'Register';
+          }
+          if (mode.value === 'forgot') {
+            return 'Reset password';
+          }
+          return 'Sign in';
+        });
 
         const applyTheme = (value: Theme) => {
           theme.value = value;
@@ -130,7 +249,21 @@ export class LoginController {
           password,
           error,
           submitting,
-          forgotMode,
+          mode,
+          isLoginMode,
+          isForgotMode,
+          isRegisterModeComputed,
+          registerModeTitle,
+          registerEmail,
+          registerNickname,
+          registerPassword,
+          registerConfirmPassword,
+          registerChallengeId,
+          registerChallengePrompt,
+          registerChallengeAnswer,
+          registerRequestSubmitting,
+          registerRequestError,
+          registerRequestSuccess,
           forgotEmail,
           forgotChallengeId,
           forgotChallengePrompt,
@@ -140,9 +273,15 @@ export class LoginController {
           forgotRequestSuccess,
           submit,
           openForgotMode,
+          openLoginMode,
+          openRegisterMode,
           resetForgotMode,
+          resetForgotChallenge,
+          loadRegisterChallenge,
+          resetRegisterChallenge,
           loadResetChallenge,
           requestResetLink,
+          register,
           appVersion,
           theme,
           themeLabel,

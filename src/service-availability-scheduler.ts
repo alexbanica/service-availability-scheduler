@@ -18,6 +18,8 @@ import { WorkspaceRepository } from './repositories/WorkspaceRepository';
 import { WorkspaceUserRepository } from './repositories/WorkspaceUserRepository';
 import { WorkspaceInvitationRepository } from './repositories/WorkspaceInvitationRepository';
 import { UserRoleRepository } from './repositories/UserRoleRepository';
+import { AccountActivationTokenRepository } from './repositories/AccountActivationTokenRepository';
+import { AccountActivationTokenService } from './services/AccountActivationTokenService';
 import { AuthController } from './controllers/AuthController';
 import { ServiceController } from './controllers/ServiceController';
 import { ReservationController } from './controllers/ReservationController';
@@ -52,8 +54,11 @@ async function start() {
   const invitationRepository = new WorkspaceInvitationRepository(db);
   const userRoleRepository = new UserRoleRepository(db);
   const passwordResetTokenRepository = new PasswordResetTokenRepository(db);
+  const accountActivationTokenRepository = new AccountActivationTokenRepository(
+    db,
+  );
 
-  const userService = new UserService(userRepository);
+  const userService = new UserService(userRepository, userRoleRepository);
   const reservationService = new ReservationService(
     reservationRepository,
     userService,
@@ -70,6 +75,12 @@ async function start() {
   const passwordResetTokenService = new PasswordResetTokenService(
     passwordResetTokenRepository,
     config.passwordResetTokenExpiresInSeconds,
+  );
+  const accountActivationTokenService = new AccountActivationTokenService(
+    accountActivationTokenRepository,
+    config.passwordResetTokenExpiresInSeconds,
+    undefined,
+    db,
   );
   const workspaceService = new WorkspaceService(
     db,
@@ -95,6 +106,9 @@ async function start() {
     captchaService,
     passwordResetTokenService,
     console,
+    accountActivationTokenService,
+    console,
+    db,
   ).register(app);
   new WorkspaceController(workspaceService).register(app);
   new ServiceController(reservationService).register(app);

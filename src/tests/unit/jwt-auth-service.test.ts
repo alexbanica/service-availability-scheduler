@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { sign } from 'jsonwebtoken';
 import { JwtAuthService } from '../../services/JwtAuthService';
 
 // Expected production API under test:
@@ -111,4 +112,26 @@ test('malformed token is rejected', async () => {
     () => Promise.resolve(authService.verifyToken('not.a.jwt.token')),
     /invalid|malformed/i,
   );
+});
+
+test('legacy token without activated claim is treated as activated', async () => {
+  const authService = createAuthService();
+
+  const token = sign(
+    {
+      userId: 'legacy-user',
+      email: 'legacy@example.com',
+      nickname: 'Legacy User',
+    },
+    'test-secret',
+    {
+      algorithm: 'HS256',
+      expiresIn: 3600,
+    },
+  );
+
+  const verified = await Promise.resolve(authService.verifyToken(token));
+
+  assert.equal(verified.userId, 'legacy-user');
+  assert.equal(verified.activated, true);
 });

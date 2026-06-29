@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Availability - Activate Account</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body class="login-body">
+  <div id="activate-account-app" v-cloak>
+    <main class="login-card">
+      <div class="login-header">
+        <div>
+          <h1>Activate Account</h1>
+          <p v-if="!submitted && !loading">Activate your account from the logged token.</p>
+          <p v-if="loading" class="muted">Checking token...</p>
+        </div>
+        <button
+          class="theme-toggle"
+          type="button"
+          @click="toggleTheme"
+          :aria-label="themeLabel"
+          :title="themeLabel"
+        >
+          <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
+          <span v-else class="theme-icon moon" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div v-if="error" class="error">
+        {{ error }}
+      </div>
+
+      <div v-if="!error && !loading && !submitted" class="reset-success">
+        <p>Your account activation token is valid.</p>
+        <button type="button" @click="activate" :disabled="activating">
+          {{ activating ? 'Activating...' : 'Activate account' }}
+        </button>
+      </div>
+
+      <div v-if="submitted" class="reset-success">
+        <p>Account activated. Redirecting to the dashboard in {{ dashboardRedirectSeconds }} seconds.</p>
+        <button type="button" @click="showDashboard">Show dashboard</button>
+      </div>
+
+      <footer class="site-footer login-footer" v-if="submitted || !loading || error">
+        <span>Service Availability Scheduler</span>
+        <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
+      </footer>
+
+      <div v-if="!submitted && error">
+        <button type="button" class="secondary" @click="goLogin">Back to login</button>
+      </div>
+    </main>
+
+    <footer class="site-footer login-footer" v-if="!submitted && !error">
+      <span>Service Availability Scheduler</span>
+      <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script type="module" src="/public/js/activate-account.js"></script>
+</body>
+</html>

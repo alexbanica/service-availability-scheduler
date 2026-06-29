@@ -126,3 +126,85 @@ test(
     }
   },
 );
+
+test(
+  'users table includes activation timestamp and optional activation state',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+    try {
+      await ensureSchema(db);
+
+      const userColumns = await getColumns(db, 'users');
+      assert.ok(
+        userColumns.includes('activated_at'),
+        'Expected users.activated_at column for account activation state',
+      );
+    } finally {
+      await db.end();
+    }
+  },
+);
+
+test(
+  'account activation token table includes hash and lifecycle columns',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+    try {
+      await ensureSchema(db);
+      const activationTokenTable = 'account_activation_tokens';
+
+      assert.ok(
+        await hasTable(db, activationTokenTable),
+        `Expected ${activationTokenTable} table to exist`,
+      );
+
+      const tokenColumns = await getColumns(db, activationTokenTable);
+      assert.ok(
+        tokenColumns.includes('token_id'),
+        'Expected token_id in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('user_id'),
+        'Expected user_id in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('token_hash'),
+        'Expected token_hash in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('created_at'),
+        'Expected created_at in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('expires_at'),
+        'Expected expires_at in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('used'),
+        'Expected used in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('used_at'),
+        'Expected used_at in activation-token table',
+      );
+      assert.ok(
+        tokenColumns.includes('invalidated_at'),
+        'Expected invalidated_at in activation-token table',
+      );
+    } finally {
+      await db.end();
+    }
+  },
+);

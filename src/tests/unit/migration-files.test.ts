@@ -26,7 +26,8 @@ test('migrations directory contains table-scoped migration SQL files', () => {
     'Expected checked-in table-scoped migration files in config/migrations',
   );
 
-  const namePattern = /^\d+_[a-z0-9-]+_(users|password_reset_tokens)\.sql$/;
+  const namePattern =
+    /^\d+_[a-z0-9-]+_(users|password_reset_tokens|account_activation_tokens)\.sql$/;
   for (const file of files) {
     assert.ok(
       namePattern.test(file),
@@ -44,6 +45,7 @@ test('migrations directory contains table-scoped migration SQL files', () => {
   const expectations: MigrationNameExpectation[] = [
     { label: 'users', required: true },
     { label: 'password_reset_tokens', required: true },
+    { label: 'account_activation_tokens', required: true },
   ];
 
   for (const expectation of expectations) {

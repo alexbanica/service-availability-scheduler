@@ -1,0 +1,5 @@
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP NULL;
+UPDATE users
+  SET activated_at = CURRENT_TIMESTAMP
+  WHERE activated_at IS NULL;

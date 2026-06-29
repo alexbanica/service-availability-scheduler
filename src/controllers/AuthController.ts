@@ -1,9 +1,11 @@
 import type { Express, Request, Response } from 'express';
+import type { Pool } from 'mysql2/promise';
 import { UserService } from '../services/UserService';
 import { JwtAuthService } from '../services/JwtAuthService';
 import { PasswordService } from '../services/PasswordService';
 import { CaptchaService } from '../services/CaptchaService';
 import { PasswordResetTokenService } from '../services/PasswordResetTokenService';
+import { AccountActivationTokenService } from '../services/AccountActivationTokenService';
 import { assignJwtAuthService, requireAuth } from './AuthMiddleware';
 
 type Logger = {
@@ -15,6 +17,7 @@ type AuthenticatedRequest = Request & {
     userId: string;
     email: string;
     nickname: string;
+    activated: boolean;
   };
 };
 
@@ -26,7 +29,45 @@ export class AuthController {
     private readonly captchaService: CaptchaService = new CaptchaService(),
     private readonly passwordResetTokenService?: PasswordResetTokenService,
     private readonly resetLogger: Logger = console,
-  ) {}
+    private readonly accountActivationTokenService?: AccountActivationTokenService,
+    activationLogger?: Logger,
+    private readonly db?: Pool,
+  ) {
+    this.activationLogger = activationLogger ?? this.resetLogger;
+  }
+
+  private readonly activationLogger: Logger;
+
+  private async sendAuthenticatedResponse(
+    res: Response,
+    user: {
+      userId: string;
+      email: string;
+      nickname: string;
+      activated: boolean;
+    },
+  ): Promise<void> {
+    const token = await this.jwtAuthService.issueToken({
+      userId: user.userId,
+      email: user.email,
+      nickname: user.nickname,
+      activated: user.activated,
+    });
+
+    res.json({
+      ok: true,
+      user: {
+        id: user.userId,
+        userId: user.userId,
+        email: user.email,
+        nickname: user.nickname,
+        activated: user.activated,
+      },
+      token,
+      token_type: 'Bearer',
+      expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
+    });
+  }
 
   register(app: Express): void {
     app.post('/api/login', async (req: Request, res: Response) => {
@@ -61,24 +102,7 @@ export class AuthController {
         return;
       }
 
-      const token = await this.jwtAuthService.issueToken({
-        userId: user.userId,
-        email: user.email,
-        nickname: user.nickname,
-      });
-
-      res.json({
-        ok: true,
-        user: {
-          id: user.userId,
-          userId: user.userId,
-          email: user.email,
-          nickname: user.nickname,
-        },
-        token,
-        token_type: 'Bearer',
-        expires_in_seconds: this.jwtAuthService.getExpiresInSeconds(),
-      });
+      await this.sendAuthenticatedResponse(res, user);
     });
 
     app.post(
@@ -230,6 +254,219 @@ export class AuthController {
       res.json({ ok: true });
     });
 
+    app.post('/api/register/captcha', async (_req: Request, res: Response) => {
+      const challenge = await this.captchaService.createChallenge();
+      res.json({
+        ok: true,
+        challenge_id: challenge.challengeId,
+        challenge_prompt: challenge.prompt,
+      });
+    });
+
+    app.post('/api/register', async (req: Request, res: Response) => {
+      const email = String(req.body.email || '')
+        .trim()
+        .toLowerCase();
+      const nickname = String(req.body.nickname || '').trim();
+      const password = String(req.body.password || '');
+      const confirmPassword = String(req.body.confirm_password || '');
+      const challengeId = String(
+        req.body.challenge_id || req.body.challengeId || '',
+      );
+      const challengeAnswer = String(
+        req.body.challenge_answer || req.body.challengeAnswer || '',
+      );
+
+      if (!email) {
+        res.status(400).json({ error: 'Email required' });
+        return;
+      }
+
+      if (!nickname) {
+        res.status(400).json({ error: 'Nickname required' });
+        return;
+      }
+
+      if (!password.trim()) {
+        res.status(400).json({ error: 'Password required' });
+        return;
+      }
+
+      if (!this.passwordService.validatePassword(password)) {
+        res.status(400).json({ error: 'Password is too short' });
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        res.status(400).json({ error: 'Password confirmation does not match' });
+        return;
+      }
+
+      if (!challengeId || !challengeAnswer) {
+        res.status(400).json({ error: 'Captcha required' });
+        return;
+      }
+
+      const validCaptcha = await this.captchaService.validateChallenge(
+        challengeId,
+        challengeAnswer,
+      );
+      if (!validCaptcha) {
+        res.status(400).json({ error: 'Invalid captcha' });
+        return;
+      }
+
+      const existingUser = await this.userService.findByEmail(email);
+      if (existingUser) {
+        res.status(409).json({ error: 'Email already registered' });
+        return;
+      }
+
+      const accountActivationTokenService = this.accountActivationTokenService;
+      if (!accountActivationTokenService) {
+        res
+          .status(500)
+          .json({ error: 'Account activation token service unavailable' });
+        return;
+      }
+
+      const passwordHash = await this.passwordService.hashPassword(password);
+      if (!this.db) {
+        const user = await this.userService.createUser(
+          email,
+          nickname,
+          passwordHash,
+          false,
+        );
+        const activationToken =
+          await accountActivationTokenService.createTokenForUser(user.userId);
+        this.activationLogger.info(
+          `Activation requested for ${user.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
+        );
+        await this.sendAuthenticatedResponse(res, {
+          userId: user.userId,
+          email: user.email,
+          nickname: user.nickname,
+          activated: false,
+        });
+        return;
+      }
+
+      const connection = await this.db.getConnection();
+      let createdUser: {
+        userId: string;
+        email: string;
+        nickname: string;
+      };
+      let activationToken: string;
+      try {
+        await connection.beginTransaction();
+        const user = await this.userService.createUser(
+          email,
+          nickname,
+          passwordHash,
+          false,
+          connection,
+        );
+        activationToken =
+          await accountActivationTokenService.createTokenForUser(
+            user.userId,
+            connection,
+          );
+        createdUser = user;
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+
+      this.activationLogger.info(
+        `Activation requested for ${createdUser.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
+      );
+      await this.sendAuthenticatedResponse(res, {
+        userId: createdUser.userId,
+        email: createdUser.email,
+        nickname: createdUser.nickname,
+        activated: false,
+      });
+    });
+
+    app.post(
+      '/api/account-activation/validate',
+      async (req: Request, res: Response) => {
+        const accountActivationTokenService =
+          this.accountActivationTokenService;
+        if (!accountActivationTokenService) {
+          res
+            .status(500)
+            .json({ error: 'Account activation token service unavailable' });
+          return;
+        }
+
+        const token = String(req.body.token || req.body.activation_token || '');
+        if (!token) {
+          res.status(400).json({ error: 'Invalid activation token' });
+          return;
+        }
+
+        const valid = await accountActivationTokenService.validateToken(token);
+        if (!valid) {
+          res.status(400).json({ error: 'Invalid activation token' });
+          return;
+        }
+
+        res.json({ ok: true });
+      },
+    );
+
+    app.post('/api/account-activation', async (req: Request, res: Response) => {
+      const accountActivationTokenService = this.accountActivationTokenService;
+      if (!accountActivationTokenService) {
+        res
+          .status(500)
+          .json({ error: 'Account activation token service unavailable' });
+        return;
+      }
+
+      const token = String(req.body.token || req.body.activation_token || '');
+      if (!token) {
+        res.status(400).json({ error: 'Invalid activation token' });
+        return;
+      }
+
+      const valid =
+        typeof accountActivationTokenService.activateAccount === 'function'
+          ? await accountActivationTokenService.activateAccount(
+              token,
+              this.userService,
+            )
+          : await accountActivationTokenService.consumeToken(token);
+      if (!valid) {
+        res.status(400).json({ error: 'Invalid activation token' });
+        return;
+      }
+
+      if (typeof accountActivationTokenService.activateAccount !== 'function') {
+        await this.userService.setUserActivated(valid.userId, true);
+        await this.userService.grantPlatformAdminRole(valid.userId);
+      }
+
+      const activatedUser = await this.userService.findById(valid.userId);
+      if (!activatedUser) {
+        res.status(500).json({ error: 'Activated user not found' });
+        return;
+      }
+
+      await this.sendAuthenticatedResponse(res, {
+        userId: activatedUser.userId,
+        email: activatedUser.email,
+        nickname: activatedUser.nickname,
+        activated: true,
+      });
+    });
+
     app.post(
       '/api/logout',
       requireAuth,
@@ -248,6 +485,7 @@ export class AuthController {
         id: reqWithUser.authenticatedUser.userId,
         email: reqWithUser.authenticatedUser.email,
         nickname: reqWithUser.authenticatedUser.nickname,
+        activated: reqWithUser.authenticatedUser.activated,
       });
     });
 
@@ -265,6 +503,7 @@ export class AuthController {
           userId: reqWithUser.authenticatedUser.userId,
           email: reqWithUser.authenticatedUser.email,
           nickname: reqWithUser.authenticatedUser.nickname,
+          activated: reqWithUser.authenticatedUser.activated,
         });
 
         res.json({
@@ -274,6 +513,7 @@ export class AuthController {
             userId: reqWithUser.authenticatedUser.userId,
             email: reqWithUser.authenticatedUser.email,
             nickname: reqWithUser.authenticatedUser.nickname,
+            activated: reqWithUser.authenticatedUser.activated,
           },
           token,
           token_type: 'Bearer',

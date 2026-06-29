@@ -1,6 +1,6 @@
 import type { Express, Response, Request } from 'express';
 import { ReservationService } from '../services/ReservationService';
-import { requireAuth } from './AuthMiddleware';
+import { requireActivated, requireAuth } from './AuthMiddleware';
 
 type AuthenticatedRequest = Request & {
   authenticatedUser: {
@@ -20,6 +20,7 @@ export class ServiceController {
     app.get(
       '/api/services',
       requireAuth,
+      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req);
         if (!userId) {

@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { Request } from 'express';
 
 import { AuthController } from '../../controllers/AuthController';
+import * as AuthMiddleware from '../../controllers/AuthMiddleware';
 import { requireAuth } from '../../controllers/AuthMiddleware';
 import { User } from '../../entities/User';
 
@@ -22,7 +23,18 @@ type JwtUserIdentity = {
   userId: string;
   email: string;
   nickname: string;
+  activated?: boolean;
 };
+
+const requireActivated = (
+  AuthMiddleware as {
+    requireActivated?: (
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ) => Promise<unknown> | void;
+  }
+).requireActivated;
 
 class FakeJwtAuthService {
   private issueCount = 0;
@@ -453,4 +465,87 @@ test('Protected renew endpoint rejects invalid token with 401', async () => {
     }),
   );
   assert.equal(response.statusCode, 401);
+});
+
+test('Activated users can access activation-gated routes', async () => {
+  if (!requireActivated) {
+    assert.fail('requireActivated middleware is not exported');
+  }
+  const app = express();
+  app.use(express.json());
+  const jwtService = new FakeJwtAuthService(3600);
+  const controller = createAuthController(jwtService);
+  controller.register(app);
+  app.get(
+    '/api/activated-route',
+    requireAuth,
+    requireActivated,
+    (_req, res) => {
+      res.json({ ok: true, activated: true });
+    },
+  );
+
+  const token = await jwtService.issueToken({
+    userId: 'user-1',
+    email: 'alice@example.com',
+    nickname: 'Alice',
+    activated: true,
+  });
+  const response = await runHandlers(
+    getRouteHandlers(app, 'get', '/api/activated-route'),
+    createRequest({
+      app,
+      method: 'GET',
+      path: '/api/activated-route',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.body as { ok?: boolean }).ok, true);
+});
+
+test('Non-activated users get 403 on activation-gated app routes', async () => {
+  if (!requireActivated) {
+    assert.fail('requireActivated middleware is not exported');
+  }
+  const app = express();
+  app.use(express.json());
+  const jwtService = new FakeJwtAuthService(3600);
+  const controller = createAuthController(jwtService);
+  controller.register(app);
+  app.get(
+    '/api/activated-route',
+    requireAuth,
+    requireActivated,
+    (_req, res) => {
+      res.json({ ok: true });
+    },
+  );
+
+  const token = await jwtService.issueToken({
+    userId: 'user-1',
+    email: 'alice@example.com',
+    nickname: 'Alice',
+    activated: false,
+  });
+  const response = await runHandlers(
+    getRouteHandlers(app, 'get', '/api/activated-route'),
+    createRequest({
+      app,
+      method: 'GET',
+      path: '/api/activated-route',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Account not activated',
+  );
 });

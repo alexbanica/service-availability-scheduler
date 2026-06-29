@@ -83,19 +83,37 @@ environments; it does not create them inline.
   - `token`
   - `token_type: "Bearer"`
   - `expires_in_seconds`
+  - `user.activated`.
 - `POST /api/password-reset/captcha`: returns `challenge_id` and `challenge_prompt`.
 - `POST /api/password-reset/request`: validates CAPTCHA and creates or replaces an
   active reset token for existing users. Response is generic and does not expose
   whether an account exists.
 - `POST /api/password-reset/validate`: validates `{ "token" }` and returns `ok: true` for active tokens.
 - `POST /api/password-reset`: accepts `{ "token": "...", "password": "...", "confirm_password": "..." }`, requires matching password and confirmation, sets the user password, and returns generic success. Responses are generic and do not return a token.
+- `POST /api/register/captcha`: returns `{ "challenge_id", "challenge_prompt" }`.
+- `POST /api/register`: accepts registration values, validates required fields
+  and CAPTCHA, creates a non-activated user, creates a one-time activation token,
+  and returns `{ ok: true }`.
+  The activation link is currently logged on the server with a TODO for email delivery.
+- `POST /api/account-activation/validate`: validates `{ "token": "..." }` and returns
+  `ok: true` for a valid activation token.
+- `POST /api/account-activation`: accepts `{ "token": "..." }`, activates the user,
+  grants `platform_admin`, and returns `{ ok: true }`.
 - `POST /api/renew`: protected endpoint that issues a replacement token and
   returns the same response shape.
 - `POST /api/logout`: protected endpoint maintained for compatibility; server-side
   logout is stateless.
 - `GET /api/me`: protected endpoint returning authenticated user identity from the
   token context.
+  `GET /api/me` and `/api/renew` include `activated` in the returned user object.
 - Protected API calls send `Authorization: Bearer <token>`.
+
+Activation policy:
+- Non-activated users may call: `/api/register/*`, `/api/account-activation/*`,
+  `/api/renew`, `/api/logout`, `/api/me`, `/api/app-info`, page routes, and static assets.
+- Protected service, reservation, workspace, owner, environment, invitation, and
+  workspace-user APIs require activation and return `403` when a non-activated user
+  calls them.
 
 Client stores the token in `localStorage` (`auth_token`) and calls
 `/api/renew` before expiry when possible. A failed authorized call (`401`) clears

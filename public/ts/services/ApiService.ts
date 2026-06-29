@@ -40,6 +40,10 @@ export class ApiService {
       '/api/password-reset/request',
       '/api/password-reset/validate',
       '/api/password-reset',
+      '/api/register/captcha',
+      '/api/register',
+      '/api/account-activation/validate',
+      '/api/account-activation',
     ].includes(path);
 
     const token = AuthTokenStorage.getToken();

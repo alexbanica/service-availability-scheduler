@@ -30,19 +30,22 @@ function getRouteHandler(app: express.Express, path: string): RouteHandler {
 function createResponse(): {
   response: Response;
   headers: Record<string, string>;
+  sentFiles: string[];
 } {
   const headers: Record<string, string> = {};
+  const sentFiles: string[] = [];
   const response = {
     set(values: Record<string, string>) {
       Object.assign(headers, values);
       return this;
     },
-    sendFile() {
+    sendFile(filePath: string) {
+      sentFiles.push(filePath);
       return this;
     },
   } as unknown as Response;
 
-  return { response, headers };
+  return { response, headers, sentFiles };
 }
 
 test('PageController disables browser caching for authenticated app page', () => {
@@ -59,4 +62,19 @@ test('PageController disables browser caching for authenticated app page', () =>
   );
   assert.equal(headers.Pragma, 'no-cache');
   assert.equal(headers.Expires, '0');
+});
+
+test('PageController serves registration page under /register', () => {
+  const app = express();
+  new PageController('/repo').register(app);
+  const handler = getRouteHandler(app, '/register');
+  const { response, headers, sentFiles } = createResponse();
+
+  handler({} as Request, response);
+
+  assert.equal(
+    headers['Cache-Control'],
+    'no-store, no-cache, must-revalidate, private',
+  );
+  assert.equal(sentFiles[0], '/repo/public/login.html');
 });
