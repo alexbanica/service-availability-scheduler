@@ -3,13 +3,14 @@ import { ThemeHelper, Theme } from '../helpers/ThemeHelper.js';
 
 export class ResetPasswordController {
   bootstrap(Vue: any): void {
-    const { createApp, ref, computed, onMounted } = Vue as {
+    const { createApp, ref, computed, onMounted, onBeforeUnmount } = Vue as {
       createApp: (options: Record<string, unknown>) => {
         mount: (selector: string) => void;
       };
       ref: <T>(value: T) => { value: T };
       computed: <T>(fn: () => T) => { value: T };
       onMounted: (fn: () => void | Promise<void>) => void;
+      onBeforeUnmount: (fn: () => void) => void;
     };
 
     createApp({
@@ -25,6 +26,16 @@ export class ResetPasswordController {
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
         const token = window.location.pathname.split('/').pop() || '';
         const isTokenValid = ref(false);
+        let loginRedirectTimeout: number | undefined;
+
+        const scheduleLoginRedirect = () => {
+          if (loginRedirectTimeout !== undefined) {
+            window.clearTimeout(loginRedirectTimeout);
+          }
+          loginRedirectTimeout = window.setTimeout(() => {
+            window.location.href = '/login';
+          }, 5000);
+        };
 
         const applyTheme = (value: Theme) => {
           theme.value = value;
@@ -43,12 +54,14 @@ export class ResetPasswordController {
           try {
             if (!token) {
               tokenError.value = 'Invalid reset token.';
+              scheduleLoginRedirect();
               return;
             }
             await PasswordResetService.validateToken(token);
             isTokenValid.value = true;
           } catch (err) {
             tokenError.value = (err as Error).message;
+            scheduleLoginRedirect();
           } finally {
             loading.value = false;
           }
@@ -71,6 +84,7 @@ export class ResetPasswordController {
               confirmPassword.value,
             );
             submitted.value = true;
+            scheduleLoginRedirect();
           } catch (err) {
             error.value = (err as Error).message;
           } finally {
@@ -97,6 +111,12 @@ export class ResetPasswordController {
         onMounted(async () => {
           await validate();
           await loadAppInfo();
+        });
+
+        onBeforeUnmount(() => {
+          if (loginRedirectTimeout !== undefined) {
+            window.clearTimeout(loginRedirectTimeout);
+          }
         });
 
         return {
