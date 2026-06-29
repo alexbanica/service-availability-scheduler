@@ -6,10 +6,12 @@ export class PageController {
 
   register(app: Express): void {
     app.get('/login', (_req: Request, res: Response) => {
+      this.disablePageCache(res);
       res.sendFile(path.join(this.rootDir, 'public', 'login.html'));
     });
 
     app.get('/reset-password/:token', (_req: Request, res: Response) => {
+      this.disablePageCache(res);
       res.sendFile(path.join(this.rootDir, 'public', 'reset-password.html'));
     });
 
@@ -20,7 +22,16 @@ export class PageController {
     });
 
     app.get('/', (_req: Request, res: Response) => {
+      this.disablePageCache(res);
       res.sendFile(path.join(this.rootDir, 'public', 'index.html'));
+    });
+  }
+
+  private disablePageCache(res: Response): void {
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      Pragma: 'no-cache',
+      Expires: '0',
     });
   }
 }

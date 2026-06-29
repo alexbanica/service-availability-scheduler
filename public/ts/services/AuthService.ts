@@ -17,9 +17,12 @@ export class AuthService {
   }
 
   static async logout(): Promise<void> {
-    await ApiService.post('/api/logout');
-    AuthTokenStorage.clearToken();
-    window.location.href = '/login';
+    try {
+      await ApiService.post('/api/logout');
+    } finally {
+      AuthTokenStorage.clearToken();
+      this.redirectToLogin();
+    }
   }
 
   static async renew(): Promise<boolean> {
@@ -27,7 +30,7 @@ export class AuthService {
       const response = await ApiService.post('/api/renew');
       if (response.status === 401) {
         AuthTokenStorage.clearToken();
-        window.location.href = '/login';
+        this.redirectToLogin();
         return false;
       }
 
@@ -57,6 +60,27 @@ export class AuthService {
 
   static hasToken(): boolean {
     return AuthTokenStorage.hasStoredToken();
+  }
+
+  static isAuthenticated(): boolean {
+    return this.hasToken() && !this.isTokenExpired();
+  }
+
+  static redirectToLogin(): void {
+    if (typeof window.location.replace === 'function') {
+      window.location.replace('/login');
+      return;
+    }
+    window.location.href = '/login';
+  }
+
+  static redirectToLoginWhenUnauthenticated(): boolean {
+    if (this.isAuthenticated()) {
+      return false;
+    }
+    document.documentElement.classList.add('auth-redirecting');
+    this.redirectToLogin();
+    return true;
   }
 
   static isTokenRenewalDue(refreshBeforeMs: number): boolean {

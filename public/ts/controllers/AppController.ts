@@ -459,8 +459,9 @@ export class AppController {
           }
         };
 
-        const loadUser = async () => {
+        const loadUser = async (): Promise<User | null> => {
           user.value = await AuthService.loadUser();
+          return user.value;
         };
 
         const loadWorkspaces = async () => {
@@ -1588,8 +1589,12 @@ export class AppController {
         onMounted(async () => {
           applyTheme(theme.value);
           try {
-            await loadUser();
-            if (AuthService.hasToken() && !AuthService.isTokenExpired()) {
+            const loadedUser = await loadUser();
+            if (!loadedUser) {
+              AuthService.redirectToLogin();
+              return;
+            }
+            if (AuthService.isAuthenticated()) {
               scheduleTokenRenewal();
             }
             await loadWorkspaces();

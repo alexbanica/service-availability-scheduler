@@ -80,6 +80,8 @@ const { AuthService } = requireFromRoot(
 ) as {
   AuthService: {
     renew: () => Promise<boolean>;
+    logout: () => Promise<void>;
+    redirectToLoginWhenUnauthenticated: () => boolean;
   };
 };
 
@@ -137,11 +139,13 @@ function createWindowAndStorage(): {
   set: (key: string, value: string) => void;
   remove: (key: string) => void;
   clear: () => void;
+  hasDocumentClass: (className: string) => boolean;
   getHref: () => string;
   setHref: (nextHref: string) => void;
   restore: () => void;
 } {
   const data = new Map<string, string>();
+  const classes = new Set<string>();
   let href = '/';
 
   const localStorage = {
@@ -164,6 +168,9 @@ function createWindowAndStorage(): {
   const originalWindow = (
     globalThis as unknown as { window?: { location?: { href: string } } }
   ).window;
+  const originalDocument = (
+    globalThis as unknown as { document?: { documentElement?: unknown } }
+  ).document;
 
   Object.defineProperty(globalThis, 'localStorage', {
     value: localStorage,
@@ -179,6 +186,26 @@ function createWindowAndStorage(): {
         set href(nextHref: string) {
           href = nextHref;
         },
+        replace(nextHref: string) {
+          href = nextHref;
+        },
+      },
+    },
+    configurable: true,
+  });
+
+  Object.defineProperty(globalThis, 'document', {
+    value: {
+      documentElement: {
+        classList: {
+          add: (className: string): void => {
+            classes.add(className);
+          },
+          remove: (className: string): void => {
+            classes.delete(className);
+          },
+          contains: (className: string): boolean => classes.has(className),
+        },
       },
     },
     configurable: true,
@@ -189,6 +216,7 @@ function createWindowAndStorage(): {
     set: (key: string, value: string) => localStorage.setItem(key, value),
     remove: (key: string) => localStorage.removeItem(key),
     clear: () => localStorage.clear(),
+    hasDocumentClass: (className: string) => classes.has(className),
     getHref: () => href,
     setHref: (nextHref: string) => {
       href = nextHref;
@@ -207,6 +235,14 @@ function createWindowAndStorage(): {
       } else {
         Object.defineProperty(globalThis, 'window', {
           value: originalWindow,
+          configurable: true,
+        });
+      }
+      if (originalDocument === undefined) {
+        delete (globalThis as { document?: object }).document;
+      } else {
+        Object.defineProperty(globalThis, 'document', {
+          value: originalDocument,
           configurable: true,
         });
       }
@@ -404,6 +440,35 @@ test('ApiService clears token and redirects on 401', async () => {
   await ApiService.get('/api/me');
 
   assert.equal(get('auth_token'), null);
+  assert.equal(getHref(), '/login');
+
+  fetch.restore();
+  restore();
+});
+
+test('AuthService redirects and hides restored app page without a valid token', () => {
+  const { restore, getHref, hasDocumentClass } = createWindowAndStorage();
+
+  const redirected = AuthService.redirectToLoginWhenUnauthenticated();
+
+  assert.equal(redirected, true);
+  assert.equal(getHref(), '/login');
+  assert.equal(hasDocumentClass('auth-redirecting'), true);
+
+  restore();
+});
+
+test('AuthService.logout clears token and redirects even when logout request fails', async () => {
+  const { set, get, restore, getHref } = createWindowAndStorage();
+  const fetch = setupFetchMock(() => Promise.reject(new Error('network down')));
+
+  set('auth_token', 'stored-token');
+  set('auth_token_expires_at_ms', '999999999');
+
+  await assert.rejects(() => AuthService.logout(), /network down/);
+
+  assert.equal(get('auth_token'), null);
+  assert.equal(get('auth_token_expires_at_ms'), null);
   assert.equal(getHref(), '/login');
 
   fetch.restore();

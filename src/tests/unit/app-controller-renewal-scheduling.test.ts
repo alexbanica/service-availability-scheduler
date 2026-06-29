@@ -38,7 +38,9 @@ const { AppController } = requireFromRoot(
   path.join(buildRoot, 'controllers/AppController.js'),
 ) as {
   AppController: {
-    prototype: { scheduleTokenRenewal: () => void };
+    prototype: {
+      scheduleTokenRenewal: () => void;
+    };
     new (): {
       scheduleTokenRenewal: () => void;
     };

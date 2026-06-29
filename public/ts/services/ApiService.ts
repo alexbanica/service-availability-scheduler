@@ -58,7 +58,11 @@ export class ApiService {
 
     if (response.status === 401 && !isUnauthenticatedRoute) {
       AuthTokenStorage.clearToken();
-      window.location.href = '/login';
+      if (typeof window.location.replace === 'function') {
+        window.location.replace('/login');
+      } else {
+        window.location.href = '/login';
+      }
       return response;
     }
 

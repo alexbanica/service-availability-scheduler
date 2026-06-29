@@ -35,7 +35,7 @@ export class LoginController {
           submitting.value = true;
           try {
             await LoginService.login(email.value.trim(), password.value);
-            window.location.href = '/';
+            window.location.replace('/');
           } catch (err) {
             error.value = (err as Error).message;
           } finally {
