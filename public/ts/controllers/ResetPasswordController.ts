@@ -15,6 +15,7 @@ export class ResetPasswordController {
     createApp({
       setup: () => {
         const password = ref('');
+        const confirmPassword = ref('');
         const loading = ref(false);
         const submitted = ref(false);
         const submitting = ref(false);
@@ -55,10 +56,20 @@ export class ResetPasswordController {
 
         const submitReset = async () => {
           error.value = '';
+
+          if (password.value !== confirmPassword.value) {
+            error.value = 'Password confirmation does not match';
+            return;
+          }
+
           submitting.value = true;
 
           try {
-            await PasswordResetService.resetPassword(token, password.value);
+            await PasswordResetService.resetPassword(
+              token,
+              password.value,
+              confirmPassword.value,
+            );
             submitted.value = true;
           } catch (err) {
             error.value = (err as Error).message;
@@ -90,6 +101,7 @@ export class ResetPasswordController {
 
         return {
           password,
+          confirmPassword,
           loading,
           submitted,
           submitting,

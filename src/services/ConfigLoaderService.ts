@@ -6,6 +6,7 @@ export type AppConfig = {
   autoRefreshSeconds: number;
   jwtExpiresInSeconds: number;
   passwordResetTokenExpiresInSeconds: number;
+  runMigrationsOnStartup: boolean;
 };
 
 export class ConfigLoaderService {
@@ -16,13 +17,55 @@ export class ConfigLoaderService {
     const jwtExpiresInSeconds = this.resolveJwtExpiresInSeconds(appConfig);
     const passwordResetTokenExpiresInSeconds =
       this.resolvePasswordResetTokenExpiresInSeconds(appConfig);
+    const runMigrationsOnStartup =
+      this.resolveRunMigrationsOnStartup(appConfig);
 
     return {
       expiryWarningMinutes,
       autoRefreshSeconds,
       jwtExpiresInSeconds,
       passwordResetTokenExpiresInSeconds,
+      runMigrationsOnStartup,
     };
+  }
+
+  private resolveRunMigrationsOnStartup(
+    appConfig: Record<string, unknown>,
+  ): boolean {
+    const rawEnvValue = process.env.RUN_MIGRATIONS_ON_STARTUP;
+    if (rawEnvValue !== undefined) {
+      const envValue = rawEnvValue.trim().toLowerCase();
+      if (envValue === 'true') {
+        return true;
+      }
+      if (envValue === 'false') {
+        return false;
+      }
+      throw new Error(
+        `Invalid RUN_MIGRATIONS_ON_STARTUP value: ${rawEnvValue}`,
+      );
+    }
+
+    const rawFileValue = appConfig.run_migrations_on_startup;
+    if (rawFileValue === undefined) {
+      return true;
+    }
+
+    if (typeof rawFileValue === 'boolean') {
+      return rawFileValue;
+    }
+
+    const fileValue = String(rawFileValue).trim().toLowerCase();
+    if (fileValue === 'true') {
+      return true;
+    }
+    if (fileValue === 'false') {
+      return false;
+    }
+
+    throw new Error(
+      `Invalid run_migrations_on_startup value: ${String(rawFileValue)}`,
+    );
   }
 
   private resolveJwtExpiresInSeconds(

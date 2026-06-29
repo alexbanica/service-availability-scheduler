@@ -42,7 +42,7 @@ async function start() {
   const configLoader = new ConfigLoaderService();
   const config = configLoader.loadConfig(APP_CONFIG_PATH);
 
-  db = await initDb();
+  db = await initDb(config.runMigrationsOnStartup);
 
   const userRepository = new UserRepository(db);
   const reservationRepository = new ReservationRepository(db);

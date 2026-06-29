@@ -60,10 +60,15 @@ export class PasswordResetService {
     return Boolean(data.ok);
   }
 
-  static async resetPassword(token: string, password: string): Promise<void> {
+  static async resetPassword(
+    token: string,
+    password: string,
+    confirmPassword: string,
+  ): Promise<void> {
     const response = await ApiService.post('/api/password-reset', {
       token,
       password,
+      confirm_password: confirmPassword,
     });
     const data = (await response.json()) as {
       ok?: boolean;

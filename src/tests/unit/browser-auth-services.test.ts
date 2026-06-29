@@ -54,6 +54,27 @@ const { LoginService } = requireFromRoot(
   };
 };
 
+const { PasswordResetService } = requireFromRoot(
+  path.join(buildRoot, 'services/PasswordResetService.js'),
+) as {
+  PasswordResetService: {
+    requestChallenge: () => Promise<{
+      challengeId: string;
+      challengePrompt: string;
+    }>;
+    requestPasswordReset: (
+      email: string,
+      challengeId: string,
+      challengeAnswer: string,
+    ) => Promise<void>;
+    resetPassword: (
+      token: string,
+      password: string,
+      confirmPassword: string,
+    ) => Promise<void>;
+  };
+};
+
 const { AuthService } = requireFromRoot(
   path.join(buildRoot, 'services/AuthService.js'),
 ) as {
@@ -265,6 +286,59 @@ test('LoginService stores token returned by /api/login', async () => {
 
   fetch.restore();
   clear();
+  restore();
+});
+
+test('PasswordResetService.requestPasswordReset sends email and captcha payload', async () => {
+  const { restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        ok: true,
+        challenge_id: 'challenge-id',
+        challenge_prompt: 'Any?',
+      }),
+    ),
+  );
+
+  await PasswordResetService.requestPasswordReset(
+    'alice@example.com',
+    'challenge-id',
+    'answer',
+  );
+
+  const request = fetch.state[0];
+  const payload = JSON.parse(request.body ?? '{}');
+  assert.equal(payload.email, 'alice@example.com');
+  assert.equal(payload.challenge_id, 'challenge-id');
+  assert.equal(payload.challenge_answer, 'answer');
+
+  fetch.restore();
+  restore();
+});
+
+test('PasswordResetService.resetPassword submits token, password, and confirmation', async () => {
+  const { restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        ok: true,
+      }),
+    ),
+  );
+
+  await PasswordResetService.resetPassword(
+    'token-123',
+    'new-password',
+    'confirm-password',
+  );
+
+  const payload = JSON.parse(fetch.state[0]?.body ?? '{}');
+  assert.equal(payload.token, 'token-123');
+  assert.equal(payload.password, 'new-password');
+  assert.equal(payload.confirm_password, 'confirm-password');
+
+  fetch.restore();
   restore();
 });
 

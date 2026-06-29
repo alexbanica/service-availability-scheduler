@@ -182,6 +182,12 @@ export class AuthController {
 
       const token = String(req.body.token || req.body.reset_token || '');
       const password = String(req.body.password || req.body.new_password || '');
+      const confirmPassword = String(
+        req.body.confirm_password ||
+          req.body.confirmPassword ||
+          req.body.password_confirmation ||
+          '',
+      );
 
       if (!token) {
         res.status(400).json({ error: 'Reset token required' });
@@ -190,6 +196,16 @@ export class AuthController {
 
       if (!password) {
         res.status(400).json({ error: 'Password required' });
+        return;
+      }
+
+      if (!confirmPassword) {
+        res.status(400).json({ error: 'Password confirmation required' });
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        res.status(400).json({ error: 'Password confirmation does not match' });
         return;
       }
 

@@ -8,6 +8,8 @@ import { User } from '../../entities/User';
 import type { PasswordResetTokenValidation } from '../../services/PasswordResetTokenService';
 
 class PasswordServiceStub {
+  public hashPasswordCalls = 0;
+
   constructor(private readonly acceptedPassword: string) {}
 
   validatePassword(password: string): boolean {
@@ -15,6 +17,7 @@ class PasswordServiceStub {
   }
 
   async hashPassword(password: string): Promise<string> {
+    this.hashPasswordCalls += 1;
     return `hash-${password}`;
   }
 
@@ -777,7 +780,11 @@ test('POST /api/password-reset rejects short passwords and updates user hash on 
       app,
       method: 'POST',
       path: '/api/password-reset',
-      body: { token: 'resetToken', password: 'tiny' },
+      body: {
+        token: 'resetToken',
+        password: 'tiny',
+        confirm_password: 'tiny',
+      },
     }),
   );
   assert.equal(short.statusCode, 400);
@@ -792,7 +799,11 @@ test('POST /api/password-reset rejects short passwords and updates user hash on 
       app,
       method: 'POST',
       path: '/api/password-reset',
-      body: { token: 'resetToken', password: 'longer-password' },
+      body: {
+        token: 'resetToken',
+        password: 'longer-password',
+        confirm_password: 'longer-password',
+      },
     }),
   );
   assert.equal(success.statusCode, 200);
@@ -805,4 +816,115 @@ test('POST /api/password-reset rejects short passwords and updates user hash on 
   );
   assert.equal(tokenService.consumeCount, 1);
   assert.equal(userService.updatedPasswordHash, 'user-1:hash-longer-password');
+});
+
+test('POST /api/password-reset requires confirmation password before token consumption', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new PasswordResetTokenServiceStub({
+    validateMap: {
+      resetToken: { tokenId: 'token-1', userId: 'user-1' },
+    },
+    consumeMap: {
+      resetToken: { tokenId: 'token-1', userId: 'user-1' },
+    },
+  });
+  const user = createUser('alice@example.com', true);
+  const userService = new FakeUserService(user);
+  const fakePasswordService = new PasswordServiceStub('any-password');
+  const logger = new ResetLoggerStub();
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    new FakeJwtAuthService(3600),
+    fakePasswordService as unknown,
+    new CaptchaServiceStub(
+      () => ({ challengeId: 'challenge-id', prompt: 'ignored' }),
+      false,
+    ) as unknown,
+    tokenService as unknown,
+    logger as unknown,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/password-reset');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset',
+      body: {
+        token: 'resetToken',
+        password: 'longer-password',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Password confirmation required',
+  );
+  assert.equal(fakePasswordService.hashPasswordCalls, 0);
+  assert.equal(tokenService.consumeCount, 0);
+  assert.equal(userService.updatedPasswordHash, null);
+});
+
+test('POST /api/password-reset rejects mismatched confirmation before token consumption', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new PasswordResetTokenServiceStub({
+    validateMap: {
+      resetToken: { tokenId: 'token-1', userId: 'user-1' },
+    },
+    consumeMap: {
+      resetToken: { tokenId: 'token-1', userId: 'user-1' },
+    },
+  });
+  const user = createUser('alice@example.com', true);
+  const userService = new FakeUserService(user);
+  const fakePasswordService = new PasswordServiceStub('any-password');
+  const logger = new ResetLoggerStub();
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    new FakeJwtAuthService(3600),
+    fakePasswordService as unknown,
+    new CaptchaServiceStub(
+      () => ({ challengeId: 'challenge-id', prompt: 'ignored' }),
+      false,
+    ) as unknown,
+    tokenService as unknown,
+    logger as unknown,
+  );
+  controller.register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/password-reset');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset',
+      body: {
+        token: 'resetToken',
+        password: 'longer-password',
+        confirm_password: 'different-password',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Password confirmation does not match',
+  );
+  assert.equal(fakePasswordService.hashPasswordCalls, 0);
+  assert.equal(tokenService.consumeCount, 0);
+  assert.equal(userService.updatedPasswordHash, null);
 });

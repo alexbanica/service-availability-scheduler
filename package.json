@@ -9,6 +9,7 @@
     "build": "npm run clean && npm install && tsc -p tsconfig.json && tsc -p tsconfig.client.json",
     "start": "node dist/service-availability-scheduler.js",
     "dev": "tsc -p tsconfig.client.json && ts-node --files src/service-availability-scheduler.ts",
+    "migrate": "ts-node --files src/migrate.ts",
     "test": "node -r ts-node/register --test src/tests/**/*.test.ts",
     "lint": "eslint 'src/**/*.{js,ts}' --fix",
     "clean": "rm -rf dist && rm -rf public/js && rm -rf node_modules",

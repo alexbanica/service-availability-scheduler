@@ -6,7 +6,7 @@ Approved spec reference: `specs/SPEC-password-login-reset-password.md`
 
 ## Objective
 
-Implement password-required login and reset-password flows against the approved spec while preserving the existing JWT bearer success contract after authentication succeeds.
+Implement password-required login and reset-password flows against the approved spec while preserving the existing JWT bearer success contract after authentication succeeds, adding a tracked migration mechanism for existing databases, and requiring password confirmation during reset.
 
 ## Target Branch
 
@@ -28,8 +28,13 @@ Implement password-required login and reset-password flows against the approved 
 
 - `config/app.yml`
 - `config/schema/users.sql`
-- new schema file under `config/schema` for password reset tokens
+- `config/schema/password_reset_tokens.sql`
+- new schema file under `config/schema` for migration tracking bootstrap if the implementation keeps bootstrap schema in SQL
+- new table-scoped migration files under a deterministic migration directory such as `config/migrations`
+- `package.json`
 - `src/db.ts`
+- new database migration runner, repository, service, or helper files under `src/db`, `src/services`, `src/repositories`, or `src/helpers` if useful
+- new migration CLI entrypoint under `src` or `scripts`
 - `src/service-availability-scheduler.ts`
 - `src/services/ConfigLoaderService.ts`
 - `src/services/UserService.ts`
@@ -51,18 +56,24 @@ Implement password-required login and reset-password flows against the approved 
 - `public/ts/login.ts`
 - new browser entrypoint file under `public/ts` if a separate reset page is added
 - `src/tests/unit/config-loader-service.test.ts`
+- new focused migration tests under `src/tests/unit`
 - `src/tests/unit/auth-middleware-controller.test.ts`
 - `src/tests/unit/browser-auth-services.test.ts`
 - new focused backend unit tests under `src/tests/unit`
 - `src/tests/integration/workspace-service-db.test.ts` or a new integration test file if repository persistence coverage is practical
 - `README.md`
-- `AGENTS.md` only if implementation changes future-agent workflow expectations
+- `AGENTS.md`
 
 ## Ownership Boundaries
 
 - Keep password hashing, password validation, reset-token lifecycle, and captcha validation outside Express route handlers where practical.
 - Controllers may coordinate request parsing, service calls, status codes, and response bodies.
 - Repositories own MySQL persistence details and must continue to use repository patterns from the existing codebase.
+- Migration execution must be centralized in the database setup boundary or a dedicated migration service invoked by that boundary; controllers and application use cases must not run migrations.
+- Migration files must use deterministic execution-order names that identify the affected table, and must be split per table unless a tightly related table group must change atomically.
+- Migration tracking table creation must be a bootstrap step that always runs before application migration discovery.
+- Startup migration execution must be controlled by a feature flag that defaults to enabled.
+- The explicit npm migration job must use the same migration runner and migrations table, and must run pending migrations even when startup migration execution is disabled.
 - Domain entities, DTOs, and application services must remain independent of Express, browser DOM, and runtime filesystem concerns.
 - Browser request shaping and response handling must stay in browser service/controller files under `public/ts`.
 - Do not commit generated `public/js` bundles, `.env` files, credentials, database dumps, or `node_modules`.
@@ -111,15 +122,26 @@ The test-focused subagent must add or update deterministic tests before producti
    - password reset stores the new password hash, marks the token used, invalidates other active tokens, and does not issue a JWT
 
 5. Repository/persistence behavior where practical:
+   - migrations tracking table bootstrap runs before migration discovery
+   - migration files use deterministic table-scoped naming
+   - the original password-login schema changes are split into separate table-scoped migrations
+   - pending migrations run once and are recorded
+   - recorded migrations are skipped
+   - startup migration execution defaults to enabled
+   - startup migration execution is skipped when the feature flag is disabled
+   - the npm migration job uses the same runner/table and can execute pending migrations explicitly
    - user password hash persists and loads by email/id
+   - existing `users` tables missing `password_hash` are repaired by the users-table migration
    - reset-token records persist with user id, token/hash, expiry, used marker, and invalidation state
+   - existing databases missing `password_reset_tokens` create it through the password-reset-token-table migration
    - single-active-token behavior holds in MySQL-backed repository tests if `TEST_DATABASE_URL` is configured
 
 6. Browser behavior where practical:
    - login service sends email and password
    - API helper omits bearer auth for unauthenticated login/reset/captcha endpoints
    - forgot-password service sends email and captcha fields and handles generic success
-   - reset-password service validates tokens and submits new passwords
+   - reset-password service validates tokens and submits new password plus confirmation password
+   - reset-password controller prevents submission when password and confirmation do not match
    - browser auth storage behavior remains unchanged for successful login
 
 If a browser or integration test is impractical under current local tooling, the test-focused subagent must state the gap and the main implementation must cover it through TypeScript validation, code review, and manual QA instructions.
@@ -132,75 +154,103 @@ If a browser or integration test is impractical under current local tooling, the
    - parse `password_reset_token_expires_in_seconds`
    - parse `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`
    - apply environment precedence, default `3600`, and invalid-value rejection
+   - add a startup migration feature flag to config or environment parsing with default enabled
    - add the default key to `config/app.yml`
 3. Update schema initialization:
-   - add nullable password-hash storage to `users`
-   - add a reset-token schema file with user reference, token verifier, expiry timestamp, used marker, invalidation marker or equivalent, and created/used timestamps
+   - keep clean-database create-table schema files aligned with final table shape
+   - ensure clean startup always creates or verifies the migrations tracking table before application migration discovery
+   - add nullable password-hash storage to `users` for clean database creation
+   - add a reset-token schema file with user reference, token verifier, expiry timestamp, used marker, invalidation marker or equivalent, and created/used timestamps for clean database creation
    - update `src/db.ts` schema ordering so the reset-token table is created after `users`
-4. Update user persistence:
+4. Add migration runner support:
+   - create a deterministic migrations table with stable migration identifier, executed timestamp, and any minimal checksum or metadata useful for tracking
+   - discover migration files from the checked-in migration directory in deterministic order
+   - enforce deterministic table-scoped migration naming through runner validation or tests
+   - skip migrations already present in the migrations table
+   - run pending migrations exactly once and record them only after successful execution
+   - make migration execution idempotent for this feature's migrations
+   - expose startup migration execution through the default-enabled feature flag
+   - expose an npm migration job that runs pending migrations explicitly using the same runner and migrations table
+5. Add table-scoped migrations for the original password-login schema changes:
+   - add one users-table migration that adds nullable `users.password_hash` if missing
+   - add one password-reset-token-table migration that creates `password_reset_tokens` if missing
+   - ensure both migrations are safe when their target column/table already exists
+6. Update user persistence:
    - load password-hash state when needed without exposing it in public user JSON
    - add repository methods to update a user's password hash
    - preserve existing `User` shape returned to authenticated clients unless a private type is needed for auth checks
-5. Add password helper/service:
+7. Add password helper/service:
    - validate minimum 8 characters with an extensible rule boundary
    - hash new passwords with a one-way verifier
    - verify submitted passwords against stored hashes
    - ensure helpers never log raw passwords
-6. Add reset-token persistence/service:
+8. Add reset-token persistence/service:
    - generate cryptographically secure reset tokens
    - persist only a token verifier/hash if feasible; otherwise document why raw-token persistence was required by implementation constraints
    - create one active token per user by invalidating previous active tokens for that user
    - validate active tokens without marking them used
    - consume tokens atomically for password reset where practical
    - mark consumed token used and invalidate other active tokens for that user
-7. Add first-party captcha service:
+9. Add first-party captcha service:
    - generate challenge id and display prompt without exposing answer
    - validate challenge answers server-side
    - make successful validation single-use for reset-link requests
    - use deterministic clock injection or a test seam where needed
-8. Update composition root:
+10. Update composition root:
    - instantiate new repositories/services
+   - run schema bootstrap and pending migrations before repositories use migrated tables when startup migrations are enabled
    - pass reset-token lifetime config into the reset-token service
    - pass a logger seam or `console` wrapper for temporary reset URL logging
-9. Update `AuthController`:
+11. Update `AuthController`:
    - require password in `POST /api/login`
    - verify password before issuing the existing JWT payload
    - add unauthenticated captcha challenge endpoint
    - add unauthenticated reset-link request endpoint
    - add unauthenticated reset-token validation endpoint
    - add unauthenticated password-reset submit endpoint
+   - require confirmation password on reset submit
+   - reject missing confirmation password and mismatched confirmation password before hashing, password update, token consumption, or token invalidation
    - use generic reset-link success for known and unknown email after captcha passes
    - log `/reset-password/:token` for known users with a TODO to remove logging when email delivery is implemented
    - ensure reset APIs never return the reset URL
-10. Update unauthenticated API handling:
+12. Update unauthenticated API handling:
    - ensure `requireAuth` or route ordering permits login, captcha, reset-link, reset-token validation, reset-submit, app-info, and page routes without bearer tokens
    - preserve bearer auth requirements for existing protected APIs
-11. Update `PageController`:
+13. Update `PageController`:
    - serve `/reset-password/:token` with the selected reset-password page
    - keep `/login` and `/` behavior compatible with the existing browser app
-12. Update frontend login:
+14. Update frontend login:
    - add password input and submit it with email
    - preserve JWT token storage after successful login
    - add a forgot-password/reset-link UI flow from the login page
    - load captcha challenge, collect answer, submit reset-link request, and show generic success
-13. Update frontend reset page:
+15. Update frontend reset page:
    - validate token on load
    - show invalid-token state for missing, unknown, expired, or used token
    - show new password form only when token is valid
    - enforce visible minimum length validation consistent with backend
-   - submit token plus password
+   - add confirmation password field
+   - prevent submission and show deterministic validation when password and confirmation do not match
+   - submit token plus password and confirmation password
    - show success and provide a path back to `/login`
-14. Update browser services:
+16. Update browser services:
    - add reset/captcha service methods or extend `LoginService`
    - ensure `ApiService` does not attach bearer headers to unauthenticated login/reset/captcha endpoints
    - keep redirect-on-401 behavior for protected API calls
-15. Update README:
+17. Update README:
    - replace email-only login wording with password login
    - document reset endpoints and generic reset response behavior at a high level
    - document reset-token config names, precedence, units, and default
    - document temporary server-side reset URL logging and the TODO for email delivery
-16. Update `AGENTS.md` only if future-agent guidance changes are required.
-17. Confirm generated `public/js` bundles are not staged.
+   - document password reset confirmation requirement
+   - document migrations table, migration file naming/splitting, startup feature flag default enabled behavior, disabled startup behavior, and npm migration job
+18. Update `AGENTS.md`:
+   - document migrations table bootstrap requirements
+   - document deterministic table-scoped migration file naming and splitting
+   - document startup migration feature flag default-enabled behavior
+   - document the npm migration job for explicit migration execution
+   - document that future schema changes must add migration files rather than relying only on edits to existing create-table schema files
+19. Confirm generated `public/js` bundles are not staged.
 
 ## Implementation Subagents
 
@@ -244,6 +294,7 @@ After production implementation, the code-review subagent must review:
 - protected route bearer auth behavior remains unchanged
 - frontend login, forgot-password, and reset-password flows
 - config precedence and validation
+- migration bootstrap, feature flag behavior, table-scoped naming, and npm migration job behavior
 - tests mapped to acceptance criteria
 - documentation accuracy
 
@@ -264,9 +315,15 @@ The main agent must run QA after implementation and review findings are resolved
 9. Confirm `/reset-password/:token` rejects used, expired, unknown, and missing tokens.
 10. Confirm successful reset marks the token used and the new password works for login.
 11. Confirm successful reset does not return a JWT.
-12. Confirm existing protected API requests still require and accept bearer tokens.
-13. Confirm browser TypeScript compiles.
-14. Confirm README matches implemented config and temporary logging behavior.
+12. Confirm missing confirmation password and mismatched confirmation password reject reset without password update or token consumption.
+13. Confirm clean startup creates the migrations table before migration discovery.
+14. Confirm pending migrations run once and are recorded.
+15. Confirm recorded migrations are skipped on a second run.
+16. Confirm disabling startup migrations skips pending migrations at app startup.
+17. Confirm the npm migration job runs pending migrations using the same tracking table.
+18. Confirm existing protected API requests still require and accept bearer tokens.
+19. Confirm browser TypeScript compiles.
+20. Confirm README and AGENTS.md match implemented migration/config/reset-confirmation behavior.
 
 If database-backed runtime QA cannot be run, report it as unvalidated and mark delivery as draft unless equivalent automated coverage fully verifies the affected behavior.
 

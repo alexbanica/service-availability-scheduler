@@ -11,6 +11,7 @@ type AppConfigWithJwt = {
   expiryWarningMinutes: number;
   jwtExpiresInSeconds: number;
   passwordResetTokenExpiresInSeconds: number;
+  runMigrationsOnStartup: boolean;
 };
 
 function writeTempAppConfig(yamlContent: string): string {
@@ -25,6 +26,24 @@ function cleanupConfig(configPath: string): void {
     recursive: true,
     force: true,
   });
+}
+
+function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
+  const previous = process.env[name];
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+  try {
+    return fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = previous;
+    }
+  }
 }
 
 test('missing auto_refresh_seconds uses default value', () => {
@@ -322,6 +341,71 @@ test('non-numeric JWT_EXPIRES_IN_SECONDS is rejected', () => {
     } else {
       process.env.JWT_EXPIRES_IN_SECONDS = previous;
     }
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing RUN_MIGRATIONS_ON_STARTUP defaults to true', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  const previous = process.env.RUN_MIGRATIONS_ON_STARTUP;
+  try {
+    delete process.env.RUN_MIGRATIONS_ON_STARTUP;
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.runMigrationsOnStartup, true);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.RUN_MIGRATIONS_ON_STARTUP;
+    } else {
+      process.env.RUN_MIGRATIONS_ON_STARTUP = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('RUN_MIGRATIONS_ON_STARTUP=false disables startup migrations', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  return withEnv('RUN_MIGRATIONS_ON_STARTUP', 'false', () => {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.runMigrationsOnStartup, false);
+  });
+});
+
+test('run_migrations_on_startup false in app.yml disables startup migrations', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\nrun_migrations_on_startup: false\n',
+  );
+  const previous = process.env.RUN_MIGRATIONS_ON_STARTUP;
+  try {
+    if (previous !== undefined) {
+      delete process.env.RUN_MIGRATIONS_ON_STARTUP;
+    }
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.runMigrationsOnStartup, false);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.RUN_MIGRATIONS_ON_STARTUP;
+    } else {
+      process.env.RUN_MIGRATIONS_ON_STARTUP = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('non-boolean RUN_MIGRATIONS_ON_STARTUP is rejected', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnv('RUN_MIGRATIONS_ON_STARTUP', 'not-a-boolean', () => {
+      assert.throws(() => {
+        new ConfigLoaderService().loadConfig(configPath);
+      }, /RUN_MIGRATIONS_ON_STARTUP/);
+    });
+  } finally {
     cleanupConfig(configPath);
   }
 });
