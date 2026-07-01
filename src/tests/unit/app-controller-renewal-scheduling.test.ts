@@ -127,6 +127,7 @@ type AppState = {
   selectedServiceWorkspaceIsAdmin?: { value: boolean };
   selectedUserWorkspaceId?: { value: string | null };
   selectedWorkspaceUsers?: { value: unknown[] };
+  adminSection?: { value: 'workspace' | 'services' | 'users' };
   setAdminSection?: (section: 'workspace' | 'services' | 'users') => void;
 };
 

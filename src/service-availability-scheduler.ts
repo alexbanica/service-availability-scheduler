@@ -69,15 +69,15 @@ app.use((_req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
     [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
-      "connect-src 'self'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
+      'default-src \'self\'',
+      'script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'',
+      'style-src \'self\' \'unsafe-inline\'',
+      'img-src \'self\' data:',
+      'connect-src \'self\'',
+      'object-src \'none\'',
+      'base-uri \'self\'',
+      'frame-ancestors \'none\'',
+      'form-action \'self\'',
     ].join('; '),
   );
   next();
