@@ -6,7 +6,7 @@ import { UserRoleRepository } from '../repositories/UserRoleRepository';
 import { WorkspaceInvitationRepository } from '../repositories/WorkspaceInvitationRepository';
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
 import { WorkspaceUserRepository } from '../repositories/WorkspaceUserRepository';
-import { Workspace } from '../entities/Workspace';
+import { Workspace, WorkspaceRole } from '../entities/Workspace';
 import { WorkspaceInvitation } from '../entities/WorkspaceInvitation';
 
 export type WorkspaceResourceType =
@@ -61,7 +61,25 @@ export class WorkspaceService {
   ) {}
 
   async listWorkspaces(userId: string): Promise<Workspace[]> {
-    return this.workspaceRepository.listByUser(userId);
+    const workspaces = await this.workspaceRepository.listByUser(userId);
+    return Promise.all(
+      workspaces.map(async (workspace) => {
+        const role = await this.workspaceUserRepository.getRole(
+          workspace.id,
+          userId,
+        );
+        return new Workspace(
+          workspace.id,
+          workspace.name,
+          workspace.adminUserId,
+          workspace.userCount,
+          workspace.serviceCount,
+          workspace.ownerCount,
+          workspace.environmentCount,
+          role ?? workspace.currentUserRole,
+        );
+      }),
+    );
   }
 
   async createWorkspace(userId: string, name: string): Promise<Workspace> {
@@ -104,6 +122,7 @@ export class WorkspaceService {
         0,
         0,
         0,
+        'admin',
       );
     } catch (error) {
       await connection.rollback();
@@ -123,7 +142,7 @@ export class WorkspaceService {
       throw new Error('Environment name is required');
     }
 
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
 
     const existing = await this.serviceRepository.findEnvironmentByName(
       workspaceId,
@@ -153,7 +172,7 @@ export class WorkspaceService {
       throw new Error('Owner name is required');
     }
 
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
 
     const existing = await this.serviceRepository.findOwnerByWorkspaceAndName(
       workspaceId,
@@ -187,7 +206,7 @@ export class WorkspaceService {
       throw new Error('Select at least one environment.');
     }
 
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
 
     const label = (input.label || '').trim();
     if (!label) {
@@ -260,7 +279,7 @@ export class WorkspaceService {
     workspaceId: string,
     userId: string,
   ): Promise<Array<{ environmentId: string; environmentName: string }>> {
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
     return this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
   }
 
@@ -268,7 +287,7 @@ export class WorkspaceService {
     workspaceId: string,
     userId: string,
   ): Promise<Array<{ ownerId: string; name: string }>> {
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
     return this.serviceRepository.listOwnersByWorkspace(workspaceId);
   }
 
@@ -363,7 +382,7 @@ export class WorkspaceService {
     userId: string,
     serviceId: string,
   ): Promise<void> {
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
     const affected = await this.serviceRepository.deleteServiceByWorkspaceAndId(
       workspaceId,
       serviceId,
@@ -399,7 +418,7 @@ export class WorkspaceService {
       throw new Error('At least one environment is required');
     }
 
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
 
     const normalizedOwnerId = this.normalizeOptionalId(
       input.ownerId ?? input.owner_id,
@@ -516,6 +535,116 @@ export class WorkspaceService {
     }
   }
 
+  async listWorkspaceUsers(
+    workspaceId: string,
+    userId: string,
+  ): Promise<Array<{ userId: string; email: string; role: WorkspaceRole }>> {
+    await this.assertWorkspaceAdmin(workspaceId, userId);
+    return this.workspaceRepository.listUsersByWorkspaceWithRole(workspaceId);
+  }
+
+  async updateWorkspaceUserRole(
+    workspaceId: string,
+    actorUserId: string,
+    targetUserId: string,
+    role: string,
+  ): Promise<void> {
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
+
+    await this.assertWorkspaceAdmin(workspace.id, actorUserId);
+
+    if (!this.isValidWorkspaceRole(role)) {
+      throw new Error('Invalid workspace role');
+    }
+
+    const targetRole = await this.workspaceUserRepository.getRole(
+      workspace.id,
+      targetUserId,
+    );
+    if (!targetRole) {
+      throw new Error('Workspace user not found');
+    }
+
+    if (targetRole === 'admin' && role === 'admin') {
+      return;
+    }
+
+    if (
+      targetUserId === actorUserId &&
+      targetRole === 'admin' &&
+      role !== 'admin'
+    ) {
+      throw new Error('Workspace owner cannot change own role');
+    }
+
+    if (targetRole !== 'admin' && role === 'admin') {
+      const adminCount = await this.workspaceUserRepository.countAdmins(
+        workspace.id,
+      );
+      if (adminCount >= 1) {
+        throw new Error('Workspace already has an admin');
+      }
+    }
+
+    if (targetRole === 'admin' && role !== 'admin') {
+      const adminCount = await this.workspaceUserRepository.countAdmins(
+        workspace.id,
+      );
+      if (adminCount <= 1) {
+        throw new Error('Workspace must have one admin');
+      }
+    }
+
+    await this.workspaceUserRepository.updateRole(
+      workspace.id,
+      targetUserId,
+      role,
+    );
+  }
+
+  async removeWorkspaceUser(
+    workspaceId: string,
+    actorUserId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
+
+    await this.assertWorkspaceAdmin(workspace.id, actorUserId);
+
+    const targetRole = await this.workspaceUserRepository.getRole(
+      workspace.id,
+      targetUserId,
+    );
+    if (!targetRole) {
+      throw new Error('Workspace user not found');
+    }
+
+    if (targetUserId === actorUserId && targetRole === 'admin') {
+      throw new Error('Workspace owner cannot remove own membership');
+    }
+
+    const adminCount = await this.workspaceUserRepository.countAdmins(
+      workspace.id,
+    );
+    if (targetRole === 'admin' && adminCount <= 1) {
+      throw new Error('Workspace must have one admin');
+    }
+
+    const removed = await this.workspaceUserRepository.remove(
+      workspace.id,
+      targetUserId,
+    );
+    if (!removed) {
+      throw new Error('Workspace user not found');
+    }
+  }
+
   private async assertWorkspaceAdmin(
     workspaceId: string,
     userId: string,
@@ -531,6 +660,27 @@ export class WorkspaceService {
     if (!isAdmin) {
       throw new Error('Not authorized for workspace');
     }
+  }
+
+  private async assertWorkspaceResourceAdmin(
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
+    const role = await this.workspaceUserRepository.getRole(
+      workspace.id,
+      userId,
+    );
+    if (role !== 'admin' && role !== 'manager') {
+      throw new Error('Not authorized for workspace');
+    }
+  }
+
+  private isValidWorkspaceRole(value: string): value is WorkspaceRole {
+    return value === 'admin' || value === 'manager' || value === 'member';
   }
 
   private async assertWorkspaceMember(

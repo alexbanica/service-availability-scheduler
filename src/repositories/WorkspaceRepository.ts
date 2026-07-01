@@ -1,5 +1,5 @@
 import type { RowDataPacket } from 'mysql2/promise';
-import { Workspace } from '../entities/Workspace';
+import { Workspace, WorkspaceRole } from '../entities/Workspace';
 import {
   AbstractMysqlRepository,
   MysqlConnection,
@@ -9,6 +9,7 @@ type WorkspaceRow = RowDataPacket & {
   workspace_id: string;
   name: string;
   admin_user_id: string;
+  current_user_role: WorkspaceRole;
   user_count: number;
   service_count: number;
   owner_count: number;
@@ -41,6 +42,7 @@ export class WorkspaceRepository extends AbstractMysqlRepository {
       `SELECT w.workspace_id,
               w.name,
               w.admin_user_id,
+              'member' AS current_user_role,
               COUNT(DISTINCT wu.user_id) AS user_count,
               COUNT(DISTINCT s.service_id) AS service_count,
               COUNT(DISTINCT o.owner_id) AS owner_count,
@@ -63,6 +65,7 @@ export class WorkspaceRepository extends AbstractMysqlRepository {
           Number(row.service_count),
           Number(row.owner_count),
           Number(row.environment_count),
+          row.current_user_role || 'member',
         )
       : null;
   }
@@ -72,6 +75,7 @@ export class WorkspaceRepository extends AbstractMysqlRepository {
       `SELECT w.workspace_id,
               w.name,
               w.admin_user_id,
+              wu.role AS current_user_role,
               COUNT(DISTINCT wu_stats.user_id) AS user_count,
               COUNT(DISTINCT s.service_id) AS service_count,
               COUNT(DISTINCT o.owner_id) AS owner_count,
@@ -102,6 +106,7 @@ export class WorkspaceRepository extends AbstractMysqlRepository {
           Number(row.service_count),
           Number(row.owner_count),
           Number(row.environment_count),
+          row.current_user_role || 'member',
         ),
     );
   }
@@ -128,5 +133,25 @@ export class WorkspaceRepository extends AbstractMysqlRepository {
       [workspaceId],
     );
     return rows.map((row) => ({ userId: row.user_id, email: row.email }));
+  }
+
+  async listUsersByWorkspaceWithRole(
+    workspaceId: string,
+  ): Promise<Array<{ userId: string; email: string; role: WorkspaceRole }>> {
+    const rows = await this.all<
+      RowDataPacket & { user_id: string; email: string; role: WorkspaceRole }
+    >(
+      `SELECT u.user_id, u.email, wu.role
+       FROM workspace_users wu
+       INNER JOIN users u ON u.user_id = wu.user_id
+       WHERE wu.workspace_id = ?
+       ORDER BY u.email`,
+      [workspaceId],
+    );
+    return rows.map((row) => ({
+      userId: row.user_id,
+      email: row.email,
+      role: row.role,
+    }));
   }
 }

@@ -27,6 +27,10 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - `config/app.yml`: runtime timing configuration. `auto_refresh_seconds` is expressed in seconds and defaults to 60 seconds when absent.
 - `config/schema` and `config/seed`: startup-created schema and optional seed data.
 - Workspace owners, environments, and services are runtime data managed through the app and stored in MySQL.
+- Workspace memberships use workspace-scoped roles: `admin`, `manager`, and `member`. Admins can manage users and resources, managers can manage non-user workspace resources, and members can use service availability/reservation workflows without administration controls.
+- Workspace owners/current admins cannot demote their own role or remove their
+  own workspace membership; owner self-demotion and self-removal are explicit
+  conflict cases, separate from the single-admin invariant.
 
 ## Configuration
 - Required runtime environment: `DATABASE_URL`.

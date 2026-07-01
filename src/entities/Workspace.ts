@@ -1,3 +1,5 @@
+export type WorkspaceRole = 'admin' | 'manager' | 'member';
+
 export class Workspace {
   public readonly id: string;
 
@@ -9,6 +11,7 @@ export class Workspace {
     public readonly serviceCount: number = 0,
     public readonly ownerCount: number = 0,
     public readonly environmentCount: number = 0,
+    public readonly currentUserRole: WorkspaceRole = 'member',
   ) {
     this.id = workspaceId;
   }

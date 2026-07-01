@@ -41,7 +41,7 @@ function createResponse(): {
 
 function getRouteHandlers(
   app: express.Express,
-  method: 'get' | 'post' | 'patch',
+  method: 'get' | 'post' | 'patch' | 'delete',
   path: string,
 ): RouteHandler[] {
   const routeLayer = (
@@ -148,4 +148,150 @@ test('GET /api/workspaces returns 401 when request-local identity is missing', a
   const result = getResponse();
   assert.equal(result.statusCode, 401);
   assert.equal((result.body as { error?: string }).error, 'Not authenticated');
+});
+
+test('workspace routes return 401 when request-local identity is missing', async () => {
+  const app = express();
+  const controller = new WorkspaceController(
+    new FakeWorkspaceService() as never,
+  );
+  controller.register(app);
+
+  const routeCases: Array<{
+    method: 'get' | 'post' | 'patch' | 'delete';
+    path: string;
+    params?: Record<string, string>;
+    body?: Record<string, unknown>;
+  }> = [
+    {
+      method: 'get',
+      path: '/api/workspaces',
+    },
+    {
+      method: 'post',
+      path: '/api/workspaces',
+      body: { name: 'Workspace' },
+    },
+    {
+      method: 'post',
+      path: '/api/workspaces/:workspaceId/services',
+      params: { workspaceId: 'workspace-1' },
+      body: {
+        environment_names: ['Dev'],
+        label: 'Service',
+        default_minutes: 15,
+      },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/services',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'patch',
+      path: '/api/workspaces/:workspaceId/services/:serviceId',
+      params: { workspaceId: 'workspace-1', serviceId: 'service-1' },
+      body: {
+        environment_names: ['Dev'],
+        label: 'Service',
+        default_minutes: 15,
+      },
+    },
+    {
+      method: 'delete',
+      path: '/api/workspaces/:workspaceId/services/:serviceId',
+      params: { workspaceId: 'workspace-1', serviceId: 'service-1' },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/environments',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'post',
+      path: '/api/workspaces/:workspaceId/environments',
+      params: { workspaceId: 'workspace-1' },
+      body: { name: 'Environment' },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/owners',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'post',
+      path: '/api/workspaces/:workspaceId/owners',
+      params: { workspaceId: 'workspace-1' },
+      body: { name: 'Owner' },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/detail/users',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/detail/services',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/detail/owners',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'get',
+      path: '/api/workspaces/:workspaceId/detail/environments',
+      params: { workspaceId: 'workspace-1' },
+    },
+    {
+      method: 'post',
+      path: '/api/workspaces/:workspaceId/invitations',
+      params: { workspaceId: 'workspace-1' },
+      body: { email: 'invitee@example.com' },
+    },
+    {
+      method: 'patch',
+      path: '/api/workspaces/:workspaceId/users/:userId/role',
+      params: {
+        workspaceId: 'workspace-1',
+        userId: 'user-2',
+      },
+      body: { role: 'manager' },
+    },
+    {
+      method: 'delete',
+      path: '/api/workspaces/:workspaceId/users/:userId',
+      params: {
+        workspaceId: 'workspace-1',
+        userId: 'user-2',
+      },
+    },
+  ];
+
+  for (const route of routeCases) {
+    const handlers = getRouteHandlers(app, route.method, route.path);
+    const { response, getResponse } = createResponse();
+    const req = {
+      path: route.path,
+      method: route.method.toUpperCase(),
+      body: route.body ?? {},
+      params: route.params ?? {},
+      header: () => '',
+    } as unknown as Request;
+
+    const last = handlers[handlers.length - 1];
+    await last(req, response, (() => {}) as NextFunction);
+
+    const result = getResponse();
+    assert.equal(
+      result.statusCode,
+      401,
+      `Expected 401 for ${route.method.toUpperCase()} ${route.path}`,
+    );
+    assert.equal(
+      (result.body as { error?: string }).error,
+      'Not authenticated',
+    );
+  }
 });

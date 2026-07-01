@@ -35,6 +35,7 @@ export class WorkspaceController {
             service_count: workspace.serviceCount,
             owner_count: workspace.ownerCount,
             environment_count: workspace.environmentCount,
+            current_user_role: workspace.currentUserRole,
           })),
         });
       },
@@ -59,6 +60,7 @@ export class WorkspaceController {
             id: workspace.id,
             name: workspace.name,
             admin_user_id: workspace.adminUserId,
+            current_user_role: workspace.currentUserRole,
           });
         } catch (err) {
           const message = (err as Error).message;
@@ -486,6 +488,87 @@ export class WorkspaceController {
       },
     );
 
+    app.get(
+      '/api/workspaces/:workspaceId/users',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        try {
+          const users = await this.workspaceService.listWorkspaceUsers(
+            workspaceId,
+            userId,
+          );
+          res.json({
+            users: users.map((user) => ({
+              user_id: user.userId,
+              email: user.email,
+              role: user.role,
+            })),
+          });
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
+    app.patch(
+      '/api/workspaces/:workspaceId/users/:userId/role',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        const targetUserId = String(req.params.userId || '');
+        try {
+          const targetRole = String(req.body.role || '');
+          await this.workspaceService.updateWorkspaceUserRole(
+            workspaceId,
+            userId,
+            targetUserId,
+            targetRole,
+          );
+          res.json({
+            user_id: targetUserId,
+            role: targetRole,
+          });
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
+    app.delete(
+      '/api/workspaces/:workspaceId/users/:userId',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        const targetUserId = String(req.params.userId || '');
+        try {
+          await this.workspaceService.removeWorkspaceUser(
+            workspaceId,
+            userId,
+            targetUserId,
+          );
+          res.status(204).send();
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
     app.post(
       '/api/workspaces/:workspaceId/invitations',
       requireAuth,
@@ -542,15 +625,27 @@ export class WorkspaceController {
       res.status(404).json({ error: message });
       return;
     }
+    if (message === 'Workspace user not found') {
+      res.status(404).json({ error: message });
+      return;
+    }
     if (message === 'Not authorized for workspace') {
       res.status(403).json({ error: message });
       return;
     }
     if (
       message === 'Owner already exists' ||
-      message === 'Environment already exists'
+      message === 'Environment already exists' ||
+      message === 'Workspace already has an admin' ||
+      message === 'Workspace must have one admin' ||
+      message === 'Workspace owner cannot change own role' ||
+      message === 'Workspace owner cannot remove own membership'
     ) {
       res.status(409).json({ error: message });
+      return;
+    }
+    if (message === 'Invalid workspace role') {
+      res.status(400).json({ error: message });
       return;
     }
     res.status(400).json({ error: message });

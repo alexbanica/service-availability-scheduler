@@ -296,6 +296,105 @@ test(
 );
 
 test(
+  'workspace_users role enum includes manager after schema initialization',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+
+      const [rows] = await db.query<RowDataPacket[]>(
+        'SHOW COLUMNS FROM workspace_users LIKE \'role\'',
+      );
+      assert.equal(rows.length, 1);
+
+      const type = String(rows[0]?.Type || '');
+      assert.ok(type.includes('\'admin\''));
+      assert.ok(type.includes('\'manager\''));
+      assert.ok(type.includes('\'member\''));
+    } finally {
+      await db.end();
+    }
+  },
+);
+
+test(
+  'listWorkspaces surfaces workspace-scoped current-user roles',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+
+      const [managerResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['manager@example.com', 'Manager'],
+      );
+      const managerUserId = managerResult.insertId;
+
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+
+      const workspace = await workspaceService.createWorkspace(
+        adminUserId,
+        'Role Workspace',
+      );
+
+      await db.query(
+        'INSERT INTO workspace_users (workspace_id, user_id, role) VALUES (?, ?, ?)',
+        [workspace.id, managerUserId, 'manager'],
+      );
+
+      const summaries = await workspaceService.listWorkspaces(managerUserId);
+      assert.equal(summaries.length, 1);
+
+      const summary = summaries[0];
+      const exposedRole =
+        (summary as { currentUserRole?: string; role?: string })
+          .currentUserRole ??
+        (summary as { currentUserRole?: string; role?: string }).role;
+      assert.equal(exposedRole, 'manager');
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
   'schema initialization creates UUID-focused ids on empty database and no auto-increment legacy ids',
   { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
   async () => {

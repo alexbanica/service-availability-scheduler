@@ -51,12 +51,7 @@ function createResponse(): {
 test('PageController disables browser caching for authenticated app page', () => {
   const app = express();
   new PageController('/repo').register(app);
-  for (const appPath of [
-    '/',
-    '/overview',
-    '/services',
-    '/administration',
-  ]) {
+  for (const appPath of ['/', '/overview', '/services', '/administration']) {
     const handler = getRouteHandler(app, appPath);
     const { response, headers, sentFiles } = createResponse();
 

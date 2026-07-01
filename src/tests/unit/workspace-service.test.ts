@@ -4,6 +4,8 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { Workspace } from '../../entities/Workspace';
 import { WorkspaceInvitation } from '../../entities/WorkspaceInvitation';
 
+type WorkspaceRole = 'admin' | 'manager' | 'member';
+
 class FakeUserRoleRepository {
   constructor(private readonly admins: Set<string>) {}
 
@@ -56,32 +58,81 @@ class FakeWorkspaceRepository {
 }
 
 class FakeWorkspaceUserRepository {
-  private readonly admins = new Set<string>();
-  private readonly members = new Set<string>();
+  private readonly memberships = new Map<string, WorkspaceRole>();
 
   withConnection(): FakeWorkspaceUserRepository {
     return this;
   }
 
+  private makeKey(workspaceId: string, userId: string): string {
+    return `${workspaceId}:${userId}`;
+  }
+
+  private setRole(
+    workspaceId: string,
+    userId: string,
+    role: WorkspaceRole,
+  ): void {
+    this.memberships.set(this.makeKey(workspaceId, userId), role);
+  }
+
   setAdmin(workspaceId: string, userId: string): void {
-    this.admins.add(`${workspaceId}:${userId}`);
-    this.members.add(`${workspaceId}:${userId}`);
+    this.setRole(workspaceId, userId, 'admin');
+  }
+
+  setManager(workspaceId: string, userId: string): void {
+    this.setRole(workspaceId, userId, 'manager');
   }
 
   setMember(workspaceId: string, userId: string): void {
-    this.members.add(`${workspaceId}:${userId}`);
+    this.setRole(workspaceId, userId, 'member');
   }
 
-  async insert(): Promise<void> {
+  async getRole(
+    workspaceId: string,
+    userId: string,
+  ): Promise<WorkspaceRole | null> {
+    return this.memberships.get(this.makeKey(workspaceId, userId)) || null;
+  }
+
+  async insert(
+    workspaceId: string,
+    userId: string,
+    role: WorkspaceRole = 'member',
+  ): Promise<void> {
+    this.setRole(workspaceId, userId, role);
     return undefined;
   }
 
+  async updateRole(
+    workspaceId: string,
+    userId: string,
+    role: WorkspaceRole,
+  ): Promise<void> {
+    this.setRole(workspaceId, userId, role);
+    return undefined;
+  }
+
+  async remove(workspaceId: string, userId: string): Promise<boolean> {
+    return this.memberships.delete(this.makeKey(workspaceId, userId));
+  }
+
+  async countAdmins(workspaceId: string): Promise<number> {
+    let count = 0;
+    for (const [key, role] of this.memberships) {
+      if (key.startsWith(`${workspaceId}:`) && role === 'admin') {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   async isAdmin(workspaceId: string, userId: string): Promise<boolean> {
-    return this.admins.has(`${workspaceId}:${userId}`);
+    return this.memberships.get(this.makeKey(workspaceId, userId)) === 'admin';
   }
 
   async isMember(workspaceId: string, userId: string): Promise<boolean> {
-    return this.members.has(`${workspaceId}:${userId}`);
+    return this.memberships.has(this.makeKey(workspaceId, userId));
   }
 }
 
@@ -92,6 +143,24 @@ class FakeServiceRepository {
     owners: 0,
     environments: 0,
   };
+
+  private readonly environments = new Map<
+    string,
+    Map<string, { id: string; name: string }>
+  >();
+  private readonly owners = new Map<
+    string,
+    Map<string, { id: string; name: string }>
+  >();
+  private readonly services = new Map<
+    string,
+    {
+      workspaceId: string;
+      label: string;
+      defaultMinutes: number;
+      ownerId: string | null;
+    }
+  >();
 
   constructor(
     private readonly userRows = new Map<
@@ -148,12 +217,126 @@ class FakeServiceRepository {
     return this.environmentRows.get(workspaceId) || [];
   }
 
-  async isWorkspaceOwnerOwnedByWorkspace(): Promise<boolean> {
-    return true;
+  async findEnvironmentByName(
+    workspaceId: string,
+    name: string,
+  ): Promise<{ environmentId: string } | null> {
+    const workspaceEnvs = this.environments.get(workspaceId);
+    const match = workspaceEnvs?.get(name.toLowerCase());
+    return match ? { environmentId: match.id } : null;
   }
 
-  async findServiceByWorkspaceAndId(): Promise<{ serviceId: string } | null> {
-    return { serviceId: 'service-1' };
+  async findEnvironmentByWorkspaceAndNames(
+    workspaceId: string,
+    names: string[],
+  ): Promise<Array<{ environmentId: string; environmentName: string }>> {
+    const workspaceEnvs = this.environments.get(workspaceId);
+    if (!workspaceEnvs || !names.length) {
+      return [];
+    }
+    return names
+      .map((name) => workspaceEnvs.get(name.toLowerCase()))
+      .filter((entry): entry is { id: string; name: string } => Boolean(entry))
+      .map((entry) => ({
+        environmentId: entry.id,
+        environmentName: entry.name,
+      }));
+  }
+
+  async insertEnvironment(input: {
+    workspaceId: string;
+    environmentId: string;
+    name: string;
+  }): Promise<string> {
+    const workspaceEnvs =
+      this.environments.get(input.workspaceId) ??
+      new Map<string, { id: string; name: string }>();
+    workspaceEnvs.set(input.name.toLowerCase(), {
+      id: input.environmentId,
+      name: input.name,
+    });
+    this.environments.set(input.workspaceId, workspaceEnvs);
+    return input.environmentId;
+  }
+
+  async findOwnerByWorkspaceAndName(
+    workspaceId: string,
+    name: string,
+  ): Promise<{ ownerId: string } | null> {
+    const workspaceOwners = this.owners.get(workspaceId);
+    const match = workspaceOwners?.get(name.toLowerCase());
+    return match ? { ownerId: match.id } : null;
+  }
+
+  async insertOwner(input: {
+    workspaceId: string;
+    ownerId: string;
+    name: string;
+  }): Promise<string> {
+    const workspaceOwners =
+      this.owners.get(input.workspaceId) ??
+      new Map<string, { id: string; name: string }>();
+    workspaceOwners.set(input.name.toLowerCase(), {
+      id: input.ownerId,
+      name: input.name,
+    });
+    this.owners.set(input.workspaceId, workspaceOwners);
+    return input.ownerId;
+  }
+
+  async insertService(input: {
+    workspaceId: string;
+    serviceId: string;
+    label: string;
+    defaultMinutes: number;
+    ownerId: string | null;
+  }): Promise<string> {
+    this.services.set(input.serviceId, {
+      workspaceId: input.workspaceId,
+      label: input.label,
+      defaultMinutes: input.defaultMinutes,
+      ownerId: input.ownerId,
+    });
+    return input.serviceId;
+  }
+
+  async findServiceByWorkspaceAndId(
+    workspaceId: string,
+    serviceId: string,
+  ): Promise<{
+    serviceId: string;
+    workspaceId: string;
+    label: string;
+    defaultMinutes: number;
+    ownerId: string | null;
+  } | null> {
+    const row = this.services.get(serviceId);
+    if (!row || row.workspaceId !== workspaceId) {
+      return null;
+    }
+    return {
+      serviceId,
+      workspaceId: row.workspaceId,
+      label: row.label,
+      defaultMinutes: row.defaultMinutes,
+      ownerId: row.ownerId,
+    };
+  }
+
+  async deleteServiceByWorkspaceAndId(
+    workspaceId: string,
+    serviceId: string,
+  ): Promise<number> {
+    const row = this.services.get(serviceId);
+    if (!row || row.workspaceId !== workspaceId) {
+      return 0;
+    }
+    this.services.delete(serviceId);
+    return 1;
+  }
+
+  async isWorkspaceOwnerOwnedByWorkspace(): Promise<boolean> {
+    return true;
   }
 
   async updateServiceMetadata(): Promise<void> {
@@ -240,6 +423,20 @@ function extractPopupRowName(row: { name: string }): string {
   return row.name;
 }
 
+type WorkspaceMembershipMutationService = {
+  removeWorkspaceUser: (
+    workspaceId: string,
+    actorUserId: string,
+    targetUserId: string,
+  ) => Promise<unknown>;
+  updateWorkspaceUserRole: (
+    workspaceId: string,
+    actorUserId: string,
+    targetUserId: string,
+    role: string,
+  ) => Promise<unknown>;
+};
+
 test('createService requires workspace admin', async () => {
   const service = makeService(
     new Map([
@@ -255,6 +452,64 @@ test('createService requires workspace admin', async () => {
         defaultMinutes: 10,
       }),
     /Not authorized for workspace/,
+  );
+});
+
+test('createService allows admin and allows manager role in workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  const adminCreated = await service.createService(
+    'workspace-1',
+    'admin-user',
+    {
+      environmentNames: ['Dev'],
+      label: 'svc-admin',
+      defaultMinutes: 10,
+    },
+  );
+  const managerCreated = await service.createService(
+    'workspace-1',
+    'manager-user',
+    {
+      environmentNames: ['Ops'],
+      label: 'svc-manager',
+      defaultMinutes: 15,
+    },
+  );
+
+  assert.equal(typeof adminCreated.serviceId, 'string');
+  assert.equal(typeof managerCreated.serviceId, 'string');
+  assert.equal(adminCreated.createdEnvironments, 1);
+  assert.equal(managerCreated.createdEnvironments, 1);
+});
+
+test('createService requires workspace membership', async () => {
+  const service = makeService(
+    new Map([
+      ['workspace-1', new Workspace('workspace-1', 'A', 'user-1', 1, 0, 0, 0)],
+    ]),
+  );
+
+  await assert.rejects(
+    () =>
+      service.createService('workspace-2', 'user-1', {
+        environmentNames: ['Dev'],
+        label: 'svc',
+        defaultMinutes: 10,
+      }),
+    /Workspace not found/,
   );
 });
 
@@ -295,6 +550,510 @@ test('updateService requires workspace admin', async () => {
         defaultMinutes: 10,
       }),
     /Not authorized for workspace/,
+  );
+});
+
+test('updateService allows admin and manager roles in the workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  const created = await service.createService('workspace-1', 'admin-user', {
+    environmentNames: ['Dev'],
+    label: 'svc',
+    defaultMinutes: 10,
+  });
+
+  const updated = await service.updateService('workspace-1', 'manager-user', {
+    serviceId: created.serviceId,
+    environmentNames: ['Dev'],
+    label: 'svc-updated',
+    defaultMinutes: 20,
+  });
+
+  assert.equal(updated.serviceId, created.serviceId);
+});
+
+test('deleteService allows admin and manager roles in the workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  const created = await service.createService('workspace-1', 'admin-user', {
+    environmentNames: ['Dev'],
+    label: 'svc',
+    defaultMinutes: 10,
+  });
+
+  await service.deleteService('workspace-1', 'manager-user', created.serviceId);
+  const role = await workspaceUsers.getRole('workspace-1', 'manager-user');
+  assert.equal(role, 'manager');
+});
+
+test('createOwner and createEnvironment allow admin and manager roles', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  const owner = await service.createOwner('workspace-1', 'manager-user', {
+    name: 'Owner 1',
+  });
+
+  const env = await service.createEnvironment('workspace-1', 'manager-user', {
+    name: 'Env 1',
+  });
+
+  assert.equal(typeof owner.ownerId, 'string');
+  assert.equal(typeof env.environmentId, 'string');
+});
+
+test('resource administration denies member role and allows admin/manager', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  const adminCreated = await service.createService(
+    'workspace-1',
+    'admin-user',
+    {
+      environmentNames: ['Dev'],
+      label: 'svc-admin',
+      defaultMinutes: 10,
+    },
+  );
+  const managerCreated = await service.createService(
+    'workspace-1',
+    'manager-user',
+    {
+      environmentNames: ['Ops'],
+      label: 'svc-manager',
+      defaultMinutes: 12,
+    },
+  );
+  const createOwnerManager = await service.createOwner(
+    'workspace-1',
+    'manager-user',
+    {
+      name: 'Owner 2',
+    },
+  );
+  const createEnvManager = await service.createEnvironment(
+    'workspace-1',
+    'manager-user',
+    {
+      name: 'Env 2',
+    },
+  );
+
+  assert.equal(typeof adminCreated.serviceId, 'string');
+  assert.equal(typeof managerCreated.serviceId, 'string');
+  assert.equal(typeof createOwnerManager.ownerId, 'string');
+  assert.equal(typeof createEnvManager.environmentId, 'string');
+
+  await service.updateService('workspace-1', 'manager-user', {
+    serviceId: managerCreated.serviceId,
+    environmentIds: ['environment-manual'],
+    label: 'svc-manager-updated',
+    defaultMinutes: 20,
+  });
+
+  await assert.rejects(
+    () =>
+      service.createService('workspace-1', 'member-user', {
+        environmentNames: ['Member'],
+        label: 'forbidden',
+        defaultMinutes: 10,
+      }),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateService('workspace-1', 'member-user', {
+        serviceId: managerCreated.serviceId,
+        environmentNames: ['Ops'],
+        label: 'forbidden',
+        defaultMinutes: 15,
+      }),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.createOwner('workspace-1', 'member-user', { name: 'Owner X' }),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.createEnvironment('workspace-1', 'member-user', {
+        name: 'Environment X',
+      }),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.deleteService(
+        'workspace-1',
+        'member-user',
+        adminCreated.serviceId,
+      ),
+    /Not authorized for workspace/,
+  );
+});
+
+test('inviteUser allows admins and rejects managers/members', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  await assert.rejects(
+    () => service.inviteUser('workspace-1', 'manager-user', 'user@example.com'),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () => service.inviteUser('workspace-1', 'member-user', 'user@example.com'),
+    /Not authorized for workspace/,
+  );
+
+  await service.inviteUser('workspace-1', 'admin-user', 'user@example.com');
+});
+
+test('user removal enforces admin-only and workspace single-admin invariant', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await service.removeWorkspaceUser('workspace-1', 'admin-user', 'member-user');
+  const isMemberRemoved = await workspaceUsers.isMember(
+    'workspace-1',
+    'member-user',
+  );
+  assert.equal(isMemberRemoved, false);
+
+  await assert.rejects(
+    () =>
+      service.removeWorkspaceUser('workspace-1', 'manager-user', 'member-user'),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.removeWorkspaceUser('workspace-1', 'member-user', 'manager-user'),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.removeWorkspaceUser('workspace-1', 'admin-user', 'missing-user'),
+    /Workspace user not found/,
+  );
+
+  workspaceUsers.setAdmin('workspace-2', 'solo-admin');
+  const soloWorkspaceService = makeService(
+    new Map([
+      [
+        'workspace-2',
+        new Workspace('workspace-2', 'Solo', 'solo-admin', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await assert.rejects(
+    () =>
+      soloWorkspaceService.removeWorkspaceUser(
+        'workspace-2',
+        'solo-admin',
+        'solo-admin',
+      ),
+    /Workspace owner cannot remove own membership/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.removeWorkspaceUser('workspace-2', 'admin-user', 'manager-user'),
+    /Workspace not found/,
+  );
+});
+
+test('user role updates enforce admin-only, validate roles, and preserve single-admin', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await service.updateWorkspaceUserRole(
+    'workspace-1',
+    'admin-user',
+    'manager-user',
+    'member',
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'manager-user'),
+    'member',
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-1',
+        'admin-user',
+        'member-user',
+        'admin',
+      ),
+    /Workspace already has an admin/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-1',
+        'admin-user',
+        'member-user',
+        'superuser',
+      ),
+    /Invalid workspace role/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-1',
+        'manager-user',
+        'member-user',
+        'member',
+      ),
+    /Not authorized for workspace/,
+  );
+
+  await service.updateWorkspaceUserRole(
+    'workspace-1',
+    'admin-user',
+    'admin-user',
+    'admin',
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'admin-user'),
+    'admin',
+  );
+
+  const singleAdminService = makeService(
+    new Map([
+      [
+        'workspace-2',
+        new Workspace('workspace-2', 'B', 'solo-admin', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+  workspaceUsers.setAdmin('workspace-2', 'solo-admin');
+
+  await assert.rejects(
+    () =>
+      singleAdminService.updateWorkspaceUserRole(
+        'workspace-2',
+        'solo-admin',
+        'solo-admin',
+        'member',
+      ),
+    /Workspace owner cannot change own role/,
+  );
+});
+
+test('workspace owner cannot remove or demote their own membership when another admin exists', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'owner-user');
+  workspaceUsers.setAdmin('workspace-1', 'other-admin');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'owner-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-1',
+        'owner-user',
+        'owner-user',
+        'member',
+      ),
+    /Workspace owner cannot change own role/,
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'owner-user'),
+    'admin',
+  );
+
+  await assert.rejects(
+    () =>
+      service.removeWorkspaceUser('workspace-1', 'owner-user', 'owner-user'),
+    /Workspace owner cannot remove own membership/,
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'owner-user'),
+    'admin',
+  );
+
+  await service.removeWorkspaceUser('workspace-1', 'owner-user', 'member-user');
+  assert.equal(await workspaceUsers.getRole('workspace-1', 'member-user'), null);
+});
+
+test('role updates only affect target workspace membership', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setAdmin('workspace-2', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'target-user');
+  workspaceUsers.setMember('workspace-2', 'target-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+      [
+        'workspace-2',
+        new Workspace('workspace-2', 'B', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await service.updateWorkspaceUserRole(
+    'workspace-1',
+    'admin-user',
+    'target-user',
+    'member',
+  );
+
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'target-user'),
+    'member',
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-2', 'target-user'),
+    'member',
+  );
+});
+
+test('updateWorkspaceUserRole fails with missing workspace or missing membership', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-2',
+        'admin-user',
+        'member-user',
+        'manager',
+      ),
+    /Workspace not found/,
+  );
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-1',
+        'admin-user',
+        'missing-user',
+        'manager',
+      ),
+    /Workspace user not found/,
   );
 });
 
@@ -386,6 +1145,13 @@ test('listWorkspaces exposes summary stats for admin and member workspaces', asy
   workspaceUsers.setAdmin('workspace-admin', 'user-1');
   workspaceUsers.setMember('workspace-member', 'user-1');
 
+  const roleFromWorkspace = (workspace: {
+    currentUserRole?: WorkspaceRole;
+    role?: WorkspaceRole;
+  }): WorkspaceRole => {
+    return workspace.currentUserRole ?? workspace.role ?? 'member';
+  };
+
   const adminWorkspace = new Workspace(
     'workspace-admin',
     'Admin Workspace',
@@ -424,9 +1190,84 @@ test('listWorkspaces exposes summary stats for admin and member workspaces', asy
   assert.equal(summaries[0].id, adminWorkspace.id);
   assert.equal(summaries[0].userCount, 1);
   assert.equal(summaries[0].serviceCount, 2);
+  assert.equal(
+    roleFromWorkspace(
+      summaries[0] as { currentUserRole?: WorkspaceRole; role?: WorkspaceRole },
+    ),
+    'admin',
+  );
   assert.equal(summaries[1].id, memberWorkspace.id);
   assert.equal(summaries[1].userCount, 3);
   assert.equal(summaries[1].serviceCount, 1);
+  assert.equal(
+    roleFromWorkspace(
+      summaries[1] as { currentUserRole?: WorkspaceRole; role?: WorkspaceRole },
+    ),
+    'member',
+  );
+});
+
+test('listWorkspaces current-user role is workspace-scoped and independent per workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-a', 'user-1');
+  workspaceUsers.setManager('workspace-b', 'user-1');
+
+  const summaries = [
+    {
+      workspaceId: 'workspace-a',
+      id: 'workspace-a',
+      name: 'Workspace A',
+      adminUserId: 'user-1',
+      userCount: 1,
+      serviceCount: 0,
+      ownerCount: 0,
+      environmentCount: 0,
+      currentUserRole: 'admin',
+    },
+    {
+      workspaceId: 'workspace-b',
+      id: 'workspace-b',
+      name: 'Workspace B',
+      adminUserId: 'user-2',
+      userCount: 2,
+      serviceCount: 0,
+      ownerCount: 0,
+      environmentCount: 0,
+      currentUserRole: 'manager',
+    },
+  ] as unknown as Workspace[];
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-a',
+        new Workspace('workspace-a', 'Workspace A', 'user-1', 1, 0, 0, 0),
+      ],
+      [
+        'workspace-b',
+        new Workspace('workspace-b', 'Workspace B', 'user-2', 2, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    async () => summaries,
+  );
+
+  const list = await service.listWorkspaces('user-1');
+
+  const roleFromWorkspace = (workspace: unknown): WorkspaceRole | undefined => {
+    const roleSource = workspace as {
+      currentUserRole?: WorkspaceRole;
+      role?: WorkspaceRole;
+    };
+    return roleSource.currentUserRole ?? roleSource.role;
+  };
+
+  const workspaceA = list.find((workspace) => workspace.id === 'workspace-a');
+  const workspaceB = list.find((workspace) => workspace.id === 'workspace-b');
+  assert.ok(workspaceA);
+  assert.ok(workspaceB);
+  assert.equal(roleFromWorkspace(workspaceA), 'admin');
+  assert.equal(roleFromWorkspace(workspaceB), 'manager');
 });
 
 test('createWorkspace returns workspace summary defaults for new workspace', async () => {

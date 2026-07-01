@@ -600,6 +600,7 @@ paths:
     post:
       tags: [Workspace resources]
       summary: Invite an existing user to a workspace by email.
+      description: Admin-only user administration endpoint.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
@@ -615,6 +616,76 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvitationCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/users:
+    get:
+      tags: [Workspace resources]
+      summary: List workspace users for user administration.
+      description: Admin-only endpoint. Returns user identity and workspace role for the target workspace.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Workspace users with roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceUsersResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/users/{userId}:
+    delete:
+      tags: [Workspace resources]
+      summary: Remove a user membership from a workspace.
+      description: Admin-only endpoint. Removing the current workspace owner's own membership or removing the only workspace admin returns 409.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Workspace user removed.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/users/{userId}/role:
+    patch:
+      tags: [Workspace resources]
+      summary: Update a workspace user's role.
+      description: Admin-only endpoint. Role changes are scoped to the target workspace, preserve the single-admin invariant, and reject current workspace owner self-demotion.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceUserRoleRequest'
+      responses:
+        '200':
+          description: Updated user role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceUserRoleUpdated'
         '400':
           $ref: '#/components/responses/Error'
         '401':
@@ -641,6 +712,12 @@ components:
         format: uuid
     ServiceId:
       name: serviceId
+      in: path
+      required: true
+      schema:
+        type: string
+    UserId:
+      name: userId
       in: path
       required: true
       schema:
@@ -909,6 +986,8 @@ components:
         admin_user_id:
           type: string
           format: uuid
+        current_user_role:
+          $ref: '#/components/schemas/WorkspaceRole'
     WorkspacesResponse:
       type: object
       required: [workspaces]
@@ -935,6 +1014,12 @@ components:
               type: integer
             environment_count:
               type: integer
+            current_user_role:
+              $ref: '#/components/schemas/WorkspaceRole'
+    WorkspaceRole:
+      type: string
+      enum: [admin, manager, member]
+      description: Workspace-scoped role. Admins manage users and resources; managers manage non-user resources; members use availability and reservation workflows.
     UpsertWorkspaceServiceRequest:
       type: object
       required: [label, default_minutes]
@@ -1070,6 +1155,41 @@ components:
             additionalProperties:
               type: string
               nullable: true
+    WorkspaceUser:
+      type: object
+      required: [user_id, email, role]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+    WorkspaceUsersResponse:
+      type: object
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceUser'
+    UpdateWorkspaceUserRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
+    WorkspaceUserRoleUpdated:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/WorkspaceRole'
     InviteUserRequest:
       type: object
       required: [email]
