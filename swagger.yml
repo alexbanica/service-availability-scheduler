@@ -39,6 +39,8 @@ paths:
           $ref: '#/components/responses/Error'
         '403':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/password-reset/captcha:
     post:
       tags: [Account]
@@ -51,6 +53,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaptchaResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/password-reset/request:
     post:
       tags: [Account]
@@ -68,6 +72,8 @@ paths:
           $ref: '#/components/responses/Ok'
         '400':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/Error'
   /api/password-reset/validate:
@@ -86,6 +92,8 @@ paths:
           $ref: '#/components/responses/Ok'
         '400':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/Error'
   /api/password-reset:
@@ -104,6 +112,8 @@ paths:
           $ref: '#/components/responses/Ok'
         '400':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/Error'
   /api/register/captcha:
@@ -118,6 +128,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaptchaResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /api/register:
     post:
       tags: [Account]
@@ -141,6 +153,8 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/Error'
   /api/account-activation/validate:
@@ -159,6 +173,8 @@ paths:
           $ref: '#/components/responses/Ok'
         '400':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/Error'
   /api/account-activation:
@@ -181,6 +197,8 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '400':
           $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/Error'
   /api/logout:
@@ -234,6 +252,7 @@ paths:
     get:
       tags: [Services]
       summary: List visible services and reservation state.
+      description: Requires an authenticated activated account.
       responses:
         '200':
           description: Services grouped by workspace service.
@@ -842,6 +861,12 @@ components:
             $ref: '#/components/schemas/OkResponse'
     Error:
       description: Error response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Too many requests for the current rate-limit window.
       content:
         application/json:
           schema:

@@ -78,7 +78,7 @@ export class WorkspaceUserRepository extends AbstractMysqlRepository {
 
   async countAdmins(workspaceId: string): Promise<number> {
     const row = await this.get<RowDataPacket & { total: number }>(
-      'SELECT COUNT(*) AS total FROM workspace_users WHERE workspace_id = ? AND role = \'admin\'',
+      "SELECT COUNT(*) AS total FROM workspace_users WHERE workspace_id = ? AND role = 'admin'",
       [workspaceId],
     );
     return Number(row?.total || 0);

@@ -445,6 +445,8 @@ test('AppController exposes manager resource controls without user administratio
   assert.equal(state.resourceAdminWorkspaces?.value.length, 1);
   assert.equal(state.selectedServiceWorkspaceId?.value, 'workspace-1');
   assert.equal(state.selectedServiceWorkspaceIsAdmin?.value, true);
+  state.setAdminSection?.('services');
+  assert.equal(state.adminSection?.value, 'services');
   state.setAdminSection?.('users');
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(state.selectedUserWorkspaceId?.value, null);
@@ -464,7 +466,7 @@ test('AppController exposes manager resource controls without user administratio
   restoreLocalStorage();
 });
 
-test('AppController filters member workspaces out of administration selectors', async () => {
+test('AppController shows all workspaces for read-only administration and filters user management to admins', async () => {
   const restoreLocalStorage = installLocalStorage();
   const originalLoadUser = AuthService.loadUser;
   const originalIsAuthenticated = AuthService.isAuthenticated;
@@ -530,6 +532,9 @@ test('AppController filters member workspaces out of administration selectors', 
   assert.equal(state.canAccessAdministration?.value, true);
   assert.equal(state.adminWorkspaces?.value.length, 1);
   assert.equal(state.resourceAdminWorkspaces?.value.length, 2);
+  assert.equal(state.selectedServiceWorkspaceId?.value, 'workspace-admin');
+  state.selectedServiceWorkspaceId!.value = 'workspace-member';
+  assert.equal(state.selectedServiceWorkspaceIsAdmin?.value, false);
 
   state.selectedUserWorkspaceId!.value = 'workspace-member';
   state.setAdminSection?.('users');

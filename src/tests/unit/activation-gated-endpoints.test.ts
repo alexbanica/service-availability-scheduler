@@ -221,7 +221,7 @@ async function makeActivatedToken(
   });
 }
 
-test('GET /api/services allows non-activated authenticated users to read availability data', async () => {
+test('GET /api/services requires activated identity', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
@@ -243,8 +243,11 @@ test('GET /api/services allows non-activated authenticated users to read availab
     }),
   );
 
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual((response.body as { services?: unknown[] }).services, []);
+  assert.equal(response.statusCode, 403);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Account not activated',
+  );
 });
 
 test('POST /api/claim requires activated identity', async () => {
@@ -336,7 +339,10 @@ test('GET /api/workspaces allows non-activated authenticated users to read membe
   );
 
   assert.equal(response.statusCode, 200);
-  assert.deepEqual((response.body as { workspaces?: unknown[] }).workspaces, []);
+  assert.deepEqual(
+    (response.body as { workspaces?: unknown[] }).workspaces,
+    [],
+  );
 });
 
 test('GET /api/workspace detail popup routes require activated identity', async () => {

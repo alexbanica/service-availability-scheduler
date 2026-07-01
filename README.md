@@ -27,6 +27,7 @@ npm run build
 
 ```bash
 export DATABASE_URL='mysql://user:password@host:3306/database_name'
+export SESSION_SECRET='replace-with-a-long-random-secret'
 ```
 
 5) Start the server
@@ -44,7 +45,7 @@ Open `http://localhost:3000`.
 | Name | Required | Default | Description |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | None | MariaDB connection string used by the server, for example `mysql://user:password@host:3306/database_name`. The database must already exist; tables are created automatically on startup. |
-| `SESSION_SECRET` | No | `dev-secret-change-me` | JWT signing secret. Set this outside local development. |
+| `SESSION_SECRET` | Yes | None outside local development | JWT signing secret. Required for normal startup. `npm run dev` and `NODE_ENV=test` fall back to a development-only default. |
 | `RUN_MIGRATIONS_ON_STARTUP` | No | `true` | When true, runs checked-in SQL migrations on startup. Set to `false` to skip startup migrations when running migrations separately. |
 | `PORT` | No | `3000` | HTTP port used by `npm start` and `npm run dev`. |
 | `APP_VERSION` | No | `development` | Version string exposed in page footers. Docker images built with `docker/build.sh --release <tag>` set this to the release tag automatically. |
@@ -107,6 +108,9 @@ environments; it does not create them inline.
   token context.
   `GET /api/me` and `/api/renew` include `activated` in the returned user object.
 - Protected API calls send `Authorization: Bearer <token>`.
+- Sensitive authentication, registration, CAPTCHA, reset, and activation
+  endpoints are rate limited and return `429` with `{ "error": "Too many requests" }`
+  when a request exceeds its current limit window.
 
 Activation policy:
 - Non-activated users may call: `/api/register/*`, `/api/account-activation/*`,
@@ -118,6 +122,9 @@ Activation policy:
 Client stores the token in `localStorage` (`auth_token`) and calls
 `/api/renew` before expiry when possible. A failed authorized call (`401`) clears
 the token and redirects to `/login`.
+
+Browser pages load Vue from the installed pinned `vue` package through the local
+`/vendor/vue/vue.global.prod.js` route rather than from an external CDN.
 
 Reset URLs are currently logged temporarily for existing users and include a TODO
 note to replace this with email delivery. Reset URLs are never returned in API

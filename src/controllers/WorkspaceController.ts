@@ -819,12 +819,10 @@ export class WorkspaceController {
     res.status(400).json({ error: message });
   }
 
-  private logWorkspaceInvitationInvitationLink(
-    invitation: {
-      invitedEmail: string | null;
-      invitationCode: string;
-    },
-  ): void {
+  private logWorkspaceInvitationInvitationLink(invitation: {
+    invitedEmail: string | null;
+    invitationCode: string;
+  }): void {
     const invitedEmail = invitation.invitedEmail ?? '';
     console.info(
       `Workspace invitation requested for ${invitedEmail}, use this TODO link: /workspace-invitations/${invitation.invitationCode} - TODO replace with email delivery`,

@@ -230,7 +230,9 @@ export class WorkspaceInvitationRepository extends AbstractMysqlRepository {
     return row ? this.mapRowToEntity(row) : null;
   }
 
-  async listPendingByWorkspace(workspaceId: string): Promise<WorkspaceInvitation[]> {
+  async listPendingByWorkspace(
+    workspaceId: string,
+  ): Promise<WorkspaceInvitation[]> {
     const rows = await this.all<WorkspaceInvitationRow>(
       `SELECT
          invitation_id,
@@ -280,10 +282,7 @@ export class WorkspaceInvitationRepository extends AbstractMysqlRepository {
     return rows.map((row) => this.mapRowToEntity(row));
   }
 
-  async markAccepted(
-    invitationId: string,
-    now: Date,
-  ): Promise<boolean> {
+  async markAccepted(invitationId: string, now: Date): Promise<boolean> {
     const result = await this.run(
       `UPDATE workspace_invitations
        SET status = 'accepted',
@@ -314,10 +313,7 @@ export class WorkspaceInvitationRepository extends AbstractMysqlRepository {
     return result.affectedRows > 0;
   }
 
-  async markConsumed(
-    invitationId: string,
-    now: Date,
-  ): Promise<boolean> {
+  async markConsumed(invitationId: string, now: Date): Promise<boolean> {
     const result = await this.run(
       `UPDATE workspace_invitations
        SET consumed_at = ?,
@@ -375,11 +371,15 @@ export class WorkspaceInvitationRepository extends AbstractMysqlRepository {
     invitedEmail: string,
   ): string {
     return createHash('sha256')
-      .update([invitationId, workspaceId, inviterUserId, invitedEmail].join('|'))
+      .update(
+        [invitationId, workspaceId, inviterUserId, invitedEmail].join('|'),
+      )
       .digest('hex');
   }
 
-  private normalizeInvitedEmail(invitedEmail: string | undefined | null): string {
+  private normalizeInvitedEmail(
+    invitedEmail: string | undefined | null,
+  ): string {
     return (invitedEmail || '').trim().toLowerCase();
   }
 

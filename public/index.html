@@ -69,7 +69,6 @@
               Service Availability
             </button>
             <button
-              v-if="canAccessAdministration"
               class="menu-tab"
               :class="{ active: currentView === 'admin' }"
               type="button"
@@ -144,12 +143,12 @@
             </div>
 
             <div class="overview-card">
-              <h3>Workspaces you administer</h3>
-              <div class="stat">{{ adminWorkspaces.length }}</div>
-              <p class="muted">Invite teammates and manage access.</p>
-              <div v-if="adminWorkspaces.length" class="overview-list">
+              <h3>Your workspaces</h3>
+              <div class="stat">{{ workspaces.length }}</div>
+              <p class="muted">Created and invited workspaces.</p>
+              <div v-if="workspaces.length" class="overview-list">
                 <button
-                  v-for="workspace in adminWorkspaces"
+                  v-for="workspace in workspaces"
                   :key="workspace.id"
                   class="overview-item overview-workspace-link"
                   type="button"
@@ -310,14 +309,9 @@
             </div>
           </div>
 
-          <div v-if="!canAccessAdministration" class="admin-panel">
-            <p class="error">Not authorized</p>
-          </div>
-
-          <div v-else class="admin-layout">
+          <div class="admin-layout">
             <aside class="admin-menu" aria-label="Administration sections">
               <button
-                v-if="resourceAdminWorkspaces.length"
                 class="admin-tab"
                 :class="{ active: adminSection === 'workspace' }"
                 type="button"
@@ -326,6 +320,7 @@
                 Workspace management
               </button>
               <button
+                v-if="workspaces.length"
                 class="admin-tab"
                 :class="{ active: adminSection === 'services' }"
                 type="button"
@@ -334,7 +329,7 @@
                 Service Management
               </button>
               <button
-                v-if="resourceAdminWorkspaces.length"
+                v-if="adminWorkspaces.length"
                 class="admin-tab"
                 :class="{ active: adminSection === 'users' }"
                 type="button"
@@ -345,14 +340,13 @@
             </aside>
 
             <div class="admin-content">
-              <div v-if="adminSection === 'workspace' && resourceAdminWorkspaces.length" class="admin-panel">
+              <div v-if="adminSection === 'workspace'" class="admin-panel">
                 <div class="admin-header">
                   <div>
                     <h3>Workspace management</h3>
                     <p class="muted">Create new workspaces and invite teammates.</p>
                   </div>
                   <button
-                    v-if="adminWorkspaces.length"
                     type="button"
                     class="secondary"
                     :disabled="!canUseProtectedActions"
@@ -363,11 +357,11 @@
                 </div>
                 <div class="admin-card">
                   <h4>Your workspaces</h4>
-                  <div v-if="!resourceAdminWorkspaces.length" class="muted">
-                    You do not manage any workspaces yet.
+                  <div v-if="!workspaces.length" class="muted">
+                    No workspaces yet.
                   </div>
                   <div v-else class="admin-list">
-                    <div v-for="workspace in resourceAdminWorkspaces" :key="workspace.id" class="admin-workspace">
+                    <div v-for="workspace in workspaces" :key="workspace.id" class="admin-workspace">
                       <div class="admin-workspace-identity">
                         <strong>{{ workspace.name }}</strong>
                         <span class="admin-workspace-id muted">{{ workspace.id }}</span>
@@ -403,37 +397,40 @@
                         </button>
                       </div>
                       <div class="admin-workspace-actions">
-                        <button
-                          class="secondary"
-                          type="button"
-                          :disabled="!canUseProtectedActions"
-                          @click="openInviteModal(workspace.id)"
-                        >
-                          Invite user
-                        </button>
-                        <button
-                          class="secondary"
-                          type="button"
-                          :disabled="!canUseProtectedActions"
-                          @click="openOwnerModal(workspace.id)"
-                        >
-                          Create owner
-                        </button>
-                        <button
-                          class="secondary"
-                          type="button"
-                          :disabled="!canUseProtectedActions"
-                          @click="openEnvironmentModal(workspace.id)"
-                        >
-                          Create environment
-                        </button>
+                        <template v-if="workspace.currentUserRole === 'admin' || workspace.currentUserRole === 'manager'">
+                          <button
+                            class="secondary"
+                            type="button"
+                            :disabled="!canUseProtectedActions"
+                            @click="openInviteModal(workspace.id)"
+                          >
+                            Invite user
+                          </button>
+                          <button
+                            class="secondary"
+                            type="button"
+                            :disabled="!canUseProtectedActions"
+                            @click="openOwnerModal(workspace.id)"
+                          >
+                            Create owner
+                          </button>
+                          <button
+                            class="secondary"
+                            type="button"
+                            :disabled="!canUseProtectedActions"
+                            @click="openEnvironmentModal(workspace.id)"
+                          >
+                            Create environment
+                          </button>
+                        </template>
+                        <span v-else class="muted">{{ workspace.currentUserRole }}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div v-else-if="adminSection === 'services' || !resourceAdminWorkspaces.length" class="admin-panel">
+              <div v-else-if="adminSection === 'services'" class="admin-panel">
                 <div class="admin-header">
                   <div>
                     <h3>Service Management</h3>
@@ -449,14 +446,14 @@
                     Create service
                   </button>
                 </div>
-                <div v-if="!resourceAdminWorkspaces.length" class="muted">
-                  Not authorized
+                <div v-if="!workspaces.length" class="muted">
+                  No workspaces yet.
                 </div>
                 <div v-else class="admin-card">
                   <label class="admin-service-select">
                     <span>Workspace</span>
                     <select v-model="selectedServiceWorkspaceId">
-                      <option v-for="workspace in resourceAdminWorkspaces" :key="workspace.id" :value="workspace.id">
+                      <option v-for="workspace in workspaces" :key="workspace.id" :value="workspace.id">
                         {{ workspace.name }}
                       </option>
                     </select>
@@ -649,14 +646,14 @@
                     <p class="muted">Review roles and access assignments.</p>
                   </div>
                 </div>
-                <div v-if="!resourceAdminWorkspaces.length" class="admin-card">
+                <div v-if="!adminWorkspaces.length" class="admin-card">
                   <p class="error">Not authorized</p>
                 </div>
                 <div v-else class="admin-card">
                   <label class="admin-service-select">
                     <span>Workspace</span>
                     <select v-model="selectedUserWorkspaceId">
-                      <option v-for="workspace in resourceAdminWorkspaces" :key="workspace.id" :value="workspace.id">
+                      <option v-for="workspace in adminWorkspaces" :key="workspace.id" :value="workspace.id">
                         {{ workspace.name }}
                       </option>
                     </select>
@@ -672,7 +669,7 @@
                     <div
                       v-for="workspaceUser in selectedWorkspaceUsers"
                       :key="workspaceUser.userId"
-                      class="admin-workspace"
+                      class="admin-workspace admin-workspace--user"
                     >
                       <div class="admin-workspace-identity">
                         <strong class="admin-workspace-email">
@@ -688,21 +685,6 @@
                             !
                           </span>
                         </strong>
-                        <span class="admin-workspace-id muted">
-                          {{ workspaceUser.invitationId || workspaceUser.userId }}
-                        </span>
-                        <span
-                          v-if="workspaceUser.invitationStatus === 'pending'"
-                          class="muted"
-                        >
-                          Invitation pending acceptance
-                        </span>
-                        <span
-                          v-if="workspaceUser.invitationStatus === 'expired'"
-                          class="muted"
-                        >
-                          Invitation expired
-                        </span>
                       </div>
                       <div class="admin-workspace-actions">
                         <button
@@ -1267,7 +1249,7 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="/vendor/vue/vue.global.prod.js"></script>
   <script type="module" src="/public/js/app.js"></script>
 </body>
 </html>

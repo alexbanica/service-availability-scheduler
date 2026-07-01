@@ -17,6 +17,10 @@
   --toast-ink: #ffffff;
   --site-footer-height: 3.5rem;
   --bottom-banner-footer-gap: 1rem;
+  --button-min-height: 2.15rem;
+  --button-padding-block: 0.35rem;
+  --button-padding-inline: 0.85rem;
+  --button-font-size: 0.88rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -168,7 +172,7 @@ p {
   background: transparent;
   color: var(--muted-ink);
   box-shadow: none;
-  padding: 0.45rem 1rem;
+  padding: var(--button-padding-block) var(--button-padding-inline);
   font-weight: 600;
 }
 
@@ -332,6 +336,7 @@ main {
   color: var(--ink);
   box-shadow: none;
   text-align: left;
+  justify-content: flex-start;
 }
 
 .overview-workspace-link:hover,
@@ -367,7 +372,8 @@ main {
   border: 1px solid transparent;
   box-shadow: none;
   text-align: left;
-  padding: 0.65rem 0.9rem;
+  justify-content: flex-start;
+  padding: var(--button-padding-block) var(--button-padding-inline);
 }
 
 .admin-tab.active {
@@ -466,6 +472,13 @@ main {
   box-shadow: 0 8px 16px rgba(31, 31, 31, 0.1);
 }
 
+.admin-workspace--user {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+}
+
 .admin-workspace-identity {
   display: grid;
   gap: 0.15rem;
@@ -561,6 +574,18 @@ main {
   justify-content: flex-end;
 }
 
+.admin-workspace--user .admin-workspace-actions {
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-workspace--user .admin-workspace-actions button,
+.admin-workspace--user .role-option {
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-block) var(--button-padding-inline);
+  font-size: var(--button-font-size);
+}
+
 .role-selector {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(5.8rem, 1fr));
@@ -572,14 +597,25 @@ main {
   min-width: min(100%, 12.25rem);
 }
 
+.admin-workspace--user .role-selector {
+  grid-template-columns: repeat(2, minmax(4.5rem, 1fr));
+  min-width: min(100%, 9.75rem);
+  gap: 0.15rem;
+  padding: 0.15rem;
+}
+
 .role-option {
-  min-height: 2.35rem;
-  padding: 0.45rem 0.8rem;
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-block) var(--button-padding-inline);
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted-ink);
   box-shadow: none;
   white-space: nowrap;
+}
+
+.admin-workspace--user .role-option {
+  min-width: 4.5rem;
 }
 
 .role-option.active {
@@ -960,8 +996,7 @@ button.danger {
 }
 
 .toggle-card {
-  min-width: 2.2rem;
-  padding: 0.35rem 0.7rem;
+  min-width: var(--button-min-height);
   text-align: center;
 }
 
@@ -1021,8 +1056,14 @@ button,
   appearance: none;
   border: none;
   border-radius: 999px;
-  padding: 0.6rem 1.2rem;
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-block) var(--button-padding-inline);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 600;
+  font-size: var(--button-font-size);
+  line-height: 1;
   cursor: pointer;
   background: var(--accent);
   color: #fff;
@@ -1030,9 +1071,6 @@ button,
 }
 
 .button-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   text-decoration: none;
 }
 
@@ -1046,10 +1084,6 @@ button.theme-toggle {
   color: var(--ink);
   border: 1px solid var(--border);
   box-shadow: none;
-  padding: 0.55rem 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   gap: 0.4rem;
 }
 
@@ -1241,8 +1275,8 @@ input {
   color: var(--ink);
   box-shadow: none;
   border: 1px solid var(--border);
-  width: 36px;
-  height: 36px;
+  width: var(--button-min-height);
+  height: var(--button-min-height);
   padding: 0;
   border-radius: 999px;
   line-height: 1;
@@ -1384,8 +1418,18 @@ input {
     align-items: stretch;
   }
 
+  .admin-workspace--user .admin-workspace-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
   .role-selector {
     width: 100%;
+  }
+
+  .admin-workspace--user .role-selector {
+    width: auto;
   }
 
   .admin-workspace .stat-tag {

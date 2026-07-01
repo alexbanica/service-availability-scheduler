@@ -92,8 +92,7 @@ export type WorkspaceInvitationIssueResult = WorkspaceInvitation & {
 export class WorkspaceService {
   private static readonly MAX_WORKSPACES_PER_ADMIN = 5;
   private static readonly INVITATION_CODE_BYTES = 32;
-  private static readonly EMAIL_REGEXP =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  private static readonly EMAIL_REGEXP = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   constructor(
     private readonly db: Pool,
@@ -668,10 +667,11 @@ export class WorkspaceService {
       }
     }
 
-    const latestInvitation = await this.invitationRepository.findLatestByWorkspaceAndEmail(
-      workspaceId,
-      trimmedEmail,
-    );
+    const latestInvitation =
+      await this.invitationRepository.findLatestByWorkspaceAndEmail(
+        workspaceId,
+        trimmedEmail,
+      );
     if (latestInvitation?.status === 'pending') {
       if (!this.isExpiredInvitation(latestInvitation, new Date())) {
         throw new Error('Invitation already pending');
@@ -725,9 +725,8 @@ export class WorkspaceService {
     }
 
     const invitationCodeHash = this.hashInvitationCode(trimmedCode);
-    const invitation = await this.invitationRepository.findLatestByCodeHash(
-      invitationCodeHash,
-    );
+    const invitation =
+      await this.invitationRepository.findLatestByCodeHash(invitationCodeHash);
     if (!invitation) {
       return {
         status: 'invalid',
@@ -795,9 +794,8 @@ export class WorkspaceService {
         this.invitationRepository.withConnection(connection);
 
       const invitationCodeHash = this.hashInvitationCode(trimmedCode);
-      const invitation = await invitationRepo.findLatestByCodeHashForUpdate(
-        invitationCodeHash,
-      );
+      const invitation =
+        await invitationRepo.findLatestByCodeHashForUpdate(invitationCodeHash);
       if (!invitation) {
         throw new Error('Invalid invitation code');
       }
@@ -869,13 +867,14 @@ export class WorkspaceService {
     const conn = await this.db.getConnection();
     try {
       await conn.beginTransaction();
-      const invitation = await this.acceptWorkspaceInvitationForRegistrationWithConnection(
-        invitationCodeHash,
-        userId,
-        trimmedEmail,
-        now,
-        conn,
-      );
+      const invitation =
+        await this.acceptWorkspaceInvitationForRegistrationWithConnection(
+          invitationCodeHash,
+          userId,
+          trimmedEmail,
+          now,
+          conn,
+        );
       await conn.commit();
       return invitation;
     } catch (error) {
@@ -893,12 +892,12 @@ export class WorkspaceService {
     now: Date,
     connection: MysqlConnection,
   ): Promise<WorkspaceInvitation> {
-    const workspaceUserRepo = this.workspaceUserRepository.withConnection(connection);
+    const workspaceUserRepo =
+      this.workspaceUserRepository.withConnection(connection);
     const invitationRepo = this.invitationRepository.withConnection(connection);
 
-    const invitation = await invitationRepo.findLatestByCodeHashForUpdate(
-      invitationCodeHash,
-    );
+    const invitation =
+      await invitationRepo.findLatestByCodeHashForUpdate(invitationCodeHash);
     if (!invitation) {
       throw new Error('Invalid invitation code');
     }
@@ -915,7 +914,9 @@ export class WorkspaceService {
       throw new Error('Invitation already assigned');
     }
 
-    if (this.normalizeInvitationEmail(invitation.invitedEmail ?? '') !== userEmail) {
+    if (
+      this.normalizeInvitationEmail(invitation.invitedEmail ?? '') !== userEmail
+    ) {
       throw new Error('Invitation email mismatch');
     }
 
@@ -962,7 +963,9 @@ export class WorkspaceService {
     const userIds = workspaceUsers.map((user) => user.userId);
     const users = await this.userRepository.findByIds(userIds);
     const userActivationById = new Map<string, boolean>();
-    users.forEach((user) => userActivationById.set(user.userId, user.activated));
+    users.forEach((user) =>
+      userActivationById.set(user.userId, user.activated),
+    );
     const acceptedUsers = workspaceUsers.map((workspaceUser) => ({
       userId: workspaceUser.userId,
       email: workspaceUser.email,
@@ -972,10 +975,11 @@ export class WorkspaceService {
 
     const pendingInvitations =
       await this.invitationRepository.listPendingByWorkspace(workspaceId);
-    const expiredInvitations = await this.invitationRepository.listExpiredByWorkspace(
-      workspaceId,
-      new Date(),
-    );
+    const expiredInvitations =
+      await this.invitationRepository.listExpiredByWorkspace(
+        workspaceId,
+        new Date(),
+      );
     const pendingUserRows: WorkspaceInvitationRow[] = pendingInvitations
       .filter((invitation) => {
         if (this.isExpiredInvitation(invitation, new Date())) {
@@ -988,22 +992,26 @@ export class WorkspaceService {
         email: invitation.invitedEmail || '',
         role: 'member' as WorkspaceRole,
         invitationId: invitation.invitationId,
-        invitationStatus: 'pending' as WorkspaceInvitationRow['invitationStatus'],
+        invitationStatus:
+          'pending' as WorkspaceInvitationRow['invitationStatus'],
         invitationExpiresAt: this.toDate(invitation.expiresAt),
         invitedByUserId: invitation.invitedByUserId,
         invitedUserId: invitation.invitedUserId,
       }));
 
-    const expiredRows: WorkspaceInvitationRow[] = expiredInvitations.map((invitation) => ({
-      userId: invitation.invitationId,
-      email: invitation.invitedEmail || '',
-      role: 'member' as WorkspaceRole,
-      invitationId: invitation.invitationId,
-      invitationStatus: 'expired' as WorkspaceInvitationRow['invitationStatus'],
-      invitationExpiresAt: this.toDate(invitation.expiresAt),
-      invitedByUserId: invitation.invitedByUserId,
-      invitedUserId: invitation.invitedUserId,
-    }));
+    const expiredRows: WorkspaceInvitationRow[] = expiredInvitations.map(
+      (invitation) => ({
+        userId: invitation.invitationId,
+        email: invitation.invitedEmail || '',
+        role: 'member' as WorkspaceRole,
+        invitationId: invitation.invitationId,
+        invitationStatus:
+          'expired' as WorkspaceInvitationRow['invitationStatus'],
+        invitationExpiresAt: this.toDate(invitation.expiresAt),
+        invitedByUserId: invitation.invitedByUserId,
+        invitedUserId: invitation.invitedUserId,
+      }),
+    );
 
     return [...acceptedUsers, ...pendingUserRows, ...expiredRows];
   }

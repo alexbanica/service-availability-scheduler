@@ -45,8 +45,7 @@ export class WorkspaceInvitationController {
         );
         const isUnregisteredInvite = computed(
           () =>
-            status.value === 'unregistered' &&
-            !invitationAccountMismatch.value,
+            status.value === 'unregistered' && !invitationAccountMismatch.value,
         );
         const normalizeEmail = (value: string): string =>
           value.trim().toLowerCase();

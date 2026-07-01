@@ -28,19 +28,77 @@ import { WorkspaceController } from './controllers/WorkspaceController';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const CLEANUP_INTERVAL_MS = 60 * 1000;
+const DEV_SESSION_SECRET = 'dev-secret-change-me';
 
 const ROOT_DIR = path.join(__dirname, '..');
 const APP_CONFIG_PATH = path.join(ROOT_DIR, 'config', 'app.yml');
 
+function isLocalDevelopmentRuntime(): boolean {
+  return (
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.npm_lifecycle_event === 'dev'
+  );
+}
+
+function resolveSessionSecret(): string {
+  const configuredSecret = process.env.SESSION_SECRET?.trim();
+  if (configuredSecret) {
+    return configuredSecret;
+  }
+
+  if (isLocalDevelopmentRuntime()) {
+    return DEV_SESSION_SECRET;
+  }
+
+  throw new Error(
+    'SESSION_SECRET is required outside local development. Set a long random JWT signing secret.',
+  );
+}
+
+app.disable('x-powered-by');
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=()',
+  );
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+    ].join('; '),
+  );
+  next();
+});
+
 app.use(express.json());
 
 app.use('/public', express.static(path.join(ROOT_DIR, 'public')));
+app.use(
+  '/vendor/vue',
+  express.static(path.join(ROOT_DIR, 'node_modules', 'vue', 'dist'), {
+    immutable: true,
+    index: false,
+    maxAge: '1y',
+  }),
+);
 
 let db: Pool;
 
 async function start() {
+  const sessionSecret = resolveSessionSecret();
   const configLoader = new ConfigLoaderService();
   const config = configLoader.loadConfig(APP_CONFIG_PATH);
 
@@ -67,7 +125,7 @@ async function start() {
     config.autoRefreshSeconds,
   );
   const jwtAuthService = new JwtAuthService(
-    SESSION_SECRET,
+    sessionSecret,
     config.jwtExpiresInSeconds,
   );
   const passwordService = new PasswordService();

@@ -1059,8 +1059,14 @@ test('POST /api/register accepts a valid invitation code and creates workspace m
   assert.equal(response.statusCode, 200);
   assert.equal((response.body as { ok?: boolean }).ok, true);
   assert.equal(userService.creationCalls, 1);
-  assert.equal(workspaceService.acceptWorkspaceInvitationForRegistrationCalls, 1);
-  assert.equal(workspaceService.acceptedInvites[0].invitationCode, 'invite-code');
+  assert.equal(
+    workspaceService.acceptWorkspaceInvitationForRegistrationCalls,
+    1,
+  );
+  assert.equal(
+    workspaceService.acceptedInvites[0].invitationCode,
+    'invite-code',
+  );
   assert.equal(
     workspaceService.acceptedInvites[0].userEmail,
     'invitee@example.com',
@@ -1134,7 +1140,10 @@ test('POST /api/register rejects invitation registration when invitation email d
     (response.body as { error?: string }).error,
     'Invitation email mismatch',
   );
-  assert.equal(workspaceService.acceptWorkspaceInvitationForRegistrationCalls, 1);
+  assert.equal(
+    workspaceService.acceptWorkspaceInvitationForRegistrationCalls,
+    1,
+  );
   assert.equal(pool.connection.beginTransactionCalls, 1);
   assert.equal(pool.connection.rollbackCalls, 1);
   assert.equal(pool.connection.commitCalls, 0);

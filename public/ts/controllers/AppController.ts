@@ -124,9 +124,7 @@ export class AppController {
         } | null>(null);
         const workspaceRowsRequestId = ref(0);
         const selectedUserWorkspaceId = ref<string | null>(null);
-        const workspaceUsers = ref<
-          Record<string, WorkspaceUserRow[]>
-        >({});
+        const workspaceUsers = ref<Record<string, WorkspaceUserRow[]>>({});
         const workspaceUsersLoading = ref(false);
         const workspaceUsersError = ref('');
         const workspaceUserActionError = ref('');
@@ -240,11 +238,9 @@ export class AppController {
           const role = workspaceRole(workspaceId);
           return role === 'admin' || role === 'manager';
         };
-        const selectedServiceWorkspaceCanManage = computed(() =>
+        const selectedServiceWorkspaceIsAdmin = computed(() =>
           isWorkspaceResourceAdmin(selectedServiceWorkspaceId.value),
         );
-        const selectedServiceWorkspaceIsAdmin =
-          selectedServiceWorkspaceCanManage;
         const createServiceOwnerName = computed(() => {
           const workspaceId = selectedServiceWorkspaceId.value;
           if (!workspaceId) {
@@ -391,9 +387,7 @@ export class AppController {
               workspace.currentUserRole === 'manager',
           ),
         );
-        const canAccessAdministration = computed(
-          () => resourceAdminWorkspaces.value.length > 0,
-        );
+        const canAccessAdministration = computed(() => Boolean(user.value));
         const selectedInviteWorkspace = computed(() =>
           inviteWorkspaceId.value === null
             ? null
@@ -421,7 +415,7 @@ export class AppController {
         const selectedUserWorkspace = computed(() =>
           selectedUserWorkspaceId.value === null
             ? null
-            : resourceAdminWorkspaces.value.find(
+            : workspaces.value.find(
                 (workspace) => workspace.id === selectedUserWorkspaceId.value,
               ) || null,
         );
@@ -435,18 +429,18 @@ export class AppController {
         ): boolean =>
           Boolean(
             user.value &&
-              !workspaceUser.invitationId &&
-              selectedUserWorkspace.value?.currentUserRole === 'admin' &&
-              workspaceUser.userId !== user.value.id,
+            !workspaceUser.invitationId &&
+            selectedUserWorkspace.value?.currentUserRole === 'admin' &&
+            workspaceUser.userId !== user.value.id,
           );
         const canRemoveWorkspaceInvitation = (
           workspaceUser: WorkspaceUserRow,
         ): boolean =>
           Boolean(
             workspaceUser.invitationId &&
-              workspaceUser.invitationStatus === 'pending' &&
-              selectedUserWorkspace.value &&
-              isWorkspaceResourceAdmin(selectedUserWorkspace.value.id),
+            workspaceUser.invitationStatus === 'pending' &&
+            selectedUserWorkspace.value &&
+            isWorkspaceResourceAdmin(selectedUserWorkspace.value.id),
           );
 
         const claimedByUser = computed(() => {
@@ -560,7 +554,7 @@ export class AppController {
             const persistedWorkspaceId =
               localStorage.getItem(serviceManagementWorkspaceStorageKey) ||
               null;
-            const serviceWorkspaces = resourceAdminWorkspaces.value;
+            const serviceWorkspaces = workspaces.value;
             const firstWorkspaceId =
               serviceWorkspaces.length > 0 ? serviceWorkspaces[0].id : null;
             if (
@@ -585,7 +579,7 @@ export class AppController {
             if (
               adminSection.value !== 'services' &&
               adminWorkspaces.value.length === 0 &&
-              resourceAdminWorkspaces.value.length > 0
+              workspaces.value.length > 0
             ) {
               adminSection.value = 'workspace';
             }
@@ -626,9 +620,7 @@ export class AppController {
           window.sessionStorage?.removeItem(
             'workspace_invitation_pending_accept_code',
           );
-          window.sessionStorage?.removeItem(
-            'workspace_invitation_login_code',
-          );
+          window.sessionStorage?.removeItem('workspace_invitation_login_code');
           window.sessionStorage?.removeItem(
             'workspace_invitation_joined_workspace_id',
           );
@@ -783,6 +775,10 @@ export class AppController {
 
         const openInviteModal = (workspaceId: string) => {
           if (!isProtectedActionAllowed()) {
+            return;
+          }
+          if (!isWorkspaceResourceAdmin(workspaceId)) {
+            showToast('Not authorized for workspace');
             return;
           }
           inviteWorkspaceId.value = workspaceId;
@@ -1981,8 +1977,8 @@ export class AppController {
               action.actionType === 'workspace-user'
                 ? `${deleteActionNoun(action)} removed.`
                 : action.actionType === 'workspace-invitation'
-                ? `${deleteActionNoun(action)} removed.`
-                : `${deleteActionNoun(action)} deleted.`,
+                  ? `${deleteActionNoun(action)} removed.`
+                  : `${deleteActionNoun(action)} deleted.`,
             );
             if (
               action.actionType === 'workspace-user' ||
@@ -2060,18 +2056,16 @@ export class AppController {
           section: 'workspace' | 'services' | 'users',
         ) => {
           if (section === 'services') {
-            if (resourceAdminWorkspaces.value.length > 0) {
+            if (workspaces.value.length > 0) {
               adminSection.value = section;
               return;
             }
-            showToast('Not authorized');
+            showToast('No workspaces available');
             return;
           }
           if (section === 'workspace' || section === 'users') {
             const allowedWorkspaces =
-              section === 'users'
-                ? resourceAdminWorkspaces.value
-                : resourceAdminWorkspaces.value;
+              section === 'users' ? adminWorkspaces.value : workspaces.value;
             if (allowedWorkspaces.length > 0) {
               adminSection.value = section;
               if (section === 'users') {
@@ -2090,7 +2084,11 @@ export class AppController {
               }
               return;
             }
-            showToast('Not authorized');
+            showToast(
+              section === 'users'
+                ? 'Not authorized'
+                : 'No workspaces available',
+            );
             return;
           }
           adminSection.value = section;
@@ -2131,7 +2129,9 @@ export class AppController {
           }
         };
 
-        const reinviteWorkspaceUser = async (workspaceUser: WorkspaceUserRow) => {
+        const reinviteWorkspaceUser = async (
+          workspaceUser: WorkspaceUserRow,
+        ) => {
           const workspaceId = selectedUserWorkspaceId.value;
           if (
             !workspaceId ||
@@ -2253,15 +2253,14 @@ export class AppController {
           }
           if (value === 'users' && isProtectedActionAllowed()) {
             const workspaceId =
-              selectedUserWorkspaceId.value ||
-              resourceAdminWorkspaces.value[0]?.id;
+              selectedUserWorkspaceId.value || adminWorkspaces.value[0]?.id;
             selectedUserWorkspaceId.value =
               workspaceId &&
-              resourceAdminWorkspaces.value.some(
+              adminWorkspaces.value.some(
                 (workspace) => workspace.id === workspaceId,
               )
                 ? workspaceId
-                : resourceAdminWorkspaces.value[0]?.id || null;
+                : adminWorkspaces.value[0]?.id || null;
             loadWorkspaceUsers(selectedUserWorkspaceId.value).catch((err) => {
               showToast((err as Error).message);
             });

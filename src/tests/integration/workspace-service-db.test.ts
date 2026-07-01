@@ -310,14 +310,14 @@ test(
       await ensureSchema(db);
 
       const [rows] = await db.query<RowDataPacket[]>(
-        'SHOW COLUMNS FROM workspace_users LIKE \'role\'',
+        "SHOW COLUMNS FROM workspace_users LIKE 'role'",
       );
       assert.equal(rows.length, 1);
 
       const type = String(rows[0]?.Type || '');
-      assert.ok(type.includes('\'admin\''));
-      assert.ok(type.includes('\'manager\''));
-      assert.ok(type.includes('\'member\''));
+      assert.ok(type.includes("'admin'"));
+      assert.ok(type.includes("'manager'"));
+      assert.ok(type.includes("'member'"));
     } finally {
       await db.end();
     }
@@ -2030,7 +2030,9 @@ type WorkspaceScopedIdOps = {
   ) => Promise<unknown>;
 };
 
-function toOwnerEnvironmentDeleteOps(service: WorkspaceService): WorkspaceScopedIdOps {
+function toOwnerEnvironmentDeleteOps(
+  service: WorkspaceService,
+): WorkspaceScopedIdOps {
   const ops = service as unknown as WorkspaceScopedIdOps;
   if (typeof ops.deleteOwner !== 'function') {
     assert.fail('WorkspaceService.deleteOwner is not implemented yet');
@@ -2742,7 +2744,11 @@ test(
       );
       assert.deepEqual(
         remainingServices.map((row) => row.service_id),
-        [otherService.serviceId, serviceOne.serviceId, serviceTwo.serviceId].sort(),
+        [
+          otherService.serviceId,
+          serviceOne.serviceId,
+          serviceTwo.serviceId,
+        ].sort(),
       );
 
       const [workspaceOneAssociations] = await db.query<RowDataPacket[]>(

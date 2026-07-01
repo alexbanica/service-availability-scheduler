@@ -19,7 +19,13 @@ export type WorkspaceUserRow = {
 };
 
 export type WorkspaceInvitationValidation = {
-  status: 'invalid' | 'expired' | 'used' | 'wrong_user' | 'unregistered' | 'valid';
+  status:
+    | 'invalid'
+    | 'expired'
+    | 'used'
+    | 'wrong_user'
+    | 'unregistered'
+    | 'valid';
   existingUserInvite: boolean;
   invitation: {
     workspaceId: string;
@@ -304,9 +310,7 @@ export class WorkspaceService {
     if (!response.ok) {
       const data = (await response.json()) as Record<string, unknown>;
       throw new Error(
-        typeof data.error === 'string'
-          ? data.error
-          : 'Failed to delete owner',
+        typeof data.error === 'string' ? data.error : 'Failed to delete owner',
       );
     }
   }
@@ -330,7 +334,9 @@ export class WorkspaceService {
     }
   }
 
-  static async listWorkspaceUsers(workspaceId: string): Promise<WorkspaceUserRow[]> {
+  static async listWorkspaceUsers(
+    workspaceId: string,
+  ): Promise<WorkspaceUserRow[]> {
     const response = await ApiService.get(
       `/api/workspaces/${workspaceId}/users`,
     );
@@ -355,9 +361,7 @@ export class WorkspaceService {
               ? userRow.activated
               : undefined,
           invitationId: this.asOptionalString(userRow.invitation_id),
-          invitationStatus: this.asInvitationStatus(
-            userRow.invitation_status,
-          ),
+          invitationStatus: this.asInvitationStatus(userRow.invitation_status),
           invitationExpiresAt: this.asOptionalString(
             userRow.invitation_expires_at,
           ),

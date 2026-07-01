@@ -35,9 +35,7 @@ class FakeWorkspaceRepository {
   async listUsersByWorkspace(
     workspaceId: string,
   ): Promise<Array<{ userId: string; email: string }>> {
-    return (
-      this.workspaceUsers.get(workspaceId) || []
-    ).map((user) => ({
+    return (this.workspaceUsers.get(workspaceId) || []).map((user) => ({
       userId: user.userId,
       email: user.email,
     }));
@@ -163,7 +161,10 @@ class FakeServiceRepository {
     string,
     Map<string, { id: string; name: string }>
   >();
-  private readonly serviceEnvironmentAssociations = new Map<string, Set<string>>();
+  private readonly serviceEnvironmentAssociations = new Map<
+    string,
+    Set<string>
+  >();
   private readonly owners = new Map<
     string,
     Map<string, { id: string; name: string }>
@@ -452,8 +453,10 @@ class FakeServiceRepository {
   ): Promise<number> {
     let affected = 0;
 
-    for (const [serviceId, associations] of this
-      .serviceEnvironmentAssociations.entries()) {
+    for (const [
+      serviceId,
+      associations,
+    ] of this.serviceEnvironmentAssociations.entries()) {
       const service = this.services.get(serviceId);
       if (!service || service.workspaceId !== workspaceId) {
         continue;
@@ -527,8 +530,7 @@ class FakeInvitationRepository {
       status: row.status || 'pending',
       invitedEmail: (row.invitedEmail || '').trim().toLowerCase(),
       invitationCodeHash: row.invitationCodeHash || `seed-hash-${this.nextId}`,
-      expiresAt:
-        row.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
+      expiresAt: row.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000),
       createdAt: row.createdAt || new Date(),
       acceptedAt: row.acceptedAt || null,
       consumedAt: row.consumedAt || null,
@@ -602,8 +604,7 @@ class FakeInvitationRepository {
     expires_at?: Date;
   } | null> {
     const found = [...this.existingRows, ...this.rows].find(
-      (row) =>
-        row.workspaceId === workspaceId && row.invitedUserId === userId,
+      (row) => row.workspaceId === workspaceId && row.invitedUserId === userId,
     );
     if (!found) {
       return null;
@@ -650,7 +651,9 @@ class FakeInvitationRepository {
     return this.findLatestByCodeHash(invitationCodeHash);
   }
 
-  async listPendingByWorkspace(workspaceId: string): Promise<WorkspaceInvitation[]> {
+  async listPendingByWorkspace(
+    workspaceId: string,
+  ): Promise<WorkspaceInvitation[]> {
     return [...this.existingRows, ...this.rows]
       .filter(
         (row) => row.workspaceId === workspaceId && row.status === 'pending',
@@ -672,10 +675,7 @@ class FakeInvitationRepository {
       .map((row) => this.toEntity(row));
   }
 
-  async markAccepted(
-    invitationId: string,
-    now: Date,
-  ): Promise<boolean> {
+  async markAccepted(invitationId: string, now: Date): Promise<boolean> {
     const invitation = [...this.existingRows, ...this.rows].find(
       (row) => row.invitationId === invitationId,
     );
@@ -687,10 +687,7 @@ class FakeInvitationRepository {
     return true;
   }
 
-  async markConsumed(
-    invitationId: string,
-    now: Date,
-  ): Promise<boolean> {
+  async markConsumed(invitationId: string, now: Date): Promise<boolean> {
     const invitation = [...this.existingRows, ...this.rows].find(
       (row) => row.invitationId === invitationId,
     );
@@ -852,7 +849,16 @@ class FakeUserRepository {
     const uniqueIds = [...new Set(ids)];
     const users = uniqueIds
       .map((id) => this.userById.get(id))
-      .filter((user): user is { userId: string; email: string; activated: boolean; nickname: string } => user !== undefined)
+      .filter(
+        (
+          user,
+        ): user is {
+          userId: string;
+          email: string;
+          activated: boolean;
+          nickname: string;
+        } => user !== undefined,
+      )
       .map((user) => ({
         userId: user.userId,
         email: user.email,
@@ -1193,7 +1199,8 @@ test('deleteOwner allows admin and manager roles', async () => {
   const deleteOps = toOwnerEnvironmentDeleteOps(service);
   await deleteOps.deleteOwner('workspace-1', 'admin-user', 'owner-admin');
   await deleteOps.deleteOwner('workspace-1', 'manager-user', 'owner-manager');
-  const remainingOwners = await serviceRepository.listOwnersByWorkspace('workspace-1');
+  const remainingOwners =
+    await serviceRepository.listOwnersByWorkspace('workspace-1');
   assert.equal(remainingOwners.length, 0);
 });
 
@@ -1225,20 +1232,17 @@ test('deleteOwner allows only admin and manager and rejects member and non-membe
   const deleteOps = toOwnerEnvironmentDeleteOps(service);
 
   await assert.rejects(
-    () =>
-      deleteOps.deleteOwner('workspace-1', 'member-user', 'owner-1'),
+    () => deleteOps.deleteOwner('workspace-1', 'member-user', 'owner-1'),
     /Not authorized for workspace/,
   );
 
   await assert.rejects(
-    () =>
-      deleteOps.deleteOwner('workspace-2', 'admin-user', 'owner-1'),
+    () => deleteOps.deleteOwner('workspace-2', 'admin-user', 'owner-1'),
     /Workspace not found/,
   );
 
   await assert.rejects(
-    () =>
-      deleteOps.deleteOwner('workspace-1', 'missing-user', 'owner-1'),
+    () => deleteOps.deleteOwner('workspace-1', 'missing-user', 'owner-1'),
     /Not authorized|Not found|missing|workspace/,
   );
 });
@@ -1347,9 +1351,8 @@ test('deleteEnvironment allows admin and manager roles', async () => {
     'manager-user',
     'environment-manager',
   );
-  const remaining = await serviceRepository.listEnvironmentsByWorkspace(
-    'workspace-1',
-  );
+  const remaining =
+    await serviceRepository.listEnvironmentsByWorkspace('workspace-1');
   assert.equal(remaining.length, 0);
 });
 
@@ -1381,7 +1384,11 @@ test('deleteEnvironment allows only admin and manager and rejects member and non
   const deleteOps = toOwnerEnvironmentDeleteOps(service);
   await assert.rejects(
     () =>
-      deleteOps.deleteEnvironment('workspace-1', 'member-user', 'environment-1'),
+      deleteOps.deleteEnvironment(
+        'workspace-1',
+        'member-user',
+        'environment-1',
+      ),
     /Not authorized for workspace/,
   );
 
@@ -1393,7 +1400,11 @@ test('deleteEnvironment allows only admin and manager and rejects member and non
 
   await assert.rejects(
     () =>
-      deleteOps.deleteEnvironment('workspace-1', 'missing-user', 'environment-1'),
+      deleteOps.deleteEnvironment(
+        'workspace-1',
+        'missing-user',
+        'environment-1',
+      ),
     /Not authorized for workspace|not found|missing/,
   );
 });
@@ -1853,8 +1864,7 @@ test('inviteUser rejects duplicate pending invitations but allows expired reinvi
   );
 
   await assert.rejects(
-    () =>
-      service.inviteUser('workspace-1', 'admin-user', 'user@example.com'),
+    () => service.inviteUser('workspace-1', 'admin-user', 'user@example.com'),
     /Invitation already pending/,
   );
 
@@ -2097,7 +2107,10 @@ test('workspace owner cannot remove or demote their own membership when another 
   );
 
   await service.removeWorkspaceUser('workspace-1', 'owner-user', 'member-user');
-  assert.equal(await workspaceUsers.getRole('workspace-1', 'member-user'), null);
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'member-user'),
+    null,
+  );
 });
 
 test('role updates only affect target workspace membership', async () => {
@@ -2265,7 +2278,10 @@ test('validateWorkspaceInvitationCode handles invalid invitation codes', async (
 
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
     ]),
     workspaceUsers,
   );
@@ -2281,12 +2297,17 @@ test('validateWorkspaceInvitationCode handles unregistered, wrong-user, and vali
   workspaceUsers.setAdmin('workspace-1', 'admin-user');
 
   const userRepository = new FakeUserRepository(
-    new Map([['registered@example.com', { userId: 'user-2', activated: true }]]),
+    new Map([
+      ['registered@example.com', { userId: 'user-2', activated: true }],
+    ]),
   );
 
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -2305,7 +2326,10 @@ test('validateWorkspaceInvitationCode handles unregistered, wrong-user, and vali
     unregistered.invitationCode,
   );
   assert.equal(unregisteredValidation.status, 'unregistered');
-  assert.equal(unregisteredValidation.invitation?.invitedEmail, 'newperson@example.com');
+  assert.equal(
+    unregisteredValidation.invitation?.invitedEmail,
+    'newperson@example.com',
+  );
 
   const registered = await service.inviteUser(
     'workspace-1',
@@ -2333,11 +2357,16 @@ test('validateWorkspaceInvitationCode handles expired invitation codes', async (
 
   const invitationRepository = new FakeInvitationRepository();
   const userRepository = new FakeUserRepository(
-    new Map([['registered@example.com', { userId: 'user-2', activated: true }]]),
+    new Map([
+      ['registered@example.com', { userId: 'user-2', activated: true }],
+    ]),
   );
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -2357,7 +2386,9 @@ test('validateWorkspaceInvitationCode handles expired invitation codes', async (
     new Date(Date.now() - 1000),
   );
 
-  const expired = await service.validateWorkspaceInvitationCode(issued.invitationCode);
+  const expired = await service.validateWorkspaceInvitationCode(
+    issued.invitationCode,
+  );
   assert.equal(expired.status, 'expired');
   assert.equal(expired.invitation?.invitedUserId, 'user-2');
 });
@@ -2368,11 +2399,16 @@ test('validateWorkspaceInvitationCode handles used invitation codes', async () =
 
   const invitationRepository = new FakeInvitationRepository();
   const userRepository = new FakeUserRepository(
-    new Map([['registered@example.com', { userId: 'user-2', activated: true }]]),
+    new Map([
+      ['registered@example.com', { userId: 'user-2', activated: true }],
+    ]),
   );
   const service = makeService(
     new Map([
-      ['workspace-1', new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0)],
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
     ]),
     workspaceUsers,
     undefined,
@@ -2393,7 +2429,9 @@ test('validateWorkspaceInvitationCode handles used invitation codes', async () =
     new Date(),
   );
 
-  const used = await service.validateWorkspaceInvitationCode(issued.invitationCode);
+  const used = await service.validateWorkspaceInvitationCode(
+    issued.invitationCode,
+  );
   assert.equal(used.status, 'used');
   assert.equal(used.invitation, null);
   assert.equal(used.existingUserInvite, false);
@@ -2466,12 +2504,8 @@ test('listWorkspaceUsers returns accepted and invitation rows with activation me
   assert.equal(accepted?.role, 'member');
   assert.equal(accepted?.activated, true);
 
-  const pending = rows.find(
-    (row) => row.invitationStatus === 'pending',
-  );
-  const expired = rows.find(
-    (row) => row.invitationStatus === 'expired',
-  );
+  const pending = rows.find((row) => row.invitationStatus === 'pending');
+  const expired = rows.find((row) => row.invitationStatus === 'expired');
   assert.equal(pending?.email, 'pending-invite@example.com');
   assert.equal(expired?.email, 'expired-invite@example.com');
 });
