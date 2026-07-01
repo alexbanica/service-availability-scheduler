@@ -502,26 +502,29 @@ main {
   overflow-wrap: anywhere;
 }
 
-.account-activation-warning {
+.account-status-tag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 1.05rem;
-  height: 1.05rem;
-  clip-path: polygon(50% 6%, 96% 88%, 4% 88%);
+  min-height: 1.55rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
   background: #f8c045;
   color: #3a2a0a;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 800;
   line-height: 1;
-  padding-top: 0.14rem;
-  cursor: help;
+  white-space: nowrap;
 }
 
-.account-activation-warning:focus-visible {
-  outline: 2px solid color-mix(in srgb, #f8c045, var(--ink) 24%);
-  outline-offset: 2px;
+.account-status-tag--expired {
+  background: color-mix(in srgb, var(--danger), #fff 78%);
+  color: color-mix(in srgb, var(--danger), #000 28%);
+}
+
+.account-status-tag--warning {
+  background: color-mix(in srgb, #f8c045, var(--surface) 22%);
 }
 
 .admin-workspace-id {

@@ -675,14 +675,22 @@
                         <strong class="admin-workspace-email">
                           <span>{{ workspaceUser.email }}</span>
                           <span
-                            v-if="workspaceUser.activated === false && !workspaceUser.invitationId"
-                            class="account-activation-warning"
-                            role="img"
-                            tabindex="0"
-                            title="Account is not yet activated"
-                            aria-label="Account is not yet activated"
+                            v-if="workspaceUser.invitationStatus === 'pending'"
+                            class="account-status-tag"
                           >
-                            !
+                            Pending invite
+                          </span>
+                          <span
+                            v-else-if="workspaceUser.invitationStatus === 'expired'"
+                            class="account-status-tag account-status-tag--expired"
+                          >
+                            Invite expired
+                          </span>
+                          <span
+                            v-else-if="workspaceUser.activated === false && !workspaceUser.invitationId"
+                            class="account-status-tag account-status-tag--warning"
+                          >
+                            Not activated
                           </span>
                         </strong>
                       </div>
