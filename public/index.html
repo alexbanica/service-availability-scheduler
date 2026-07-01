@@ -69,6 +69,7 @@
               Service Availability
             </button>
             <button
+              v-if="canAccessAdministration"
               class="menu-tab"
               :class="{ active: currentView === 'admin' }"
               type="button"
@@ -158,7 +159,13 @@
                 </button>
               </div>
               <p v-else class="muted">No workspaces yet.</p>
-              <button type="button" @click="setView('admin')">Go to admin</button>
+              <button
+                v-if="canAccessAdministration"
+                type="button"
+                @click="setView('admin')"
+              >
+                Go to admin
+              </button>
             </div>
           </div>
         </section>
@@ -327,7 +334,7 @@
                 Service Management
               </button>
               <button
-                v-if="adminWorkspaces.length"
+                v-if="resourceAdminWorkspaces.length"
                 class="admin-tab"
                 :class="{ active: adminSection === 'users' }"
                 type="button"
@@ -338,13 +345,14 @@
             </aside>
 
             <div class="admin-content">
-              <div v-if="adminSection === 'workspace' && adminWorkspaces.length" class="admin-panel">
+              <div v-if="adminSection === 'workspace' && resourceAdminWorkspaces.length" class="admin-panel">
                 <div class="admin-header">
                   <div>
                     <h3>Workspace management</h3>
                     <p class="muted">Create new workspaces and invite teammates.</p>
                   </div>
                   <button
+                    v-if="adminWorkspaces.length"
                     type="button"
                     class="secondary"
                     :disabled="!canUseProtectedActions"
@@ -355,11 +363,11 @@
                 </div>
                 <div class="admin-card">
                   <h4>Your workspaces</h4>
-                  <div v-if="!adminWorkspaces.length" class="muted">
-                    You are not an admin on any workspaces yet.
+                  <div v-if="!resourceAdminWorkspaces.length" class="muted">
+                    You do not manage any workspaces yet.
                   </div>
                   <div v-else class="admin-list">
-                    <div v-for="workspace in adminWorkspaces" :key="workspace.id" class="admin-workspace">
+                    <div v-for="workspace in resourceAdminWorkspaces" :key="workspace.id" class="admin-workspace">
                       <div class="admin-workspace-identity">
                         <strong>{{ workspace.name }}</strong>
                         <span class="admin-workspace-id muted">{{ workspace.id }}</span>
@@ -425,7 +433,7 @@
                 </div>
               </div>
 
-              <div v-else-if="adminSection === 'services' || !adminWorkspaces.length" class="admin-panel">
+              <div v-else-if="adminSection === 'services' || !resourceAdminWorkspaces.length" class="admin-panel">
                 <div class="admin-header">
                   <div>
                     <h3>Service Management</h3>
@@ -636,14 +644,14 @@
                     <p class="muted">Review roles and access assignments.</p>
                   </div>
                 </div>
-                <div v-if="!adminWorkspaces.length" class="admin-card">
+                <div v-if="!resourceAdminWorkspaces.length" class="admin-card">
                   <p class="error">Not authorized</p>
                 </div>
                 <div v-else class="admin-card">
                   <label class="admin-service-select">
                     <span>Workspace</span>
                     <select v-model="selectedUserWorkspaceId">
-                      <option v-for="workspace in adminWorkspaces" :key="workspace.id" :value="workspace.id">
+                      <option v-for="workspace in resourceAdminWorkspaces" :key="workspace.id" :value="workspace.id">
                         {{ workspace.name }}
                       </option>
                     </select>
@@ -663,20 +671,55 @@
                     >
                       <div class="admin-workspace-identity">
                         <strong>{{ workspaceUser.email }}</strong>
-                        <span class="admin-workspace-id muted">{{ workspaceUser.userId }}</span>
+                        <span class="admin-workspace-id muted">
+                          {{ workspaceUser.invitationId || workspaceUser.userId }}
+                        </span>
+                        <span
+                          v-if="workspaceUser.invitationStatus === 'pending'"
+                          class="muted"
+                        >
+                          Invitation pending acceptance
+                        </span>
+                        <span
+                          v-if="workspaceUser.invitationStatus === 'expired'"
+                          class="muted"
+                        >
+                          Invitation expired
+                        </span>
+                        <span
+                          v-if="workspaceUser.activated === false && !workspaceUser.invitationId"
+                          class="muted"
+                        >
+                          Account not activated
+                        </span>
                       </div>
                       <div class="admin-workspace-actions">
                         <span
-                          v-if="!canModifyWorkspaceUser(workspaceUser.userId)"
+                          v-if="workspaceUser.invitationStatus === 'pending'"
                           class="muted"
                         >
-                          Workspace owner
+                          Pending
+                        </span>
+                        <button
+                          v-else-if="workspaceUser.invitationStatus === 'expired'"
+                          type="button"
+                          class="secondary"
+                          :disabled="workspaceUserActionPending === (workspaceUser.invitationId || workspaceUser.userId) || !canUseProtectedActions"
+                          @click="reinviteWorkspaceUser(workspaceUser)"
+                        >
+                          Reinvite
+                        </button>
+                        <span
+                          v-else-if="!canModifyWorkspaceUser(workspaceUser)"
+                          class="muted"
+                        >
+                          {{ selectedUserWorkspace?.currentUserRole === 'admin' ? 'Workspace owner' : workspaceUser.role }}
                         </span>
                         <template v-else>
                           <select
                             :value="workspaceUser.role"
                             :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
-                            @change="updateWorkspaceUserRole(workspaceUser.userId, $event.target.value)"
+                            @change="updateWorkspaceUserRole(workspaceUser, $event.target.value)"
                           >
                             <option value="admin">admin</option>
                             <option value="manager">manager</option>
@@ -686,7 +729,7 @@
                             type="button"
                             class="danger"
                             :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
-                            @click="removeWorkspaceUser(workspaceUser.userId)"
+                            @click="removeWorkspaceUser(workspaceUser)"
                           >
                             Remove
                           </button>

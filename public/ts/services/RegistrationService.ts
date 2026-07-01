@@ -32,6 +32,7 @@ export class RegistrationService {
     confirm_password: string;
     challenge_id: string;
     challenge_answer: string;
+    invitation_code?: string;
   }): Promise<void> {
     const response = await ApiService.post('/api/register', payload);
     const data = (await response.json()) as {

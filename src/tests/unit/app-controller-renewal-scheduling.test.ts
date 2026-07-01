@@ -441,7 +441,7 @@ test('AppController exposes manager resource controls without user administratio
   assert.equal(state.selectedServiceWorkspaceIsAdmin?.value, true);
   state.setAdminSection?.('users');
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(state.selectedUserWorkspaceId?.value, null);
+  assert.equal(state.selectedUserWorkspaceId?.value, 'workspace-1');
   assert.equal(state.selectedWorkspaceUsers?.value.length, 0);
 
   AuthService.loadUser = originalLoadUser;

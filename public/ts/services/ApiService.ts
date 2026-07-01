@@ -45,9 +45,14 @@ export class ApiService {
       '/api/account-activation/validate',
       '/api/account-activation',
     ].includes(path);
+    const isWorkspaceInvitationValidation =
+      path.startsWith('/api/workspace-invitations/') &&
+      path.endsWith('/validate');
+    const isUnauthenticatedRequest =
+      isUnauthenticatedRoute || isWorkspaceInvitationValidation;
 
     const token = AuthTokenStorage.getToken();
-    if (token && !isUnauthenticatedRoute) {
+    if (token && !isUnauthenticatedRequest) {
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -60,7 +65,7 @@ export class ApiService {
           : undefined,
     });
 
-    if (response.status === 401 && !isUnauthenticatedRoute) {
+    if (response.status === 401 && !isUnauthenticatedRequest) {
       AuthTokenStorage.clearToken();
       if (typeof window.location.replace === 'function') {
         window.location.replace('/login');

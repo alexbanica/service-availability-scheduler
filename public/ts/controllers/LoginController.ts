@@ -33,6 +33,8 @@ export class LoginController {
         const registerRequestSubmitting = ref(false);
         const registerRequestError = ref('');
         const registerRequestSuccess = ref(false);
+        const invitationCode = ref('');
+        const invitationEmailLocked = ref(false);
         const forgotEmail = ref('');
         const forgotChallengeId = ref('');
         const forgotChallengePrompt = ref('');
@@ -91,7 +93,9 @@ export class LoginController {
             window.history.pushState({}, '', '/register');
           }
           mode.value = 'register';
-          registerEmail.value = '';
+          if (!invitationEmailLocked.value) {
+            registerEmail.value = '';
+          }
           registerNickname.value = '';
           registerPassword.value = '';
           registerConfirmPassword.value = '';
@@ -187,6 +191,7 @@ export class LoginController {
               confirm_password: registerConfirmPassword.value,
               challenge_id: registerChallengeId.value,
               challenge_answer: registerChallengeAnswer.value,
+              invitation_code: invitationCode.value || undefined,
             });
             registerRequestSuccess.value = true;
             window.location.replace('/overview');
@@ -241,6 +246,17 @@ export class LoginController {
         applyTheme(theme.value);
 
         onMounted(async () => {
+          const params = new URLSearchParams(window.location.search);
+          const queryInvitationCode = params.get('invitation_code') || '';
+          const queryEmail = params.get('email') || '';
+          if (queryInvitationCode) {
+            invitationCode.value = queryInvitationCode;
+            mode.value = 'register';
+            if (queryEmail) {
+              registerEmail.value = queryEmail;
+              invitationEmailLocked.value = true;
+            }
+          }
           await loadAppInfo();
         });
 
@@ -264,6 +280,7 @@ export class LoginController {
           registerRequestSubmitting,
           registerRequestError,
           registerRequestSuccess,
+          invitationEmailLocked,
           forgotEmail,
           forgotChallengeId,
           forgotChallengePrompt,

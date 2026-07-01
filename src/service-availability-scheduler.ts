@@ -90,6 +90,7 @@ async function start() {
     invitationRepository,
     userRepository,
     userRoleRepository,
+    config.workspaceInvitationExpiresInSeconds,
   );
 
   setInterval(() => {
@@ -109,6 +110,7 @@ async function start() {
     accountActivationTokenService,
     console,
     db,
+    workspaceService,
   ).register(app);
   new WorkspaceController(workspaceService).register(app);
   new ServiceController(reservationService).register(app);

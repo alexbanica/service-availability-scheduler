@@ -130,6 +130,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 ## Configuration
 - Required runtime environment: `DATABASE_URL`.
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
+- Optional invitation runtime environment: `WORKSPACE_INVITATION_EXPIRES_IN_SECONDS`.
 - Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
 - Test-only environment: `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_TRUNCATE`.
 - Runtime timing keys live in `config/app.yml`:
@@ -137,6 +138,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   - `auto_refresh_seconds`
   - `jwt_expires_in_seconds`
   - `password_reset_token_expires_in_seconds`
+  - `workspace_invitation_expires_in_seconds`
 - Migration config key in `config/app.yml`:
   - `run_migrations_on_startup`
 - `config/services.yml` is not a runtime service catalog source; do not reintroduce YAML-backed service definitions.

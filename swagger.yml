@@ -123,7 +123,7 @@ paths:
       tags: [Account]
       security: []
       summary: Register a non-activated user and receive a bearer token.
-      description: Activation links are logged server-side until email delivery exists.
+      description: Activation links are logged server-side until email delivery exists. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
       requestBody:
         required: true
         content:
@@ -633,8 +633,8 @@ paths:
   /api/workspaces/{workspaceId}/invitations:
     post:
       tags: [Workspace resources]
-      summary: Invite an existing user to a workspace by email.
-      description: Admin-only user administration endpoint.
+      summary: Create a workspace invitation link by email.
+      description: Workspace admins and managers may invite existing or unregistered emails. The raw invitation link is logged server-side and is never returned in the response.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
@@ -660,11 +660,50 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+  /api/workspace-invitations/{code}/validate:
+    get:
+      tags: [Workspace invitations]
+      security: []
+      summary: Validate a workspace invitation code.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation validation state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceInvitationValidationResponse'
+  /api/workspace-invitations/{code}/accept:
+    post:
+      tags: [Workspace invitations]
+      summary: Accept an existing-user workspace invitation.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
   /api/workspaces/{workspaceId}/users:
     get:
       tags: [Workspace resources]
-      summary: List workspace users for user administration.
-      description: Admin-only endpoint. Returns user identity and workspace role for the target workspace.
+      summary: List workspace users and invitation rows.
+      description: Workspace admins and managers may read accepted users plus pending or expired invitation rows. Role mutation and membership removal remain admin-only accepted-user actions.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       responses:
@@ -829,6 +868,9 @@ components:
           type: string
         challenge_answer:
           type: string
+        invitation_code:
+          type: string
+          description: Optional workspace invitation code from a valid unregistered invitation link.
     TokenRequest:
       type: object
       required: [token]
@@ -1226,6 +1268,27 @@ components:
           format: email
         role:
           $ref: '#/components/schemas/WorkspaceRole'
+        activated:
+          type: boolean
+          description: Present for accepted user rows.
+        invitation_id:
+          type: string
+          format: uuid
+          description: Present for pending or expired invitation rows.
+        invitation_status:
+          type: string
+          enum: [pending, expired]
+          description: Present for invitation rows.
+        invitation_expires_at:
+          type: string
+          format: date-time
+        invited_by_user_id:
+          type: string
+          format: uuid
+        invited_user_id:
+          type: string
+          format: uuid
+          nullable: true
     WorkspaceUsersResponse:
       type: object
       required: [users]
@@ -1261,7 +1324,6 @@ components:
       required:
         - invitation_id
         - workspace_id
-        - invited_user_id
         - invited_by_user_id
         - status
       properties:
@@ -1274,8 +1336,43 @@ components:
         invited_user_id:
           type: string
           format: uuid
+          nullable: true
         invited_by_user_id:
           type: string
           format: uuid
         status:
           type: string
+          enum: [pending, accepted, revoked]
+    WorkspaceInvitationValidationResponse:
+      type: object
+      required: [status, existing_user_invite, invitation]
+      properties:
+        status:
+          type: string
+          enum: [invalid, expired, used, wrong_user, unregistered, valid]
+        existing_user_invite:
+          type: boolean
+        invitation:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/WorkspaceInvitationContext'
+    WorkspaceInvitationContext:
+      type: object
+      required: [workspace_id, invited_by_user_id, invited_email, expires_at]
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        invited_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        invited_by_user_id:
+          type: string
+          format: uuid
+        invited_email:
+          type: string
+          format: email
+        expires_at:
+          type: string
+          format: date-time
