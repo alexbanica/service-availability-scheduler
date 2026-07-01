@@ -11,6 +11,7 @@ type AppConfigWithJwt = {
   expiryWarningMinutes: number;
   jwtExpiresInSeconds: number;
   passwordResetTokenExpiresInSeconds: number;
+  workspaceInvitationExpiresInSeconds: number;
   runMigrationsOnStartup: boolean;
 };
 
@@ -179,6 +180,146 @@ test('non-numeric jwt_expires_in_seconds is rejected', () => {
       new ConfigLoaderService().loadConfig(configPath);
     }, /jwt_expires_in_seconds/);
   } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('workspace_invitation_expires_in_seconds defaults to 86400 when not configured', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.workspaceInvitationExpiresInSeconds, 86400);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('workspace_invitation_expires_in_seconds is parsed from app.yml', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\nworkspace_invitation_expires_in_seconds: 7200\n',
+  );
+  try {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.workspaceInvitationExpiresInSeconds, 7200);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('WORKSPACE_INVITATION_EXPIRES_IN_SECONDS env var overrides app.yml value', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\nworkspace_invitation_expires_in_seconds: 7200\n',
+  );
+  const previous = process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+  process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = '3600';
+  try {
+    const config = new ConfigLoaderService().loadConfig(
+      configPath,
+    ) as AppConfigWithJwt;
+    assert.equal(config.workspaceInvitationExpiresInSeconds, 3600);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('zero workspace_invitation_expires_in_seconds is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\nworkspace_invitation_expires_in_seconds: 0\n',
+  );
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /workspace_invitation_expires_in_seconds/);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('negative workspace_invitation_expires_in_seconds is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\nworkspace_invitation_expires_in_seconds: -120\n',
+  );
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /workspace_invitation_expires_in_seconds/);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('non-numeric workspace_invitation_expires_in_seconds is rejected', () => {
+  const configPath = writeTempAppConfig(
+    'expiry_warning_minutes: 5\nworkspace_invitation_expires_in_seconds: bad\n',
+  );
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /workspace_invitation_expires_in_seconds/);
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('non-numeric WORKSPACE_INVITATION_EXPIRES_IN_SECONDS is rejected', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  const previous = process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+  process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = 'bad';
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /WORKSPACE_INVITATION_EXPIRES_IN_SECONDS/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('zero WORKSPACE_INVITATION_EXPIRES_IN_SECONDS is rejected', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  const previous = process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+  process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = '0';
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /WORKSPACE_INVITATION_EXPIRES_IN_SECONDS/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = previous;
+    }
+    cleanupConfig(configPath);
+  }
+});
+
+test('negative WORKSPACE_INVITATION_EXPIRES_IN_SECONDS is rejected', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  const previous = process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+  process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = '-90';
+  try {
+    assert.throws(() => {
+      new ConfigLoaderService().loadConfig(configPath);
+    }, /WORKSPACE_INVITATION_EXPIRES_IN_SECONDS/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+    } else {
+      process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS = previous;
+    }
     cleanupConfig(configPath);
   }
 });

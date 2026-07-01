@@ -210,6 +210,36 @@ class AccountActivationTokenServiceStub {
   }
 }
 
+class WorkspaceServiceStub {
+  public acceptWorkspaceInvitationForRegistrationCalls = 0;
+  public acceptedInvites: Array<{
+    invitationCode: string;
+    userId: string;
+    userEmail: string;
+    connection?: unknown;
+  }> = [];
+  public nextAcceptError: string | null = null;
+
+  async acceptWorkspaceInvitationForRegistration(
+    invitationCode: string,
+    userId: string,
+    userEmail: string,
+    connection?: unknown,
+  ): Promise<unknown> {
+    this.acceptWorkspaceInvitationForRegistrationCalls += 1;
+    this.acceptedInvites.push({
+      invitationCode,
+      userId,
+      userEmail,
+      connection,
+    });
+    if (this.nextAcceptError) {
+      throw new Error(this.nextAcceptError);
+    }
+    return { invitationId: 'invitation-1' };
+  }
+}
+
 class FakeMySqlConnection {
   public beginTransactionCalls = 0;
   public commitCalls = 0;
@@ -462,6 +492,7 @@ function createRegistrationController(
   tokenService?: AccountActivationTokenServiceStub,
   resetLogger?: ResetLoggerStub,
   passwordResetTokenService?: PasswordResetTokenServiceStub,
+  workspaceService?: WorkspaceServiceStub,
 ): AuthController {
   const userService = new FakeUserService(user);
   const fakePasswordService = new PasswordServiceStub(acceptedPassword);
@@ -476,6 +507,7 @@ function createRegistrationController(
     resetLogger as unknown,
     tokenService as unknown,
     undefined as unknown,
+    workspaceService as unknown,
   );
 }
 
@@ -971,6 +1003,205 @@ test('POST /api/register creates user, token, and returns authenticated non-acti
     ),
     true,
   );
+});
+
+test('POST /api/register accepts a valid invitation code and creates workspace membership in the registration transaction', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+  const userService = new TrackingUserService(null);
+  const passwordService = new PasswordServiceStub('correct-password');
+  const jwtService = new FakeJwtAuthService(3600);
+  const workspaceService = new WorkspaceServiceStub();
+  const pool = new FakeMySqlPool();
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    passwordService as unknown,
+    captchaService as unknown,
+    undefined as unknown,
+    undefined as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+    pool as unknown,
+    workspaceService as unknown,
+  );
+
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/register');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'invitee@example.com',
+        nickname: 'Invited User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+        invitation_code: 'invite-code',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.body as { ok?: boolean }).ok, true);
+  assert.equal(userService.creationCalls, 1);
+  assert.equal(workspaceService.acceptWorkspaceInvitationForRegistrationCalls, 1);
+  assert.equal(workspaceService.acceptedInvites[0].invitationCode, 'invite-code');
+  assert.equal(
+    workspaceService.acceptedInvites[0].userEmail,
+    'invitee@example.com',
+  );
+  assert.equal(tokenService.createCount, 1);
+  assert.equal(pool.connection.beginTransactionCalls, 1);
+  assert.equal(pool.connection.commitCalls, 1);
+  assert.equal(pool.connection.rollbackCalls, 0);
+  assert.equal(pool.connection.releaseCalls, 1);
+  assert.equal(
+    workspaceService.acceptedInvites[0].connection,
+    tokenService.createConnections[0],
+    'invitation acceptance and activation token should share the same connection',
+  );
+});
+
+test('POST /api/register rejects invitation registration when invitation email does not match', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+  const userService = new TrackingUserService(null);
+  const passwordService = new PasswordServiceStub('correct-password');
+  const jwtService = new FakeJwtAuthService(3600);
+  const workspaceService = new WorkspaceServiceStub();
+  workspaceService.nextAcceptError = 'Invitation email mismatch';
+  const pool = new FakeMySqlPool();
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    passwordService as unknown,
+    captchaService as unknown,
+    undefined as unknown,
+    undefined as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+    pool as unknown,
+    workspaceService as unknown,
+  );
+
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/register');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'other@example.com',
+        nickname: 'Invited User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+        invitationCode: 'invite-code',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Invitation email mismatch',
+  );
+  assert.equal(workspaceService.acceptWorkspaceInvitationForRegistrationCalls, 1);
+  assert.equal(pool.connection.beginTransactionCalls, 1);
+  assert.equal(pool.connection.rollbackCalls, 1);
+  assert.equal(pool.connection.commitCalls, 0);
+  assert.equal(pool.connection.releaseCalls, 1);
+});
+
+test('POST /api/register rejects invalid invitation code with a 400', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  const captchaService = new CaptchaServiceStub(
+    () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
+    true,
+  );
+  const userService = new TrackingUserService(null);
+  const passwordService = new PasswordServiceStub('correct-password');
+  const jwtService = new FakeJwtAuthService(3600);
+  const workspaceService = new WorkspaceServiceStub();
+  workspaceService.nextAcceptError = 'Invalid invitation code';
+  const pool = new FakeMySqlPool();
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    userService as unknown,
+    jwtService as unknown,
+    passwordService as unknown,
+    captchaService as unknown,
+    undefined as unknown,
+    undefined as unknown,
+    tokenService as unknown,
+    undefined as unknown,
+    pool as unknown,
+    workspaceService as unknown,
+  );
+
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/register');
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'invitee@example.com',
+        nickname: 'Invited User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        challenge_id: 'register-challenge-id',
+        challenge_answer: '2',
+        invitationCode: 'invite-code',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Invalid invitation code',
+  );
+  assert.equal(pool.connection.beginTransactionCalls, 1);
+  assert.equal(pool.connection.rollbackCalls, 1);
+  assert.equal(pool.connection.commitCalls, 0);
+  assert.equal(pool.connection.releaseCalls, 1);
 });
 
 test('POST /api/register uses one production transaction when a DB pool is available', async () => {

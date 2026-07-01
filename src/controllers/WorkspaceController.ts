@@ -19,7 +19,6 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces',
       requireAuth,
-      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -234,7 +233,6 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/services',
       requireAuth,
-      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -580,6 +578,12 @@ export class WorkspaceController {
               user_id: user.userId,
               email: user.email,
               role: user.role,
+              activated: user.activated,
+              invitation_id: user.invitationId,
+              invitation_status: user.invitationStatus,
+              invitation_expires_at: user.invitationExpiresAt,
+              invited_by_user_id: user.invitedByUserId,
+              invited_user_id: user.invitedUserId,
             })),
           });
         } catch (err) {
@@ -658,6 +662,7 @@ export class WorkspaceController {
             userId,
             inviteeEmail,
           );
+          this.logWorkspaceInvitationInvitationLink(invitation);
           res.status(201).json({
             invitation_id: invitation.invitationId,
             workspace_id: invitation.workspaceId,
@@ -690,6 +695,90 @@ export class WorkspaceController {
         }
       },
     );
+
+    app.delete(
+      '/api/workspaces/:workspaceId/invitations/:invitationId',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        const invitationId = decodeURIComponent(
+          String(req.params.invitationId || ''),
+        );
+        try {
+          await this.workspaceService.removePendingInvitation(
+            workspaceId,
+            userId,
+            invitationId,
+          );
+          res.status(204).send();
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
+    app.get(
+      '/api/workspace-invitations/:code/validate',
+      async (req: Request, res: Response) => {
+        const code = String(req.params.code || '').trim();
+        const result =
+          await this.workspaceService.validateWorkspaceInvitationCode(code);
+        const invitation = result.invitation
+          ? {
+              workspace_id: result.invitation.workspaceId,
+              invited_user_id: result.invitation.invitedUserId,
+              invited_by_user_id: result.invitation.invitedByUserId,
+              invited_email: result.invitation.invitedEmail,
+              expires_at: result.invitation.expiresAt,
+            }
+          : null;
+        res.json({
+          status: result.status,
+          existing_user_invite: result.existingUserInvite,
+          invitation,
+        });
+      },
+    );
+
+    app.post(
+      '/api/workspace-invitations/:code/accept',
+      requireAuth,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const code = String(req.params.code || '').trim();
+        try {
+          await this.workspaceService.acceptWorkspaceInvitation(code, userId);
+          res.json({ ok: true });
+        } catch (err) {
+          const message = (err as Error).message;
+          if (
+            message === 'Invalid invitation code' ||
+            message === 'Invitation expired' ||
+            message === 'Invitation already used'
+          ) {
+            res.status(400).json({ error: message });
+            return;
+          }
+          if (message === 'Wrong user for invitation') {
+            res.status(403).json({ error: message });
+            return;
+          }
+          if (message === 'Invitation requires registration') {
+            res.status(409).json({ error: message });
+            return;
+          }
+          res.status(400).json({ error: message });
+        }
+      },
+    );
   }
 
   private writeWorkspaceError(res: Response, message: string): void {
@@ -697,7 +786,10 @@ export class WorkspaceController {
       res.status(404).json({ error: message });
       return;
     }
-    if (message === 'Workspace user not found') {
+    if (
+      message === 'Workspace user not found' ||
+      message === 'Workspace invitation not found'
+    ) {
       res.status(404).json({ error: message });
       return;
     }
@@ -725,5 +817,17 @@ export class WorkspaceController {
       return;
     }
     res.status(400).json({ error: message });
+  }
+
+  private logWorkspaceInvitationInvitationLink(
+    invitation: {
+      invitedEmail: string | null;
+      invitationCode: string;
+    },
+  ): void {
+    const invitedEmail = invitation.invitedEmail ?? '';
+    console.info(
+      `Workspace invitation requested for ${invitedEmail}, use this TODO link: /workspace-invitations/${invitation.invitationCode} - TODO replace with email delivery`,
+    );
   }
 }

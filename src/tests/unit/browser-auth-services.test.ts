@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const requireFromRoot = createRequire(process.cwd() + '/');
-const buildRoot = path.join(os.tmpdir(), 'sas-browser-tests');
+const buildRoot = path.join(os.tmpdir(), 'sas-browser-auth-services-tests');
 
 function compileBrowserBundle(): void {
   const result = spawnSync(
@@ -79,6 +79,8 @@ const { AuthService } = requireFromRoot(
   path.join(buildRoot, 'services/AuthService.js'),
 ) as {
   AuthService: {
+    isAuthenticated: () => boolean;
+    loadUser: () => Promise<AppUserStub | null>;
     renew: () => Promise<boolean>;
     logout: () => Promise<void>;
     redirectToLoginWhenUnauthenticated: () => boolean;
@@ -155,6 +157,33 @@ const AppController = loadBuildService<{
   'AppController',
 ).module;
 
+const WorkspaceInvitationController = loadBuildService<{
+  new (): {
+    bootstrap: (Vue: unknown) => void;
+  };
+}>(
+  path.join(buildRoot, 'controllers/WorkspaceInvitationController.js'),
+  'WorkspaceInvitationController',
+).module;
+
+const WorkspaceService = loadBuildService<{
+  validateInvitation: (code: string) => Promise<{
+    status: string;
+    existingUserInvite: boolean;
+    invitation: {
+      workspaceId: string;
+      invitedUserId: string | null;
+      invitedByUserId: string;
+      invitedEmail: string;
+      expiresAt: string;
+    } | null;
+  }>;
+  acceptInvitation: (code: string) => Promise<void>;
+}>(
+  path.join(buildRoot, 'services/WorkspaceService.js'),
+  'WorkspaceService',
+).module;
+
 function createMockResponse<T>(status: number, body: T): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -207,6 +236,8 @@ function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
 type Ref<T> = { value: T };
 
 type LoginControllerState = {
+  email: Ref<string>;
+  password: Ref<string>;
   mode: Ref<'login' | 'register' | 'forgot'>;
   isLoginMode: Ref<boolean>;
   isForgotMode: Ref<boolean>;
@@ -223,6 +254,7 @@ type LoginControllerState = {
   registerChallengeAnswer: Ref<string>;
   registerRequestError: Ref<string>;
   registerRequestSuccess: Ref<boolean>;
+  submit: () => Promise<void>;
   openLoginMode: () => void;
   openForgotMode: () => void;
   openRegisterMode: () => void;
@@ -234,9 +266,49 @@ type LoginControllerState = {
 
 type AppView = 'overview' | 'availability' | 'admin';
 
+type AppUserStub = {
+  id: string;
+  email: string;
+  nickname: string;
+  activated: boolean;
+};
+
+type WorkspaceSummaryStub = {
+  id: string;
+  currentUserRole: 'admin' | 'manager' | 'member';
+};
+
 type AppControllerState = {
   currentView: Ref<AppView>;
   setView: (view: AppView) => void;
+  user: Ref<AppUserStub | null>;
+  toastMessage: Ref<string>;
+  workspaces: Ref<WorkspaceSummaryStub[]>;
+  canAccessAdministration: Ref<boolean>;
+  resourceAdminWorkspaces: Ref<WorkspaceSummaryStub[]>;
+  isCreateWorkspaceModalOpen: Ref<boolean>;
+  isCreateServiceModalOpen: Ref<boolean>;
+  isInviteModalOpen: Ref<boolean>;
+  ownerModalWorkspaceId: Ref<string | null>;
+  environmentModalWorkspaceId: Ref<string | null>;
+  claimModalOpen: Ref<boolean>;
+  openCreateWorkspaceModal: () => void;
+  openCreateServiceModal: () => void;
+  openInviteModal: (workspaceId: string) => void;
+  openOwnerModal: (workspaceId: string) => void;
+  openEnvironmentModal: (workspaceId: string) => void;
+  openClaimModal: (serviceKey: string) => void;
+  consumePendingWorkspaceInvitation: () => Promise<void>;
+};
+
+type WorkspaceInvitationControllerState = {
+  loading: Ref<boolean>;
+  error: Ref<string>;
+  status: Ref<string>;
+  invitedEmail: Ref<string>;
+  isValidExistingInvite: Ref<boolean>;
+  isUnregisteredInvite: Ref<boolean>;
+  accepted: Ref<boolean>;
 };
 
 function createLoginControllerState(): LoginControllerState {
@@ -245,6 +317,7 @@ function createLoginControllerState(): LoginControllerState {
   }
 
   let state: LoginControllerState | null = null;
+  const mountedCallbacks: Array<() => void | Promise<void>> = [];
   const fakeVue = {
     createApp: (options: { setup: () => LoginControllerState }) => {
       state = options.setup();
@@ -260,8 +333,8 @@ function createLoginControllerState(): LoginControllerState {
         return fn();
       },
     }),
-    onMounted: () => {
-      return;
+    onMounted: (callback: () => void | Promise<void>) => {
+      mountedCallbacks.push(callback);
     },
   };
 
@@ -269,6 +342,54 @@ function createLoginControllerState(): LoginControllerState {
 
   if (!state) {
     assert.fail('LoginController did not expose setup state');
+  }
+
+  mountedCallbacks.forEach((callback) => {
+    void callback();
+  });
+
+  return state;
+}
+
+async function createWorkspaceInvitationControllerState(): Promise<WorkspaceInvitationControllerState> {
+  if (!WorkspaceInvitationController) {
+    assert.fail(
+      'WorkspaceInvitationController is not available in browser bundle',
+    );
+  }
+
+  let state: WorkspaceInvitationControllerState | null = null;
+  const mountedCallbacks: Array<() => void | Promise<void>> = [];
+  const fakeVue = {
+    createApp: (options: {
+      setup: () => WorkspaceInvitationControllerState;
+    }) => {
+      state = options.setup();
+      return {
+        mount: () => {
+          return;
+        },
+      };
+    },
+    ref: <T>(value: T): Ref<T> => ({ value }),
+    computed: <T>(fn: () => T) => ({
+      get value() {
+        return fn();
+      },
+    }),
+    onMounted: (callback: () => void | Promise<void>) => {
+      mountedCallbacks.push(callback);
+    },
+  };
+
+  new WorkspaceInvitationController().bootstrap(fakeVue);
+
+  if (!state) {
+    assert.fail('WorkspaceInvitationController did not expose setup state');
+  }
+
+  for (const callback of mountedCallbacks) {
+    await callback();
   }
 
   return state;
@@ -315,6 +436,8 @@ function createAppControllerState(): AppControllerState {
 function createWindowAndStorage(): {
   get: (key: string) => string | null;
   set: (key: string, value: string) => void;
+  setSession: (key: string, value: string) => void;
+  getSession: (key: string) => string | null;
   remove: (key: string) => void;
   clear: () => void;
   hasDocumentClass: (className: string) => boolean;
@@ -323,6 +446,7 @@ function createWindowAndStorage(): {
   restore: () => void;
 } {
   const data = new Map<string, string>();
+  const sessionData = new Map<string, string>();
   const classes = new Set<string>();
   let href = '/';
 
@@ -367,13 +491,30 @@ function createWindowAndStorage(): {
         get pathname() {
           return new URL(href, 'http://localhost').pathname;
         },
+        get search() {
+          return new URL(href, 'http://localhost').search;
+        },
         replace(nextHref: string) {
+          href = nextHref;
+        },
+        assign(nextHref: string) {
           href = nextHref;
         },
       },
       history: {
         pushState: (_state: object, _unused: string, nextHref: string) => {
           href = nextHref;
+        },
+      },
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      sessionStorage: {
+        getItem: (key: string): string | null => sessionData.get(key) ?? null,
+        setItem: (key: string, value: string): void => {
+          sessionData.set(key, value);
+        },
+        removeItem: (key: string): void => {
+          sessionData.delete(key);
         },
       },
     },
@@ -401,6 +542,10 @@ function createWindowAndStorage(): {
   return {
     get: (key: string) => localStorage.getItem(key),
     set: (key: string, value: string) => localStorage.setItem(key, value),
+    setSession: (key: string, value: string) => {
+      sessionData.set(key, value);
+    },
+    getSession: (key: string) => sessionData.get(key) ?? null,
     remove: (key: string) => localStorage.removeItem(key),
     clear: () => localStorage.clear(),
     hasDocumentClass: (className: string) => classes.has(className),
@@ -766,6 +911,80 @@ test('LoginController keeps registration mode under /register path', () => {
   }
 });
 
+test('LoginController redirects to overview after clicked invitation login handoff', async () => {
+  const { setHref, getHref, setSession, getSession, restore } =
+    createWindowAndStorage();
+  const originalLogin = LoginService.login;
+  LoginService.login = async () => {
+    return;
+  };
+
+  try {
+    setSession('workspace_invitation_login_code', 'invite-123');
+    setHref('/login?invitation_handoff=1');
+    const state = createLoginControllerState();
+    state.email.value = 'alice@example.com';
+    state.password.value = 'secret-password';
+
+    await state.submit();
+
+    assert.equal(getHref(), '/overview');
+    assert.equal(
+      getSession('workspace_invitation_pending_accept_code'),
+      'invite-123',
+    );
+  } finally {
+    LoginService.login = originalLogin;
+    restore();
+  }
+});
+
+test('LoginController redirects to overview when normal login has stale invitation state', async () => {
+  const { setHref, getHref, setSession, restore } = createWindowAndStorage();
+  const originalLogin = LoginService.login;
+  LoginService.login = async () => {
+    return;
+  };
+
+  try {
+    setSession('workspace_invitation_login_code', 'stale-invite');
+    setHref('/login');
+    const state = createLoginControllerState();
+    state.email.value = 'alice@example.com';
+    state.password.value = 'secret-password';
+
+    await state.submit();
+
+    assert.equal(getHref(), '/overview');
+  } finally {
+    LoginService.login = originalLogin;
+    restore();
+  }
+});
+
+test('LoginController treats invitation_code query as registration context only', async () => {
+  const { setHref, getHref, restore } = createWindowAndStorage();
+  const originalLogin = LoginService.login;
+  LoginService.login = async () => {
+    return;
+  };
+
+  try {
+    setHref('/login?invitation_code=registration-invite');
+    const state = createLoginControllerState();
+    assert.equal(state.mode.value, 'register');
+
+    state.email.value = 'alice@example.com';
+    state.password.value = 'secret-password';
+    await state.submit();
+
+    assert.equal(getHref(), '/overview');
+  } finally {
+    LoginService.login = originalLogin;
+    restore();
+  }
+});
+
 test('AppController opens the view that matches the authenticated app path', () => {
   const { restore, setHref } = createWindowAndStorage();
   try {
@@ -780,6 +999,261 @@ test('AppController opens the view that matches the authenticated app path', () 
   } finally {
     restore();
   }
+});
+
+test('AppController keeps non-activated users in read-only mode but preserves admin workspace visibility', async () => {
+  const { restore } = createWindowAndStorage();
+
+  try {
+    const state = createAppControllerState();
+
+    state.user.value = {
+      id: 'user-1',
+      email: 'invited@example.com',
+      nickname: 'Invited User',
+      activated: false,
+    };
+
+    state.workspaces.value = [
+      {
+        id: 'workspace-admin',
+        currentUserRole: 'admin',
+      },
+      {
+        id: 'workspace-manager',
+        currentUserRole: 'manager',
+      },
+      {
+        id: 'workspace-member',
+        currentUserRole: 'member',
+      },
+    ];
+
+    assert.equal(state.canAccessAdministration.value, true);
+    assert.equal(state.resourceAdminWorkspaces.value.length, 2);
+
+    state.openCreateWorkspaceModal();
+    assert.equal(state.isCreateWorkspaceModalOpen.value, false);
+
+    state.openCreateServiceModal();
+    assert.equal(state.isCreateServiceModalOpen.value, false);
+
+    state.openInviteModal('workspace-admin');
+    assert.equal(state.isInviteModalOpen.value, false);
+
+    state.openOwnerModal('workspace-admin');
+    assert.equal(state.ownerModalWorkspaceId.value, null);
+
+    state.openEnvironmentModal('workspace-admin');
+    assert.equal(state.environmentModalWorkspaceId.value, null);
+
+    state.openClaimModal('service-key');
+    assert.equal(state.claimModalOpen.value, false);
+  } finally {
+    restore();
+  }
+});
+
+test('AppController refuses pending invitation handoff for another authenticated email', async () => {
+  if (!WorkspaceService) {
+    assert.fail('WorkspaceService is not available in browser bundle');
+  }
+
+  const originalValidateInvitation = WorkspaceService.validateInvitation;
+  const originalAcceptInvitation = WorkspaceService.acceptInvitation;
+  let accepted = false;
+  WorkspaceService.validateInvitation = async (code: string) => {
+    assert.equal(code, 'invite-123');
+    return {
+      status: 'valid',
+      existingUserInvite: true,
+      invitation: {
+        workspaceId: 'workspace-1',
+        invitedUserId: 'invited-user',
+        invitedByUserId: 'admin-user',
+        invitedEmail: ' invited@example.com ',
+        expiresAt: '2026-07-02T00:00:00.000Z',
+      },
+    };
+  };
+  WorkspaceService.acceptInvitation = async () => {
+    accepted = true;
+  };
+
+  const { restore, setSession, getSession } = createWindowAndStorage();
+  try {
+    const state = createAppControllerState();
+    state.user.value = {
+      id: 'other-user',
+      email: 'other@example.com',
+      nickname: 'Other User',
+      activated: true,
+    };
+    setSession('workspace_invitation_pending_accept_code', 'invite-123');
+
+    await state.consumePendingWorkspaceInvitation();
+
+    assert.equal(accepted, false);
+    assert.equal(
+      state.toastMessage.value,
+      'This invitation belongs to another account.',
+    );
+    assert.equal(getSession('workspace_invitation_pending_accept_code'), null);
+  } finally {
+    WorkspaceService.validateInvitation = originalValidateInvitation;
+    WorkspaceService.acceptInvitation = originalAcceptInvitation;
+    restore();
+  }
+});
+
+test('WorkspaceInvitationController refuses unregistered invitation while authenticated', async () => {
+  if (!WorkspaceService) {
+    assert.fail('WorkspaceService is not available in browser bundle');
+  }
+
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalLoadUser = AuthService.loadUser;
+  const originalValidateInvitation = WorkspaceService.validateInvitation;
+  const originalAcceptInvitation = WorkspaceService.acceptInvitation;
+  let accepted = false;
+  AuthService.isAuthenticated = () => true;
+  AuthService.loadUser = async () => ({
+    id: 'existing-user',
+    email: 'existing@example.com',
+    nickname: 'Existing User',
+    activated: true,
+  });
+  WorkspaceService.validateInvitation = async (code: string) => {
+    assert.equal(code, 'invite-456');
+    return {
+      status: 'unregistered',
+      existingUserInvite: false,
+      invitation: {
+        workspaceId: 'workspace-1',
+        invitedUserId: null,
+        invitedByUserId: 'admin-user',
+        invitedEmail: 'new-person@example.com',
+        expiresAt: '2026-07-02T00:00:00.000Z',
+      },
+    };
+  };
+  WorkspaceService.acceptInvitation = async () => {
+    accepted = true;
+  };
+
+  const { restore, setHref } = createWindowAndStorage();
+  const fetch = setupFetchMock(async () =>
+    createMockResponse(200, { version: 'test' }),
+  );
+  try {
+    setHref('/workspace-invitations/invite-456');
+
+    const state = await createWorkspaceInvitationControllerState();
+
+    assert.equal(accepted, false);
+    assert.equal(
+      state.error.value,
+      'This invitation belongs to another account.',
+    );
+    assert.equal(state.isUnregisteredInvite.value, false);
+    assert.equal(state.isValidExistingInvite.value, false);
+  } finally {
+    AuthService.isAuthenticated = originalIsAuthenticated;
+    AuthService.loadUser = originalLoadUser;
+    WorkspaceService.validateInvitation = originalValidateInvitation;
+    WorkspaceService.acceptInvitation = originalAcceptInvitation;
+    fetch.restore();
+    restore();
+  }
+});
+
+test('WorkspaceInvitationController allows unregistered invitation when no current user loads', async () => {
+  if (!WorkspaceService) {
+    assert.fail('WorkspaceService is not available in browser bundle');
+  }
+
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalLoadUser = AuthService.loadUser;
+  const originalValidateInvitation = WorkspaceService.validateInvitation;
+  AuthService.isAuthenticated = () => true;
+  AuthService.loadUser = async () => null;
+  WorkspaceService.validateInvitation = async (code: string) => {
+    assert.equal(code, 'invite-789');
+    return {
+      status: 'unregistered',
+      existingUserInvite: false,
+      invitation: {
+        workspaceId: 'workspace-1',
+        invitedUserId: null,
+        invitedByUserId: 'admin-user',
+        invitedEmail: 'new-person@example.com',
+        expiresAt: '2026-07-02T00:00:00.000Z',
+      },
+    };
+  };
+
+  const { restore, setHref } = createWindowAndStorage();
+  const fetch = setupFetchMock(async () =>
+    createMockResponse(200, { version: 'test' }),
+  );
+  try {
+    setHref('/workspace-invitations/invite-789');
+
+    const state = await createWorkspaceInvitationControllerState();
+
+    assert.equal(state.error.value, '');
+    assert.equal(state.isUnregisteredInvite.value, true);
+    assert.equal(state.invitedEmail.value, 'new-person@example.com');
+  } finally {
+    AuthService.isAuthenticated = originalIsAuthenticated;
+    AuthService.loadUser = originalLoadUser;
+    WorkspaceService.validateInvitation = originalValidateInvitation;
+    fetch.restore();
+    restore();
+  }
+});
+
+test('Workspace user role editor does not offer admin promotion', () => {
+  const indexHtml = readFileSync(
+    path.join(process.cwd(), 'public/index.html'),
+    'utf8',
+  );
+  const roleEditorMatch = indexHtml.match(
+    /<div class="role-selector"[\s\S]*?<\/div>/,
+  );
+  assert.ok(roleEditorMatch, 'workspace user role editor not found');
+  const roleEditorHtml = roleEditorMatch[0];
+
+  assert.equal(
+    /updateWorkspaceUserRole\(workspaceUser, 'admin'\)/i.test(roleEditorHtml),
+    false,
+    'found an admin role action in workspace user role editor',
+  );
+  assert.equal(
+    /updateWorkspaceUserRole\(workspaceUser, 'manager'\)/i.test(roleEditorHtml),
+    true,
+    'missing manager role option in workspace user role editor',
+  );
+  assert.equal(
+    /updateWorkspaceUserRole\(workspaceUser, 'member'\)/i.test(roleEditorHtml),
+    true,
+    'missing member role option in workspace user role editor',
+  );
+  assert.equal(
+    /v-for="workspace in adminWorkspaces"[\s\S]*v-model="selectedUserWorkspaceId"/i.test(
+      indexHtml,
+    ) ||
+      /v-model="selectedUserWorkspaceId"[\s\S]*v-for="workspace in adminWorkspaces"/i.test(
+        indexHtml,
+      ),
+    true,
+    'workspace user management selector should include only admin workspaces',
+  );
+  assert.equal(
+    /Workspace owner/.test(indexHtml),
+    true,
+    'admin users should remain visible with owner label',
+  );
 });
 
 test('AppController updates the path when switching top-level views', () => {

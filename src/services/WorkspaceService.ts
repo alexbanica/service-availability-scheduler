@@ -1,6 +1,7 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Pool } from 'mysql2/promise';
 import { ServiceRepository } from '../repositories/ServiceRepository';
+import type { MysqlConnection } from '../repositories/AbstractMysqlRepository';
 import { UserRepository } from '../repositories/UserRepository';
 import { UserRoleRepository } from '../repositories/UserRoleRepository';
 import { WorkspaceInvitationRepository } from '../repositories/WorkspaceInvitationRepository';
@@ -49,8 +50,50 @@ type OwnerOrEnvironmentInput = {
   name: string;
 };
 
+export type WorkspaceInvitationCodeValidationResult =
+  | {
+      status: 'invalid' | 'used';
+      invitation: null;
+      existingUserInvite: false;
+    }
+  | {
+      status: 'wrong_user';
+      invitation: null;
+      existingUserInvite: true;
+    }
+  | {
+      status: 'expired';
+      invitation: WorkspaceInvitation;
+      existingUserInvite: boolean;
+    }
+  | {
+      status: 'valid' | 'unregistered';
+      invitation: WorkspaceInvitation;
+      existingUserInvite: boolean;
+    };
+
+export type WorkspaceInvitationRow = {
+  userId: string;
+  email: string;
+  role: WorkspaceRole;
+  invitationId?: string;
+  invitationStatus?: 'pending' | 'expired';
+  invitationExpiresAt?: Date;
+  invitedByUserId?: string;
+  invitedUserId?: string | null;
+  activated?: boolean;
+};
+
+export type WorkspaceInvitationIssueResult = WorkspaceInvitation & {
+  invitationCode: string;
+  invitationCodeHash: string;
+};
+
 export class WorkspaceService {
   private static readonly MAX_WORKSPACES_PER_ADMIN = 5;
+  private static readonly INVITATION_CODE_BYTES = 32;
+  private static readonly EMAIL_REGEXP =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   constructor(
     private readonly db: Pool,
@@ -60,7 +103,15 @@ export class WorkspaceService {
     private readonly invitationRepository: WorkspaceInvitationRepository,
     private readonly userRepository: UserRepository,
     private readonly userRoleRepository: UserRoleRepository,
-  ) {}
+    private readonly invitationExpiresInSeconds = 86400,
+  ) {
+    if (
+      !Number.isFinite(this.invitationExpiresInSeconds) ||
+      this.invitationExpiresInSeconds <= 0
+    ) {
+      throw new Error('Invalid workspace invitation expiry');
+    }
+  }
 
   async listWorkspaces(userId: string): Promise<Workspace[]> {
     const workspaces = await this.workspaceRepository.listByUser(userId);
@@ -597,34 +648,60 @@ export class WorkspaceService {
     workspaceId: string,
     userId: string,
     inviteeEmail: string,
-  ): Promise<WorkspaceInvitation> {
-    const trimmedEmail = inviteeEmail.trim().toLowerCase();
-    if (!trimmedEmail) {
-      throw new Error('Invitee email required');
+  ): Promise<WorkspaceInvitationIssueResult> {
+    const trimmedEmail = this.normalizeInvitationEmail(inviteeEmail);
+    if (!trimmedEmail || !this.isValidInvitationEmail(trimmedEmail)) {
+      throw new Error('Invalid invitee email');
     }
 
-    await this.assertWorkspaceAdmin(workspaceId, userId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
 
     const invitee = await this.userRepository.findByEmail(trimmedEmail);
-    if (!invitee) {
-      throw new Error('Invitee not found');
-    }
 
-    const isMember = await this.workspaceUserRepository.isMember(
-      workspaceId,
-      invitee.userId,
-    );
-    if (isMember) {
-      throw new Error('User already in workspace');
-    }
-
-    try {
-      return await this.invitationRepository.insert(
-        randomUUID(),
+    if (invitee) {
+      const isMember = await this.workspaceUserRepository.isMember(
         workspaceId,
         invitee.userId,
-        userId,
       );
+      if (isMember) {
+        throw new Error('User already in workspace');
+      }
+    }
+
+    const latestInvitation = await this.invitationRepository.findLatestByWorkspaceAndEmail(
+      workspaceId,
+      trimmedEmail,
+    );
+    if (latestInvitation?.status === 'pending') {
+      if (!this.isExpiredInvitation(latestInvitation, new Date())) {
+        throw new Error('Invitation already pending');
+      }
+    }
+
+    const invitationCode = this.generateInvitationCode();
+    const invitationCodeHash = this.hashInvitationCode(invitationCode);
+    const expiresAt = new Date(
+      Date.now() + this.invitationExpiresInSeconds * 1000,
+    );
+
+    try {
+      const invitation = await this.invitationRepository.insert(
+        randomUUID(),
+        workspaceId,
+        invitee?.userId ?? null,
+        userId,
+        trimmedEmail,
+        invitationCodeHash,
+        expiresAt,
+      );
+      if (!invitation.invitationCodeHash) {
+        throw new Error('Invitation code hash missing');
+      }
+      return {
+        ...invitation,
+        invitationCode,
+        invitationCodeHash,
+      };
     } catch (error) {
       const err = error as { code?: string };
       if (err.code === 'ER_DUP_ENTRY') {
@@ -634,12 +711,301 @@ export class WorkspaceService {
     }
   }
 
+  async validateWorkspaceInvitationCode(
+    invitationCode: string,
+    authenticatedUserId?: string,
+  ): Promise<WorkspaceInvitationCodeValidationResult> {
+    const trimmedCode = (invitationCode || '').trim();
+    if (!trimmedCode) {
+      return {
+        status: 'invalid',
+        invitation: null,
+        existingUserInvite: false,
+      };
+    }
+
+    const invitationCodeHash = this.hashInvitationCode(trimmedCode);
+    const invitation = await this.invitationRepository.findLatestByCodeHash(
+      invitationCodeHash,
+    );
+    if (!invitation) {
+      return {
+        status: 'invalid',
+        invitation: null,
+        existingUserInvite: false,
+      };
+    }
+
+    if (invitation.status !== 'pending') {
+      return {
+        status: 'used',
+        invitation: null,
+        existingUserInvite: false,
+      };
+    }
+
+    if (this.isExpiredInvitation(invitation, new Date())) {
+      return {
+        status: 'expired',
+        invitation: invitation,
+        existingUserInvite: Boolean(invitation.invitedUserId),
+      };
+    }
+
+    if (!invitation.invitedUserId) {
+      return {
+        status: 'unregistered',
+        invitation,
+        existingUserInvite: false,
+      };
+    }
+
+    if (
+      authenticatedUserId &&
+      invitation.invitedUserId !== authenticatedUserId
+    ) {
+      return {
+        status: 'wrong_user',
+        invitation: null,
+        existingUserInvite: true,
+      };
+    }
+
+    return {
+      status: 'valid',
+      invitation,
+      existingUserInvite: true,
+    };
+  }
+
+  async acceptWorkspaceInvitation(
+    invitationCode: string,
+    authenticatedUserId: string,
+  ): Promise<WorkspaceInvitation> {
+    const trimmedCode = (invitationCode || '').trim();
+    if (!trimmedCode) {
+      throw new Error('Invalid invitation code');
+    }
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const workspaceUserRepo =
+        this.workspaceUserRepository.withConnection(connection);
+      const invitationRepo =
+        this.invitationRepository.withConnection(connection);
+
+      const invitationCodeHash = this.hashInvitationCode(trimmedCode);
+      const invitation = await invitationRepo.findLatestByCodeHashForUpdate(
+        invitationCodeHash,
+      );
+      if (!invitation) {
+        throw new Error('Invalid invitation code');
+      }
+
+      if (invitation.status !== 'pending') {
+        throw new Error('Invitation already used');
+      }
+
+      if (this.isExpiredInvitation(invitation, new Date())) {
+        throw new Error('Invitation expired');
+      }
+
+      if (!invitation.invitedUserId) {
+        throw new Error('Invitation requires registration');
+      }
+
+      if (invitation.invitedUserId !== authenticatedUserId) {
+        throw new Error('Wrong user for invitation');
+      }
+
+      const alreadyMember = await workspaceUserRepo.isMember(
+        invitation.workspaceId,
+        invitation.invitedUserId,
+      );
+      if (!alreadyMember) {
+        await workspaceUserRepo.insert(
+          invitation.workspaceId,
+          invitation.invitedUserId,
+          'member',
+        );
+      }
+
+      await invitationRepo.markAccepted(invitation.invitationId, new Date());
+      await connection.commit();
+      return invitation;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  async acceptWorkspaceInvitationForRegistration(
+    invitationCode: string,
+    userId: string,
+    userEmail: string,
+    connection?: MysqlConnection,
+  ): Promise<WorkspaceInvitation> {
+    const trimmedCode = (invitationCode || '').trim();
+    if (!trimmedCode) {
+      throw new Error('Invalid invitation code');
+    }
+
+    const trimmedEmail = this.normalizeInvitationEmail(userEmail);
+    const now = new Date();
+    const invitationCodeHash = this.hashInvitationCode(trimmedCode);
+
+    if (connection) {
+      return this.acceptWorkspaceInvitationForRegistrationWithConnection(
+        invitationCodeHash,
+        userId,
+        trimmedEmail,
+        now,
+        connection,
+      );
+    }
+
+    const conn = await this.db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const invitation = await this.acceptWorkspaceInvitationForRegistrationWithConnection(
+        invitationCodeHash,
+        userId,
+        trimmedEmail,
+        now,
+        conn,
+      );
+      await conn.commit();
+      return invitation;
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally {
+      await conn.release();
+    }
+  }
+
+  private async acceptWorkspaceInvitationForRegistrationWithConnection(
+    invitationCodeHash: string,
+    userId: string,
+    userEmail: string,
+    now: Date,
+    connection: MysqlConnection,
+  ): Promise<WorkspaceInvitation> {
+    const workspaceUserRepo = this.workspaceUserRepository.withConnection(connection);
+    const invitationRepo = this.invitationRepository.withConnection(connection);
+
+    const invitation = await invitationRepo.findLatestByCodeHashForUpdate(
+      invitationCodeHash,
+    );
+    if (!invitation) {
+      throw new Error('Invalid invitation code');
+    }
+
+    if (invitation.status !== 'pending') {
+      throw new Error('Invitation already used');
+    }
+
+    if (this.isExpiredInvitation(invitation, now)) {
+      throw new Error('Invitation expired');
+    }
+
+    if (invitation.invitedUserId) {
+      throw new Error('Invitation already assigned');
+    }
+
+    if (this.normalizeInvitationEmail(invitation.invitedEmail ?? '') !== userEmail) {
+      throw new Error('Invitation email mismatch');
+    }
+
+    const alreadyMember = await workspaceUserRepo.isMember(
+      invitation.workspaceId,
+      userId,
+    );
+    if (!alreadyMember) {
+      await workspaceUserRepo.insert(invitation.workspaceId, userId, 'member');
+    }
+
+    const accepted = await invitationRepo.markAcceptedWithInvitedUser(
+      invitation.invitationId,
+      userId,
+      now,
+    );
+    if (!accepted) {
+      throw new Error('Failed to accept invitation');
+    }
+
+    return new WorkspaceInvitation(
+      invitation.invitationId,
+      invitation.workspaceId,
+      userId,
+      invitation.invitedByUserId,
+      'accepted',
+      invitation.createdAt,
+      invitation.invitedEmail,
+      invitation.invitationCodeHash,
+      invitation.expiresAt,
+      now,
+      now,
+    );
+  }
+
   async listWorkspaceUsers(
     workspaceId: string,
     userId: string,
-  ): Promise<Array<{ userId: string; email: string; role: WorkspaceRole }>> {
-    await this.assertWorkspaceAdmin(workspaceId, userId);
-    return this.workspaceRepository.listUsersByWorkspaceWithRole(workspaceId);
+  ): Promise<WorkspaceInvitationRow[]> {
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
+
+    const workspaceUsers =
+      await this.workspaceRepository.listUsersByWorkspaceWithRole(workspaceId);
+    const userIds = workspaceUsers.map((user) => user.userId);
+    const users = await this.userRepository.findByIds(userIds);
+    const userActivationById = new Map<string, boolean>();
+    users.forEach((user) => userActivationById.set(user.userId, user.activated));
+    const acceptedUsers = workspaceUsers.map((workspaceUser) => ({
+      userId: workspaceUser.userId,
+      email: workspaceUser.email,
+      role: workspaceUser.role,
+      activated: userActivationById.get(workspaceUser.userId) ?? false,
+    }));
+
+    const pendingInvitations =
+      await this.invitationRepository.listPendingByWorkspace(workspaceId);
+    const expiredInvitations = await this.invitationRepository.listExpiredByWorkspace(
+      workspaceId,
+      new Date(),
+    );
+    const pendingUserRows: WorkspaceInvitationRow[] = pendingInvitations
+      .filter((invitation) => {
+        if (this.isExpiredInvitation(invitation, new Date())) {
+          return false;
+        }
+        return true;
+      })
+      .map((invitation) => ({
+        userId: invitation.invitationId,
+        email: invitation.invitedEmail || '',
+        role: 'member' as WorkspaceRole,
+        invitationId: invitation.invitationId,
+        invitationStatus: 'pending' as WorkspaceInvitationRow['invitationStatus'],
+        invitationExpiresAt: this.toDate(invitation.expiresAt),
+        invitedByUserId: invitation.invitedByUserId,
+        invitedUserId: invitation.invitedUserId,
+      }));
+
+    const expiredRows: WorkspaceInvitationRow[] = expiredInvitations.map((invitation) => ({
+      userId: invitation.invitationId,
+      email: invitation.invitedEmail || '',
+      role: 'member' as WorkspaceRole,
+      invitationId: invitation.invitationId,
+      invitationStatus: 'expired' as WorkspaceInvitationRow['invitationStatus'],
+      invitationExpiresAt: this.toDate(invitation.expiresAt),
+      invitedByUserId: invitation.invitedByUserId,
+      invitedUserId: invitation.invitedUserId,
+    }));
+
+    return [...acceptedUsers, ...pendingUserRows, ...expiredRows];
   }
 
   async updateWorkspaceUserRole(
@@ -744,6 +1110,28 @@ export class WorkspaceService {
     }
   }
 
+  async removePendingInvitation(
+    workspaceId: string,
+    actorUserId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
+
+    await this.assertWorkspaceResourceAdmin(workspace.id, actorUserId);
+
+    const removed = await this.invitationRepository.markConsumedByWorkspace(
+      workspace.id,
+      invitationId,
+      new Date(),
+    );
+    if (!removed) {
+      throw new Error('Workspace invitation not found');
+    }
+  }
+
   private async assertWorkspaceAdmin(
     workspaceId: string,
     userId: string,
@@ -780,6 +1168,36 @@ export class WorkspaceService {
 
   private isValidWorkspaceRole(value: string): value is WorkspaceRole {
     return value === 'admin' || value === 'manager' || value === 'member';
+  }
+
+  private normalizeInvitationEmail(value: string): string {
+    return (value || '').trim().toLowerCase();
+  }
+
+  private isValidInvitationEmail(value: string): boolean {
+    return WorkspaceService.EMAIL_REGEXP.test(value);
+  }
+
+  private isExpiredInvitation(
+    invitation: WorkspaceInvitation,
+    now: Date,
+  ): boolean {
+    if (!invitation.expiresAt) {
+      return true;
+    }
+    return this.toDate(invitation.expiresAt).getTime() <= now.getTime();
+  }
+
+  private generateInvitationCode(): string {
+    return randomBytes(WorkspaceService.INVITATION_CODE_BYTES).toString('hex');
+  }
+
+  private hashInvitationCode(code: string): string {
+    return createHash('sha256').update(code).digest('hex');
+  }
+
+  private toDate(value: string | Date | null | undefined): Date {
+    return value ? new Date(value) : new Date(0);
   }
 
   private async assertWorkspaceMember(

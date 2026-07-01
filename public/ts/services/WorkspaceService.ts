@@ -6,6 +6,30 @@ export type WorkspaceOwnerOption = {
   name: string;
 };
 
+export type WorkspaceUserRow = {
+  userId: string;
+  email: string;
+  role: WorkspaceRole;
+  activated?: boolean;
+  invitationId?: string;
+  invitationStatus?: 'pending' | 'expired';
+  invitationExpiresAt?: string;
+  invitedByUserId?: string;
+  invitedUserId?: string | null;
+};
+
+export type WorkspaceInvitationValidation = {
+  status: 'invalid' | 'expired' | 'used' | 'wrong_user' | 'unregistered' | 'valid';
+  existingUserInvite: boolean;
+  invitation: {
+    workspaceId: string;
+    invitedUserId: string | null;
+    invitedByUserId: string;
+    invitedEmail: string;
+    expiresAt: string;
+  } | null;
+};
+
 export type WorkspaceResourceType =
   | 'users'
   | 'services'
@@ -306,9 +330,7 @@ export class WorkspaceService {
     }
   }
 
-  static async listWorkspaceUsers(
-    workspaceId: string,
-  ): Promise<Array<{ userId: string; email: string; role: WorkspaceRole }>> {
+  static async listWorkspaceUsers(workspaceId: string): Promise<WorkspaceUserRow[]> {
     const response = await ApiService.get(
       `/api/workspaces/${workspaceId}/users`,
     );
@@ -328,8 +350,76 @@ export class WorkspaceService {
           userId: this.asString(userRow.user_id, ''),
           email: this.asString(userRow.email, ''),
           role: this.asWorkspaceRole(userRow.role),
+          activated:
+            typeof userRow.activated === 'boolean'
+              ? userRow.activated
+              : undefined,
+          invitationId: this.asOptionalString(userRow.invitation_id),
+          invitationStatus: this.asInvitationStatus(
+            userRow.invitation_status,
+          ),
+          invitationExpiresAt: this.asOptionalString(
+            userRow.invitation_expires_at,
+          ),
+          invitedByUserId: this.asOptionalString(userRow.invited_by_user_id),
+          invitedUserId:
+            userRow.invited_user_id === null
+              ? null
+              : this.asOptionalString(userRow.invited_user_id),
         }))
       : [];
+  }
+
+  static async validateInvitation(
+    code: string,
+  ): Promise<WorkspaceInvitationValidation> {
+    const response = await ApiService.get(
+      `/api/workspace-invitations/${encodeURIComponent(code)}/validate`,
+    );
+    const data = (await response.json()) as {
+      status?: unknown;
+      existing_user_invite?: unknown;
+      invitation?: Record<string, unknown> | null;
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to validate invitation',
+      );
+    }
+    const invitation = data.invitation;
+    return {
+      status: this.asInvitationValidationStatus(data.status),
+      existingUserInvite: data.existing_user_invite === true,
+      invitation: invitation
+        ? {
+            workspaceId: this.asString(invitation.workspace_id, ''),
+            invitedUserId:
+              invitation.invited_user_id === null
+                ? null
+                : this.asNullableString(invitation.invited_user_id),
+            invitedByUserId: this.asString(invitation.invited_by_user_id, ''),
+            invitedEmail: this.asString(invitation.invited_email, ''),
+            expiresAt: this.asString(invitation.expires_at, ''),
+          }
+        : null,
+    };
+  }
+
+  static async acceptInvitation(code: string): Promise<void> {
+    const response = await ApiService.post(
+      `/api/workspace-invitations/${encodeURIComponent(code)}/accept`,
+    );
+    if (!response.ok) {
+      const data = (await response.json()) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to accept invitation',
+      );
+    }
   }
 
   static async updateWorkspaceUserRole(
@@ -368,6 +458,25 @@ export class WorkspaceService {
         typeof data.error === 'string'
           ? data.error
           : 'Failed to remove workspace user',
+      );
+    }
+  }
+
+  static async removePendingInvitation(
+    workspaceId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const response = await ApiService.delete(
+      `/api/workspaces/${workspaceId}/invitations/${encodeURIComponent(
+        invitationId,
+      )}`,
+    );
+    if (!response.ok) {
+      const data = (await response.json()) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to remove workspace invitation',
       );
     }
   }
@@ -417,6 +526,10 @@ export class WorkspaceService {
     return typeof value === 'string' ? value : null;
   }
 
+  private static asOptionalString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
   private static asNumber(value: unknown, fallback = 0): number {
     if (typeof value === 'number' && !Number.isNaN(value)) {
       return value;
@@ -432,5 +545,23 @@ export class WorkspaceService {
     return value === 'admin' || value === 'manager' || value === 'member'
       ? value
       : 'member';
+  }
+
+  private static asInvitationStatus(
+    value: unknown,
+  ): 'pending' | 'expired' | undefined {
+    return value === 'pending' || value === 'expired' ? value : undefined;
+  }
+
+  private static asInvitationValidationStatus(
+    value: unknown,
+  ): WorkspaceInvitationValidation['status'] {
+    return value === 'expired' ||
+      value === 'used' ||
+      value === 'wrong_user' ||
+      value === 'unregistered' ||
+      value === 'valid'
+      ? value
+      : 'invalid';
   }
 }

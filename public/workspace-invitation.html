@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Availability - Workspace Invitation</title>
+  <link rel="stylesheet" href="/public/styles.css">
+</head>
+<body class="login-body">
+  <div id="workspace-invitation-app" v-cloak>
+    <main class="login-card">
+      <div class="login-header">
+        <div>
+          <h1>Workspace Invitation</h1>
+          <p v-if="loading" class="muted">Checking invitation...</p>
+        </div>
+        <button
+          class="theme-toggle"
+          type="button"
+          @click="toggleTheme"
+          :aria-label="themeLabel"
+          :title="themeLabel"
+        >
+          <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
+          <span v-else class="theme-icon moon" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div v-if="error" class="error">
+        {{ error }}
+      </div>
+
+      <div v-if="!loading && isValidExistingInvite && !accepted" class="reset-success">
+        <p>Accept the invitation for {{ invitedEmail }}.</p>
+        <button type="button" @click="acceptInvitation" :disabled="accepting">
+          {{ accepting ? 'Accepting...' : 'Accept invitation' }}
+        </button>
+        <button type="button" class="secondary" @click="goLogin">Sign in first</button>
+      </div>
+
+      <div v-if="!loading && isUnregisteredInvite" class="reset-success">
+        <p>Create an account for {{ invitedEmail }} to accept this invitation.</p>
+        <button type="button" @click="registerInvitedAccount">
+          Create invited account
+        </button>
+      </div>
+
+      <div v-if="accepted" class="reset-success">
+        <p>Invitation accepted.</p>
+        <button type="button" @click="showDashboard">Show dashboard</button>
+      </div>
+    </main>
+    <footer class="site-footer login-footer">
+      <span>Service Availability Scheduler</span>
+      <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script type="module" src="/public/js/workspace-invitation.js"></script>
+</body>
+</html>

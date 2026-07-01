@@ -267,6 +267,11 @@ test('workspace routes return 401 when request-local identity is missing', async
       body: { email: 'invitee@example.com' },
     },
     {
+      method: 'post',
+      path: '/api/workspace-invitations/:code/accept',
+      params: { code: 'invite-code' },
+    },
+    {
       method: 'patch',
       path: '/api/workspaces/:workspaceId/users/:userId/role',
       params: {

@@ -9,6 +9,8 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Keep behavior deterministic and testable.
 - Inspect `git status --short --branch` before edits and preserve unrelated worktree changes.
 - Do not commit credentials, `.env` files, local database dumps, generated `public/js` bundles, or `node_modules`.
+- User-facing delete and remove actions must ask for explicit user approval
+  before performing the destructive mutation.
 - Developer agents must run `npm run lint` during implementation validation and fix every lint issue reported by that command before handing work back.
 - The main agent must run `npm run format` before committing accepted changes so Prettier normalizes the codebase.
 
@@ -111,6 +113,8 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - The activation banner belongs in the footer-aware bottom banner stack and must
   remain visible for non-activated authenticated users. Toasts should not
   overlap persistent bottom banners.
+- Browser delete and remove controls must follow the approval requirement before
+  calling the destructive mutation.
 
 ## API Contract Documentation
 - The repository is both an API project and a frontend app; API contracts are
@@ -130,6 +134,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 ## Configuration
 - Required runtime environment: `DATABASE_URL`.
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
+- Optional invitation runtime environment: `WORKSPACE_INVITATION_EXPIRES_IN_SECONDS`.
 - Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
 - Test-only environment: `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_TRUNCATE`.
 - Runtime timing keys live in `config/app.yml`:
@@ -137,6 +142,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   - `auto_refresh_seconds`
   - `jwt_expires_in_seconds`
   - `password_reset_token_expires_in_seconds`
+  - `workspace_invitation_expires_in_seconds`
 - Migration config key in `config/app.yml`:
   - `run_migrations_on_startup`
 - `config/services.yml` is not a runtime service catalog source; do not reintroduce YAML-backed service definitions.

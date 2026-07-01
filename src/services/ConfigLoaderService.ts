@@ -6,6 +6,7 @@ export type AppConfig = {
   autoRefreshSeconds: number;
   jwtExpiresInSeconds: number;
   passwordResetTokenExpiresInSeconds: number;
+  workspaceInvitationExpiresInSeconds: number;
   runMigrationsOnStartup: boolean;
 };
 
@@ -17,6 +18,8 @@ export class ConfigLoaderService {
     const jwtExpiresInSeconds = this.resolveJwtExpiresInSeconds(appConfig);
     const passwordResetTokenExpiresInSeconds =
       this.resolvePasswordResetTokenExpiresInSeconds(appConfig);
+    const workspaceInvitationExpiresInSeconds =
+      this.resolveWorkspaceInvitationExpiresInSeconds(appConfig);
     const runMigrationsOnStartup =
       this.resolveRunMigrationsOnStartup(appConfig);
 
@@ -25,6 +28,7 @@ export class ConfigLoaderService {
       autoRefreshSeconds,
       jwtExpiresInSeconds,
       passwordResetTokenExpiresInSeconds,
+      workspaceInvitationExpiresInSeconds,
       runMigrationsOnStartup,
     };
   }
@@ -117,6 +121,36 @@ export class ConfigLoaderService {
     if (!Number.isFinite(fileValue) || fileValue <= 0) {
       throw new Error(
         `Invalid password_reset_token_expires_in_seconds value: ${String(
+          rawFileValue,
+        )}`,
+      );
+    }
+    return fileValue;
+  }
+
+  private resolveWorkspaceInvitationExpiresInSeconds(
+    appConfig: Record<string, unknown>,
+  ): number {
+    const envValue = process.env.WORKSPACE_INVITATION_EXPIRES_IN_SECONDS;
+    if (envValue !== undefined) {
+      const envValueAsNumber = Number(envValue);
+      if (!Number.isFinite(envValueAsNumber) || envValueAsNumber <= 0) {
+        throw new Error(
+          `Invalid WORKSPACE_INVITATION_EXPIRES_IN_SECONDS value: ${envValue}`,
+        );
+      }
+      return envValueAsNumber;
+    }
+
+    const rawFileValue = appConfig.workspace_invitation_expires_in_seconds;
+    if (rawFileValue === undefined) {
+      return 86400;
+    }
+
+    const fileValue = Number(rawFileValue);
+    if (!Number.isFinite(fileValue) || fileValue <= 0) {
+      throw new Error(
+        `Invalid workspace_invitation_expires_in_seconds value: ${String(
           rawFileValue,
         )}`,
       );

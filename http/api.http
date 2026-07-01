@@ -66,6 +66,20 @@ Content-Type: application/json
   "challenge_answer": "123"
 }
 
+### Register invited account
+POST {{host}}/api/register
+Content-Type: application/json
+
+{
+  "email": "invited@example.com",
+  "nickname": "invited-user",
+  "password": "new-password",
+  "confirm_password": "new-password",
+  "challenge_id": "{{captchaId}}",
+  "challenge_answer": "123",
+  "invitation_code": "{{workspaceInvitationCode}}"
+}
+
 ### Validate account activation token
 POST {{host}}/api/account-activation/validate
 Content-Type: application/json
@@ -235,6 +249,35 @@ Content-Type: application/json
 {
   "email": "user@example.com"
 }
+
+### Invite unregistered email to workspace
+POST {{host}}/api/workspaces/{{workspaceId}}/invitations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "invited@example.com"
+}
+
+### Validate workspace invitation link
+GET {{host}}/api/workspace-invitations/{{workspaceInvitationCode}}/validate
+
+### Accept existing-user workspace invitation
+POST {{host}}/api/workspace-invitations/{{workspaceInvitationCode}}/accept
+Authorization: Bearer {{token}}
+
+### Reinvite expired workspace invitation email
+POST {{host}}/api/workspaces/{{workspaceId}}/invitations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "expired-invite@example.com"
+}
+
+### Remove pending workspace invitation
+DELETE {{host}}/api/workspaces/{{workspaceId}}/invitations/{{workspaceInvitationId}}
+Authorization: Bearer {{token}}
 
 ### List workspace users for administration
 GET {{host}}/api/workspaces/{{workspaceId}}/users

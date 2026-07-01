@@ -10,6 +10,7 @@ import { ThemeHelper, Theme } from '../helpers/ThemeHelper.js';
 import {
   WorkspaceResourceType,
   WorkspaceOwnerOption,
+  WorkspaceUserRow,
   WorkspaceService,
 } from '../services/WorkspaceService.js';
 import { Workspace, WorkspaceRole } from '../entities/Workspace.js';
@@ -76,6 +77,7 @@ export class AppController {
         );
         const isProtectedActionAllowed = (): boolean =>
           canUseProtectedActions.value;
+        const canUseReadOnlyData = computed(() => Boolean(user.value));
         const appVersion = ref('');
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
         const claimModalOpen = ref(false);
@@ -123,10 +125,7 @@ export class AppController {
         const workspaceRowsRequestId = ref(0);
         const selectedUserWorkspaceId = ref<string | null>(null);
         const workspaceUsers = ref<
-          Record<
-            string,
-            Array<{ userId: string; email: string; role: WorkspaceRole }>
-          >
+          Record<string, WorkspaceUserRow[]>
         >({});
         const workspaceUsersLoading = ref(false);
         const workspaceUsersError = ref('');
@@ -192,7 +191,12 @@ export class AppController {
         const serviceEditError = ref('');
         const serviceEditSubmitting = ref(false);
         const editingServiceId = ref<string | null>(null);
-        type PendingDeleteActionType = 'service' | 'owner' | 'environment';
+        type PendingDeleteActionType =
+          | 'service'
+          | 'owner'
+          | 'environment'
+          | 'workspace-user'
+          | 'workspace-invitation';
         type PendingDeleteAction = {
           actionType: PendingDeleteActionType;
           workspaceId: string;
@@ -393,7 +397,7 @@ export class AppController {
         const selectedInviteWorkspace = computed(() =>
           inviteWorkspaceId.value === null
             ? null
-            : adminWorkspaces.value.find(
+            : resourceAdminWorkspaces.value.find(
                 (workspace) => workspace.id === inviteWorkspaceId.value,
               ) || null,
         );
@@ -417,7 +421,7 @@ export class AppController {
         const selectedUserWorkspace = computed(() =>
           selectedUserWorkspaceId.value === null
             ? null
-            : adminWorkspaces.value.find(
+            : resourceAdminWorkspaces.value.find(
                 (workspace) => workspace.id === selectedUserWorkspaceId.value,
               ) || null,
         );
@@ -426,8 +430,24 @@ export class AppController {
             ? workspaceUsers.value[selectedUserWorkspaceId.value] || []
             : [],
         );
-        const canModifyWorkspaceUser = (targetUserId: string): boolean =>
-          Boolean(user.value && targetUserId !== user.value.id);
+        const canModifyWorkspaceUser = (
+          workspaceUser: WorkspaceUserRow,
+        ): boolean =>
+          Boolean(
+            user.value &&
+              !workspaceUser.invitationId &&
+              selectedUserWorkspace.value?.currentUserRole === 'admin' &&
+              workspaceUser.userId !== user.value.id,
+          );
+        const canRemoveWorkspaceInvitation = (
+          workspaceUser: WorkspaceUserRow,
+        ): boolean =>
+          Boolean(
+            workspaceUser.invitationId &&
+              workspaceUser.invitationStatus === 'pending' &&
+              selectedUserWorkspace.value &&
+              isWorkspaceResourceAdmin(selectedUserWorkspace.value.id),
+          );
 
         const claimedByUser = computed(() => {
           if (!user.value) {
@@ -530,7 +550,7 @@ export class AppController {
         };
 
         const loadWorkspaces = async () => {
-          if (!isProtectedActionAllowed()) {
+          if (!canUseReadOnlyData.value) {
             workspaces.value = [];
             selectedServiceWorkspaceId.value = null;
             return;
@@ -567,7 +587,7 @@ export class AppController {
               adminWorkspaces.value.length === 0 &&
               resourceAdminWorkspaces.value.length > 0
             ) {
-              adminSection.value = 'services';
+              adminSection.value = 'workspace';
             }
           } catch (err) {
             showToast((err as Error).message);
@@ -575,7 +595,7 @@ export class AppController {
         };
 
         const loadServices = async () => {
-          if (!isProtectedActionAllowed()) {
+          if (!canUseReadOnlyData.value) {
             services.value = [];
             return;
           }
@@ -586,6 +606,55 @@ export class AppController {
             showToast((err as Error).message);
           } finally {
             scheduleAutoRefresh();
+          }
+        };
+
+        const consumePendingWorkspaceInvitation = async () => {
+          const pendingCode =
+            window.sessionStorage?.getItem(
+              'workspace_invitation_pending_accept_code',
+            ) || '';
+          const joinedWorkspaceId =
+            window.sessionStorage?.getItem(
+              'workspace_invitation_joined_workspace_id',
+            ) || '';
+          if (!pendingCode && !joinedWorkspaceId) {
+            return;
+          }
+
+          let workspaceId = joinedWorkspaceId;
+          window.sessionStorage?.removeItem(
+            'workspace_invitation_pending_accept_code',
+          );
+          window.sessionStorage?.removeItem(
+            'workspace_invitation_login_code',
+          );
+          window.sessionStorage?.removeItem(
+            'workspace_invitation_joined_workspace_id',
+          );
+
+          try {
+            if (pendingCode) {
+              const validation =
+                await WorkspaceService.validateInvitation(pendingCode);
+              workspaceId = validation.invitation?.workspaceId || workspaceId;
+              const invitedEmail =
+                validation.invitation?.invitedEmail.trim().toLowerCase() || '';
+              const currentEmail = user.value?.email.trim().toLowerCase() || '';
+              if (!invitedEmail || invitedEmail !== currentEmail) {
+                showToast('This invitation belongs to another account.');
+                return;
+              }
+              await WorkspaceService.acceptInvitation(pendingCode);
+            }
+            await loadWorkspaces();
+            await loadServices();
+            const workspaceName =
+              workspaces.value.find((workspace) => workspace.id === workspaceId)
+                ?.name || 'the invited workspace';
+            showToast(`You've joined ${workspaceName}.`);
+          } catch (err) {
+            showToast((err as Error).message);
           }
         };
 
@@ -635,7 +704,7 @@ export class AppController {
         };
 
         const loadServiceCatalog = async (workspaceId: string) => {
-          if (!isProtectedActionAllowed()) {
+          if (!canUseReadOnlyData.value) {
             return;
           }
           try {
@@ -656,7 +725,7 @@ export class AppController {
           if (!isProtectedActionAllowed() || !workspaceId) {
             return;
           }
-          if (!isWorkspaceAdmin(workspaceId)) {
+          if (!isWorkspaceResourceAdmin(workspaceId)) {
             workspaceUsersError.value = 'Not authorized';
             return;
           }
@@ -947,8 +1016,9 @@ export class AppController {
           inviteSubmitting.value = true;
           try {
             await WorkspaceService.invite(workspaceId, email);
+            await loadWorkspaceUsers(workspaceId);
             closeInviteModal();
-            showToast('Invitation sent.');
+            showToast('Invitation has been sent.');
           } catch (err) {
             inviteError.value = (err as Error).message;
             inviteSubmitting.value = false;
@@ -1153,7 +1223,7 @@ export class AppController {
         const loadServiceManagementWorkspaceData = async (
           workspaceId: string,
         ) => {
-          if (!isProtectedActionAllowed()) {
+          if (!canUseReadOnlyData.value) {
             return;
           }
           const selectedWorkspace = workspaces.value.find(
@@ -1752,6 +1822,49 @@ export class AppController {
           }
         };
 
+        const openWorkspaceUserRemoveConfirmation = (
+          workspaceUser: WorkspaceUserRow,
+        ) => {
+          const workspaceId = selectedUserWorkspaceId.value;
+          if (
+            !workspaceId ||
+            (!isWorkspaceAdmin(workspaceId) &&
+              !canRemoveWorkspaceInvitation(workspaceUser))
+          ) {
+            workspaceUserActionError.value = 'Not authorized';
+            return;
+          }
+          if (
+            workspaceUser.invitationId &&
+            workspaceUser.invitationStatus === 'pending'
+          ) {
+            pendingDeleteAction.value = {
+              actionType: 'workspace-invitation',
+              workspaceId,
+              targetId: workspaceUser.invitationId,
+              targetLabel: workspaceUser.email || workspaceUser.invitationId,
+              submitting: false,
+            };
+            pendingDeleteError.value = '';
+            workspaceUserActionError.value = '';
+            return;
+          }
+          if (!canModifyWorkspaceUser(workspaceUser)) {
+            workspaceUserActionError.value =
+              'Workspace owner cannot remove own membership';
+            return;
+          }
+          pendingDeleteAction.value = {
+            actionType: 'workspace-user',
+            workspaceId,
+            targetId: workspaceUser.userId,
+            targetLabel: workspaceUser.email || workspaceUser.userId,
+            submitting: false,
+          };
+          pendingDeleteError.value = '';
+          workspaceUserActionError.value = '';
+        };
+
         const deleteActionNoun = (
           action: PendingDeleteAction | null,
         ): string => {
@@ -1764,18 +1877,33 @@ export class AppController {
           if (action.actionType === 'owner') {
             return 'owner';
           }
+          if (action.actionType === 'workspace-user') {
+            return 'user';
+          }
+          if (action.actionType === 'workspace-invitation') {
+            return 'invitation';
+          }
           return 'environment';
         };
 
         const deleteActionTitle = computed(() =>
           pendingDeleteAction.value
-            ? `Delete ${deleteActionNoun(pendingDeleteAction.value)}`
-            : 'Delete item',
+            ? pendingDeleteAction.value.actionType === 'workspace-user' ||
+              pendingDeleteAction.value.actionType === 'workspace-invitation'
+              ? `Remove ${deleteActionNoun(pendingDeleteAction.value)}`
+              : `Delete ${deleteActionNoun(pendingDeleteAction.value)}`
+            : 'Delete or remove item',
         );
 
         const deleteActionSubmitLabel = computed(() => {
           const action = pendingDeleteAction.value;
           const noun = deleteActionNoun(action);
+          if (
+            action?.actionType === 'workspace-user' ||
+            action?.actionType === 'workspace-invitation'
+          ) {
+            return action.submitting ? 'Removing...' : `Remove ${noun}`;
+          }
           return action?.submitting ? 'Deleting...' : `Delete ${noun}`;
         });
 
@@ -1791,7 +1919,13 @@ export class AppController {
           if (!action || action.submitting) {
             return;
           }
-          if (!isWorkspaceResourceAdmin(action.workspaceId)) {
+          const isAuthorized =
+            action.actionType === 'workspace-user'
+              ? isWorkspaceAdmin(action.workspaceId)
+              : action.actionType === 'workspace-invitation'
+                ? isWorkspaceResourceAdmin(action.workspaceId)
+                : isWorkspaceResourceAdmin(action.workspaceId);
+          if (!isAuthorized) {
             showToast('Not authorized for workspace');
             resetPendingDelete();
             return;
@@ -1800,6 +1934,13 @@ export class AppController {
             ...action,
             submitting: true,
           };
+          if (
+            action.actionType === 'workspace-user' ||
+            action.actionType === 'workspace-invitation'
+          ) {
+            workspaceUserActionPending.value = action.targetId;
+            workspaceUserActionError.value = '';
+          }
           let deleteSucceeded = false;
           try {
             if (action.actionType === 'service') {
@@ -1809,6 +1950,16 @@ export class AppController {
               );
             } else if (action.actionType === 'owner') {
               await WorkspaceService.deleteOwner(
+                action.workspaceId,
+                action.targetId,
+              );
+            } else if (action.actionType === 'workspace-user') {
+              await WorkspaceService.removeWorkspaceUser(
+                action.workspaceId,
+                action.targetId,
+              );
+            } else if (action.actionType === 'workspace-invitation') {
+              await WorkspaceService.removePendingInvitation(
                 action.workspaceId,
                 action.targetId,
               );
@@ -1826,18 +1977,41 @@ export class AppController {
               resetServiceEditForm();
             }
             resetPendingDelete();
-            showToast(`${deleteActionNoun(action)} deleted.`);
-            if (action.actionType !== 'service') {
+            showToast(
+              action.actionType === 'workspace-user'
+                ? `${deleteActionNoun(action)} removed.`
+                : action.actionType === 'workspace-invitation'
+                ? `${deleteActionNoun(action)} removed.`
+                : `${deleteActionNoun(action)} deleted.`,
+            );
+            if (
+              action.actionType === 'workspace-user' ||
+              action.actionType === 'workspace-invitation'
+            ) {
+              await loadWorkspaceUsers(action.workspaceId);
+              await loadWorkspaces();
+            } else if (action.actionType !== 'service') {
               await refreshWorkspaceRowsModal();
               await loadWorkspaces();
               await loadOwners(action.workspaceId);
               await loadEnvironments(action.workspaceId);
               await loadServices();
             }
-            await loadServiceManagementWorkspaceData(action.workspaceId);
+            if (
+              action.actionType !== 'workspace-user' &&
+              action.actionType !== 'workspace-invitation'
+            ) {
+              await loadServiceManagementWorkspaceData(action.workspaceId);
+            }
           } catch (err) {
             const message = (err as Error).message;
             pendingDeleteError.value = message;
+            if (
+              action.actionType === 'workspace-user' ||
+              action.actionType === 'workspace-invitation'
+            ) {
+              workspaceUserActionError.value = message;
+            }
             showToast(message);
             if (deleteSucceeded) {
               return;
@@ -1846,6 +2020,13 @@ export class AppController {
               ...action,
               submitting: false,
             };
+          } finally {
+            if (
+              action.actionType === 'workspace-user' ||
+              action.actionType === 'workspace-invitation'
+            ) {
+              workspaceUserActionPending.value = null;
+            }
           }
         };
 
@@ -1887,11 +2068,21 @@ export class AppController {
             return;
           }
           if (section === 'workspace' || section === 'users') {
-            if (adminWorkspaces.value.length > 0) {
+            const allowedWorkspaces =
+              section === 'users'
+                ? resourceAdminWorkspaces.value
+                : resourceAdminWorkspaces.value;
+            if (allowedWorkspaces.length > 0) {
               adminSection.value = section;
               if (section === 'users') {
                 const workspaceId =
-                  selectedUserWorkspaceId.value || adminWorkspaces.value[0].id;
+                  selectedUserWorkspaceId.value &&
+                  allowedWorkspaces.some(
+                    (workspace) =>
+                      workspace.id === selectedUserWorkspaceId.value,
+                  )
+                    ? selectedUserWorkspaceId.value
+                    : allowedWorkspaces[0].id;
                 selectedUserWorkspaceId.value = workspaceId;
                 loadWorkspaceUsers(workspaceId).catch((err) => {
                   showToast((err as Error).message);
@@ -1906,7 +2097,7 @@ export class AppController {
         };
 
         const updateWorkspaceUserRole = async (
-          targetUserId: string,
+          workspaceUser: WorkspaceUserRow,
           role: WorkspaceRole,
         ) => {
           const workspaceId = selectedUserWorkspaceId.value;
@@ -1914,17 +2105,20 @@ export class AppController {
             workspaceUserActionError.value = 'Not authorized';
             return;
           }
-          if (!canModifyWorkspaceUser(targetUserId)) {
+          if (!canModifyWorkspaceUser(workspaceUser)) {
             workspaceUserActionError.value =
               'Workspace owner cannot change own role';
             return;
           }
-          workspaceUserActionPending.value = targetUserId;
+          if (workspaceUser.role === role) {
+            return;
+          }
+          workspaceUserActionPending.value = workspaceUser.userId;
           workspaceUserActionError.value = '';
           try {
             await WorkspaceService.updateWorkspaceUserRole(
               workspaceId,
-              targetUserId,
+              workspaceUser.userId,
               role,
             );
             await loadWorkspaceUsers(workspaceId);
@@ -1937,27 +2131,22 @@ export class AppController {
           }
         };
 
-        const removeWorkspaceUser = async (targetUserId: string) => {
+        const reinviteWorkspaceUser = async (workspaceUser: WorkspaceUserRow) => {
           const workspaceId = selectedUserWorkspaceId.value;
-          if (!workspaceId || !isWorkspaceAdmin(workspaceId)) {
-            workspaceUserActionError.value = 'Not authorized';
+          if (
+            !workspaceId ||
+            !isProtectedActionAllowed() ||
+            workspaceUser.invitationStatus !== 'expired'
+          ) {
             return;
           }
-          if (!canModifyWorkspaceUser(targetUserId)) {
-            workspaceUserActionError.value =
-              'Workspace owner cannot remove own membership';
-            return;
-          }
-          workspaceUserActionPending.value = targetUserId;
+          workspaceUserActionPending.value =
+            workspaceUser.invitationId || workspaceUser.userId;
           workspaceUserActionError.value = '';
           try {
-            await WorkspaceService.removeWorkspaceUser(
-              workspaceId,
-              targetUserId,
-            );
+            await WorkspaceService.invite(workspaceId, workspaceUser.email);
             await loadWorkspaceUsers(workspaceId);
-            await loadWorkspaces();
-            showToast('User removed.');
+            showToast('Invitation has been sent.');
           } catch (err) {
             workspaceUserActionError.value = (err as Error).message;
           } finally {
@@ -2023,9 +2212,12 @@ export class AppController {
               scheduleTokenRenewal();
             }
             await loadAppInfo();
-            if (isProtectedActionAllowed()) {
+            if (canUseReadOnlyData.value) {
               await loadWorkspaces();
               await loadServices();
+              await consumePendingWorkspaceInvitation();
+            }
+            if (isProtectedActionAllowed()) {
               initEvents();
             }
           } finally {
@@ -2061,8 +2253,15 @@ export class AppController {
           }
           if (value === 'users' && isProtectedActionAllowed()) {
             const workspaceId =
-              selectedUserWorkspaceId.value || adminWorkspaces.value[0]?.id;
-            selectedUserWorkspaceId.value = workspaceId || null;
+              selectedUserWorkspaceId.value ||
+              resourceAdminWorkspaces.value[0]?.id;
+            selectedUserWorkspaceId.value =
+              workspaceId &&
+              resourceAdminWorkspaces.value.some(
+                (workspace) => workspace.id === workspaceId,
+              )
+                ? workspaceId
+                : resourceAdminWorkspaces.value[0]?.id || null;
             loadWorkspaceUsers(selectedUserWorkspaceId.value).catch((err) => {
               showToast((err as Error).message);
             });
@@ -2173,12 +2372,14 @@ export class AppController {
           selectedUserWorkspace,
           selectedWorkspaceUsers,
           canModifyWorkspaceUser,
+          canRemoveWorkspaceInvitation,
           workspaceUsersLoading,
           workspaceUsersError,
           workspaceUserActionError,
           workspaceUserActionPending,
           updateWorkspaceUserRole,
-          removeWorkspaceUser,
+          openWorkspaceUserRemoveConfirmation,
+          reinviteWorkspaceUser,
           openInviteModal,
           closeInviteModal,
           cancelInvite,
@@ -2240,6 +2441,7 @@ export class AppController {
           onCreateOwnerKeydown,
           onCreateOwnerBlur: commitCreateOwnerInputOnBlur,
           clearCreateOwner,
+          consumePendingWorkspaceInvitation,
         };
       },
     }).mount('#app');

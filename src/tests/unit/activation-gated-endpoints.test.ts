@@ -221,7 +221,7 @@ async function makeActivatedToken(
   });
 }
 
-test('GET /api/services requires activated identity', async () => {
+test('GET /api/services allows non-activated authenticated users to read availability data', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
@@ -243,11 +243,8 @@ test('GET /api/services requires activated identity', async () => {
     }),
   );
 
-  assert.equal(response.statusCode, 403);
-  assert.equal(
-    (response.body as { error?: string }).error,
-    'Account not activated',
-  );
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual((response.body as { services?: unknown[] }).services, []);
 });
 
 test('POST /api/claim requires activated identity', async () => {
@@ -284,7 +281,39 @@ test('POST /api/claim requires activated identity', async () => {
   );
 });
 
-test('GET /api/workspaces requires activated identity', async () => {
+test('POST /api/workspaces requires activated identity', async () => {
+  const app = express();
+  app.use(express.json());
+  const jwtService = new FakeJwtAuthService();
+  assignJwtAuthService(app, jwtService as unknown as never);
+
+  new WorkspaceController(new FakeWorkspaceService() as never).register(app);
+
+  const route = getRouteHandlers(app, 'post', '/api/workspaces');
+  const token = await makeActivatedToken(jwtService, false);
+  const response = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/workspaces',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+      body: {
+        name: 'My Workspace',
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(
+    (response.body as { error?: string }).error,
+    'Account not activated',
+  );
+});
+
+test('GET /api/workspaces allows non-activated authenticated users to read memberships', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
@@ -306,9 +335,44 @@ test('GET /api/workspaces requires activated identity', async () => {
     }),
   );
 
-  assert.equal(response.statusCode, 403);
-  assert.equal(
-    (response.body as { error?: string }).error,
-    'Account not activated',
-  );
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual((response.body as { workspaces?: unknown[] }).workspaces, []);
+});
+
+test('GET /api/workspace detail popup routes require activated identity', async () => {
+  const app = express();
+  app.use(express.json());
+  const jwtService = new FakeJwtAuthService();
+  assignJwtAuthService(app, jwtService as unknown as never);
+
+  new WorkspaceController(new FakeWorkspaceService() as never).register(app);
+
+  const token = await makeActivatedToken(jwtService, false);
+  const detailRoutes = [
+    '/api/workspaces/:workspaceId/detail/users',
+    '/api/workspaces/:workspaceId/detail/services',
+    '/api/workspaces/:workspaceId/detail/owners',
+    '/api/workspaces/:workspaceId/detail/environments',
+  ];
+
+  for (const routePath of detailRoutes) {
+    const route = getRouteHandlers(app, 'get', routePath);
+    const response = await runHandlers(
+      route,
+      createRequest({
+        app,
+        method: 'GET',
+        path: routePath,
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      }),
+    );
+
+    assert.equal(response.statusCode, 403, routePath);
+    assert.equal(
+      (response.body as { error?: string }).error,
+      'Account not activated',
+    );
+  }
 });

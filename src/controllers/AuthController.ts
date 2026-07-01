@@ -6,6 +6,7 @@ import { PasswordService } from '../services/PasswordService';
 import { CaptchaService } from '../services/CaptchaService';
 import { PasswordResetTokenService } from '../services/PasswordResetTokenService';
 import { AccountActivationTokenService } from '../services/AccountActivationTokenService';
+import { WorkspaceService } from '../services/WorkspaceService';
 import { assignJwtAuthService, requireAuth } from './AuthMiddleware';
 
 type Logger = {
@@ -32,6 +33,7 @@ export class AuthController {
     private readonly accountActivationTokenService?: AccountActivationTokenService,
     activationLogger?: Logger,
     private readonly db?: Pool,
+    private readonly workspaceService?: WorkspaceService,
   ) {
     this.activationLogger = activationLogger ?? this.resetLogger;
   }
@@ -276,6 +278,9 @@ export class AuthController {
       const challengeAnswer = String(
         req.body.challenge_answer || req.body.challengeAnswer || '',
       );
+      const invitationCode = String(
+        req.body.invitation_code || req.body.invitationCode || '',
+      );
 
       if (!email) {
         res.status(400).json({ error: 'Email required' });
@@ -329,6 +334,18 @@ export class AuthController {
           .json({ error: 'Account activation token service unavailable' });
         return;
       }
+      if (invitationCode && !this.db) {
+        res
+          .status(500)
+          .json({ error: 'Workspace service unavailable for invitation registration' });
+        return;
+      }
+      if (invitationCode && !this.workspaceService) {
+        res
+          .status(500)
+          .json({ error: 'Workspace service unavailable for invitation registration' });
+        return;
+      }
 
       const passwordHash = await this.passwordService.hashPassword(password);
       if (!this.db) {
@@ -373,10 +390,29 @@ export class AuthController {
             user.userId,
             connection,
           );
+        if (invitationCode && this.workspaceService) {
+          await this.workspaceService.acceptWorkspaceInvitationForRegistration(
+            invitationCode,
+            user.userId,
+            user.email,
+            connection,
+          );
+        }
         createdUser = user;
         await connection.commit();
       } catch (error) {
         await connection.rollback();
+        const message = (error as Error).message;
+        if (
+          message === 'Invalid invitation code' ||
+          message === 'Invitation expired' ||
+          message === 'Invitation already used' ||
+          message === 'Invitation already assigned' ||
+          message === 'Invitation email mismatch'
+        ) {
+          res.status(400).json({ error: message });
+          return;
+        }
         throw error;
       } finally {
         connection.release();

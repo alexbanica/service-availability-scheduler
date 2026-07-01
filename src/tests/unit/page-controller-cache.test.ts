@@ -81,3 +81,20 @@ test('PageController serves registration page under /register', () => {
   );
   assert.equal(sentFiles[0], '/repo/public/login.html');
 });
+
+test('PageController disables browser caching for workspace invitation page', () => {
+  const app = express();
+  new PageController('/repo').register(app);
+  const handler = getRouteHandler(app, '/workspace-invitations/:code');
+  const { response, headers, sentFiles } = createResponse();
+
+  handler({ params: { code: 'abc' } } as unknown as Request, response);
+
+  assert.equal(
+    headers['Cache-Control'],
+    'no-store, no-cache, must-revalidate, private',
+  );
+  assert.equal(headers.Pragma, 'no-cache');
+  assert.equal(headers.Expires, '0');
+  assert.equal(sentFiles[0], '/repo/public/workspace-invitation.html');
+});

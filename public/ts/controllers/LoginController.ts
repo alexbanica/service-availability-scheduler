@@ -33,6 +33,9 @@ export class LoginController {
         const registerRequestSubmitting = ref(false);
         const registerRequestError = ref('');
         const registerRequestSuccess = ref(false);
+        const invitationCode = ref('');
+        const loginInvitationCode = ref('');
+        const invitationEmailLocked = ref(false);
         const forgotEmail = ref('');
         const forgotChallengeId = ref('');
         const forgotChallengePrompt = ref('');
@@ -48,6 +51,14 @@ export class LoginController {
           submitting.value = true;
           try {
             await LoginService.login(email.value.trim(), password.value);
+            if (loginInvitationCode.value) {
+              window.sessionStorage?.setItem(
+                'workspace_invitation_pending_accept_code',
+                loginInvitationCode.value,
+              );
+              window.location.replace('/overview');
+              return;
+            }
             window.location.replace('/overview');
           } catch (err) {
             error.value = (err as Error).message;
@@ -91,7 +102,9 @@ export class LoginController {
             window.history.pushState({}, '', '/register');
           }
           mode.value = 'register';
-          registerEmail.value = '';
+          if (!invitationEmailLocked.value) {
+            registerEmail.value = '';
+          }
           registerNickname.value = '';
           registerPassword.value = '';
           registerConfirmPassword.value = '';
@@ -187,6 +200,7 @@ export class LoginController {
               confirm_password: registerConfirmPassword.value,
               challenge_id: registerChallengeId.value,
               challenge_answer: registerChallengeAnswer.value,
+              invitation_code: invitationCode.value || undefined,
             });
             registerRequestSuccess.value = true;
             window.location.replace('/overview');
@@ -241,6 +255,27 @@ export class LoginController {
         applyTheme(theme.value);
 
         onMounted(async () => {
+          const params = new URLSearchParams(window.location.search);
+          const queryInvitationCode = params.get('invitation_code') || '';
+          const queryEmail = params.get('email') || '';
+          const hasInvitationHandoff =
+            window.location.pathname === '/login' &&
+            params.get('invitation_handoff') === '1';
+          if (queryInvitationCode) {
+            invitationCode.value = queryInvitationCode;
+            mode.value = 'register';
+            if (queryEmail) {
+              registerEmail.value = queryEmail;
+              invitationEmailLocked.value = true;
+            }
+          }
+          if (hasInvitationHandoff) {
+            const storedInvitationCode =
+              window.sessionStorage?.getItem(
+                'workspace_invitation_login_code',
+              ) || '';
+            loginInvitationCode.value = storedInvitationCode;
+          }
           await loadAppInfo();
         });
 
@@ -264,6 +299,7 @@ export class LoginController {
           registerRequestSubmitting,
           registerRequestError,
           registerRequestSuccess,
+          invitationEmailLocked,
           forgotEmail,
           forgotChallengeId,
           forgotChallengePrompt,
