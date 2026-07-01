@@ -175,11 +175,13 @@ Assignment:
      - target membership missing returns `Workspace user not found`;
      - invalid role returns `Invalid workspace role`;
      - second-admin assignment returns `Workspace already has an admin`;
+     - owner self-demotion returns `Workspace owner cannot change own role`;
      - demoting the only admin returns `Workspace must have one admin`;
      - idempotent update of existing admin to `admin` succeeds.
    - Add `removeWorkspaceUser(workspaceId, actorUserId, targetUserId)` with
      approved behavior:
      - target membership missing returns `Workspace user not found`;
+     - owner self-removal returns `Workspace owner cannot remove own membership`;
      - removing the only admin returns `Workspace must have one admin`;
      - removing manager/member membership succeeds.
    - Ensure role changes and removals affect only the target workspace.
@@ -225,8 +227,8 @@ Assignment:
      - unauthorized workspace role returns `403`;
      - missing workspace or target membership returns `404`;
      - invalid role returns `400`;
-     - second-admin assignment, only-admin demotion, and only-admin removal
-       return `409`.
+     - second-admin assignment, owner self-demotion, owner self-removal,
+       only-admin demotion, and only-admin removal return `409`.
 
 7. Browser role-aware administration
    - Replace browser admin gating that uses `adminUserId === user.id` with
@@ -239,6 +241,8 @@ Assignment:
      user's current workspace role.
    - Show resource management controls for `admin` and `manager`.
    - Show invite, remove-user, and role-update controls only for `admin`.
+   - Replace role-update and remove-user controls with static `Workspace owner`
+     text for the current user's own workspace owner/admin row.
    - Keep `member` unable to access administration controls.
    - Keep Workspace Management user-administration views admin-only.
    - Keep Service Management resource-administration views available to admins

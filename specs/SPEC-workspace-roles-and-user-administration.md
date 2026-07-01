@@ -68,6 +68,8 @@ single user can belong to multiple workspaces with different roles.
   stored.
 - The same user may have different roles in different workspaces.
 - A workspace may have only one admin.
+- The workspace owner/current admin cannot remove their own workspace
+  membership or change their own role away from `admin`.
 - Existing admin memberships remain admin memberships.
 - Existing member memberships remain member memberships.
 - Creating a workspace continues to create the creator as that workspace's sole
@@ -151,6 +153,8 @@ single user can belong to multiple workspaces with different roles.
 - Assigning `admin` to a user who is not already the workspace admin returns
   `409` while the workspace already has an admin.
 - Updating the existing workspace admin to `admin` is idempotent and succeeds.
+- Updating the current workspace owner's own role away from `admin` is rejected
+  with `409`; users cannot demote themselves from workspaces they own.
 - Demoting the only admin is rejected with `409`; admin transfer is out of
   scope.
 - Role changes affect only the target workspace and must not change the user's
@@ -164,6 +168,8 @@ single user can belong to multiple workspaces with different roles.
 - Removing a user must not delete the user account.
 - Removing a user must not change memberships or roles in other workspaces.
 - Removing a missing target membership returns `404`.
+- Removing the current workspace owner's own membership is rejected with `409`;
+  users cannot remove themselves from workspaces they own.
 - Removing the only admin is rejected with `409`; admin transfer is out of
   scope.
 - Removing a non-admin member or manager from the workspace succeeds and makes
@@ -241,6 +247,8 @@ single user can belong to multiple workspaces with different roles.
   managers.
 - User administration views, controls, and modal flows are visible only to
   admins.
+- The current workspace owner's own row must show static `Workspace owner` text
+  instead of role-update and membership-removal controls.
 - Resource administration views, controls, and modal flows are visible to admins
   and managers.
 - Members who navigate directly to `/administration`, or who otherwise select a
@@ -286,11 +294,13 @@ single user can belong to multiple workspaces with different roles.
   - admin can invite users;
   - manager and member cannot invite users;
   - admin can remove a manager or member;
+  - admin cannot remove their own owner/admin membership;
   - manager and member cannot remove users;
   - removing the only admin is rejected.
 - Unit-test role updates:
   - admin can change a target membership between `manager` and `member`;
   - admin cannot assign a second admin;
+  - admin cannot demote their own owner/admin membership;
   - admin cannot demote the only admin;
   - manager and member cannot update roles;
   - invalid roles return validation errors;

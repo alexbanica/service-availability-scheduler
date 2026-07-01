@@ -233,6 +233,7 @@ GET {{host}}/api/workspaces/{{workspaceId}}/users
 Authorization: Bearer {{token}}
 
 ### Update workspace user role
+# The current workspace owner cannot demote their own membership.
 PATCH {{host}}/api/workspaces/{{workspaceId}}/users/{{userId}}/role
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -242,5 +243,6 @@ Content-Type: application/json
 }
 
 ### Remove workspace user
+# The current workspace owner cannot remove their own membership.
 DELETE {{host}}/api/workspaces/{{workspaceId}}/users/{{userId}}
 Authorization: Bearer {{token}}

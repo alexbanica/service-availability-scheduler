@@ -572,6 +572,14 @@ export class WorkspaceService {
       return;
     }
 
+    if (
+      targetUserId === actorUserId &&
+      targetRole === 'admin' &&
+      role !== 'admin'
+    ) {
+      throw new Error('Workspace owner cannot change own role');
+    }
+
     if (targetRole !== 'admin' && role === 'admin') {
       const adminCount = await this.workspaceUserRepository.countAdmins(
         workspace.id,
@@ -615,6 +623,10 @@ export class WorkspaceService {
     );
     if (!targetRole) {
       throw new Error('Workspace user not found');
+    }
+
+    if (targetUserId === actorUserId && targetRole === 'admin') {
+      throw new Error('Workspace owner cannot remove own membership');
     }
 
     const adminCount = await this.workspaceUserRepository.countAdmins(

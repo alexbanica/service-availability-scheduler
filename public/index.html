@@ -678,23 +678,31 @@
                         <span class="admin-workspace-id muted">{{ workspaceUser.userId }}</span>
                       </div>
                       <div class="admin-workspace-actions">
-                        <select
-                          :value="workspaceUser.role"
-                          :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
-                          @change="updateWorkspaceUserRole(workspaceUser.userId, $event.target.value)"
+                        <span
+                          v-if="!canModifyWorkspaceUser(workspaceUser.userId)"
+                          class="muted"
                         >
-                          <option value="admin">admin</option>
-                          <option value="manager">manager</option>
-                          <option value="member">member</option>
-                        </select>
-                        <button
-                          type="button"
-                          class="danger"
-                          :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
-                          @click="removeWorkspaceUser(workspaceUser.userId)"
-                        >
-                          Remove
-                        </button>
+                          Workspace owner
+                        </span>
+                        <template v-else>
+                          <select
+                            :value="workspaceUser.role"
+                            :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
+                            @change="updateWorkspaceUserRole(workspaceUser.userId, $event.target.value)"
+                          >
+                            <option value="admin">admin</option>
+                            <option value="manager">manager</option>
+                            <option value="member">member</option>
+                          </select>
+                          <button
+                            type="button"
+                            class="danger"
+                            :disabled="workspaceUserActionPending === workspaceUser.userId || !canUseProtectedActions"
+                            @click="removeWorkspaceUser(workspaceUser.userId)"
+                          >
+                            Remove
+                          </button>
+                        </template>
                       </div>
                     </div>
                   </div>

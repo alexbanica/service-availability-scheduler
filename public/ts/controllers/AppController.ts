@@ -422,6 +422,8 @@ export class AppController {
             ? workspaceUsers.value[selectedUserWorkspaceId.value] || []
             : [],
         );
+        const canModifyWorkspaceUser = (targetUserId: string): boolean =>
+          Boolean(user.value && targetUserId !== user.value.id);
 
         const claimedByUser = computed(() => {
           if (!user.value) {
@@ -1774,6 +1776,11 @@ export class AppController {
             workspaceUserActionError.value = 'Not authorized';
             return;
           }
+          if (!canModifyWorkspaceUser(targetUserId)) {
+            workspaceUserActionError.value =
+              'Workspace owner cannot change own role';
+            return;
+          }
           workspaceUserActionPending.value = targetUserId;
           workspaceUserActionError.value = '';
           try {
@@ -1796,6 +1803,11 @@ export class AppController {
           const workspaceId = selectedUserWorkspaceId.value;
           if (!workspaceId || !isWorkspaceAdmin(workspaceId)) {
             workspaceUserActionError.value = 'Not authorized';
+            return;
+          }
+          if (!canModifyWorkspaceUser(targetUserId)) {
+            workspaceUserActionError.value =
+              'Workspace owner cannot remove own membership';
             return;
           }
           workspaceUserActionPending.value = targetUserId;
@@ -2022,6 +2034,7 @@ export class AppController {
           selectedUserWorkspaceId,
           selectedUserWorkspace,
           selectedWorkspaceUsers,
+          canModifyWorkspaceUser,
           workspaceUsersLoading,
           workspaceUsersError,
           workspaceUserActionError,

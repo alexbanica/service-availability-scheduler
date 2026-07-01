@@ -832,7 +832,7 @@ test('user removal enforces admin-only and workspace single-admin invariant', as
         'solo-admin',
         'solo-admin',
       ),
-    /Workspace must have one admin/,
+    /Workspace owner cannot remove own membership/,
   );
 
   await assert.rejects(
@@ -932,8 +932,53 @@ test('user role updates enforce admin-only, validate roles, and preserve single-
         'solo-admin',
         'member',
       ),
-    /Workspace must have one admin/,
+    /Workspace owner cannot change own role/,
   );
+});
+
+test('workspace owner cannot remove or demote their own membership when another admin exists', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'owner-user');
+  workspaceUsers.setAdmin('workspace-1', 'other-admin');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'owner-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  ) as never as WorkspaceMembershipMutationService;
+
+  await assert.rejects(
+    () =>
+      service.updateWorkspaceUserRole(
+        'workspace-1',
+        'owner-user',
+        'owner-user',
+        'member',
+      ),
+    /Workspace owner cannot change own role/,
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'owner-user'),
+    'admin',
+  );
+
+  await assert.rejects(
+    () =>
+      service.removeWorkspaceUser('workspace-1', 'owner-user', 'owner-user'),
+    /Workspace owner cannot remove own membership/,
+  );
+  assert.equal(
+    await workspaceUsers.getRole('workspace-1', 'owner-user'),
+    'admin',
+  );
+
+  await service.removeWorkspaceUser('workspace-1', 'owner-user', 'member-user');
+  assert.equal(await workspaceUsers.getRole('workspace-1', 'member-user'), null);
 });
 
 test('role updates only affect target workspace membership', async () => {

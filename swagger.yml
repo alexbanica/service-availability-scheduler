@@ -650,7 +650,7 @@ paths:
     delete:
       tags: [Workspace resources]
       summary: Remove a user membership from a workspace.
-      description: Admin-only endpoint. Removing the only workspace admin returns 409.
+      description: Admin-only endpoint. Removing the current workspace owner's own membership or removing the only workspace admin returns 409.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/UserId'
@@ -669,7 +669,7 @@ paths:
     patch:
       tags: [Workspace resources]
       summary: Update a workspace user's role.
-      description: Admin-only endpoint. Role changes are scoped to the target workspace and preserve the single-admin invariant.
+      description: Admin-only endpoint. Role changes are scoped to the target workspace, preserve the single-admin invariant, and reject current workspace owner self-demotion.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/UserId'

@@ -637,7 +637,9 @@ export class WorkspaceController {
       message === 'Owner already exists' ||
       message === 'Environment already exists' ||
       message === 'Workspace already has an admin' ||
-      message === 'Workspace must have one admin'
+      message === 'Workspace must have one admin' ||
+      message === 'Workspace owner cannot change own role' ||
+      message === 'Workspace owner cannot remove own membership'
     ) {
       res.status(409).json({ error: message });
       return;
