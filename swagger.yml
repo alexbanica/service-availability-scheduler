@@ -522,6 +522,23 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/environments/{environmentId}:
+    delete:
+      tags: [Workspace resources]
+      summary: Delete a workspace environment.
+      description: Resource administrators only. Removes the environment row and its service associations without deleting services.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/EnvironmentId'
+      responses:
+        '204':
+          description: Environment deleted.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /api/workspaces/{workspaceId}/owners:
     get:
       tags: [Workspace resources]
@@ -568,6 +585,23 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
         '409':
+          $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/owners/{ownerId}:
+    delete:
+      tags: [Workspace resources]
+      summary: Delete a workspace owner.
+      description: Resource administrators only. Clears matching service owner references before deleting the owner row, preserving services.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/OwnerId'
+      responses:
+        '204':
+          description: Owner deleted.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
   /api/workspaces/{workspaceId}/detail/{resourceType}:
     get:
@@ -716,6 +750,20 @@ components:
       required: true
       schema:
         type: string
+    OwnerId:
+      name: ownerId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EnvironmentId:
+      name: environmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     UserId:
       name: userId
       in: path
@@ -1151,10 +1199,21 @@ components:
         items:
           type: array
           items:
-            type: object
-            additionalProperties:
-              type: string
-              nullable: true
+            $ref: '#/components/schemas/PopupRow'
+    PopupRow:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        ownerId:
+          type: string
+          format: uuid
+          description: Present on owner detail rows.
+        environmentId:
+          type: string
+          format: uuid
+          description: Present on environment detail rows.
     WorkspaceUser:
       type: object
       required: [user_id, email, role]

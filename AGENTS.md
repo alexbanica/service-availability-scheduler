@@ -32,6 +32,101 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   own workspace membership; owner self-demotion and self-removal are explicit
   conflict cases, separate from the single-admin invariant.
 
+## Authentication And Account State
+- Authentication uses password-based JWT bearer tokens stored by the browser
+  through the existing auth token storage helpers.
+- Login responses, registration responses, account activation responses,
+  `/api/me`, and token renewal must keep user identity fields aligned,
+  including activation state.
+- Passwords require a minimum of 8 characters. Do not add extra password
+  complexity unless an approved spec explicitly requires it.
+- Website registration accepts email, nickname, password, password confirmation,
+  and a captcha challenge answer. Email is normalized by trimming and
+  lowercasing; nickname is trimmed; password confirmation is required and must
+  match.
+- Captcha challenges are one-time, expiring challenges. Browser flows that edit
+  captcha-protected non-answer fields after loading a captcha should clear the
+  loaded challenge and require a fresh captcha.
+- Registration creates a non-activated user, creates a single active activation
+  token, logs the activation URL server-side with a TODO for future email
+  delivery, and returns the normal authenticated session payload without
+  returning the activation token or URL.
+- Activation tokens are stored hashed. Issuing a new activation token for a user
+  invalidates prior active activation tokens for that user.
+- Activation links use `/activate-account/<token>`. Successful activation marks
+  the user activated, consumes the token, grants the existing `platform_admin`
+  role, and returns the standard authenticated payload.
+- Successful activation stores the returned bearer token in the browser and
+  redirects to `/overview` after a 5-second countdown, with a visible manual
+  dashboard button.
+- Reset and activation links are logged server-side until email delivery exists;
+  UI copy must not claim email delivery has happened.
+
+## Authorization
+- Non-activated users are authenticated but must not access protected app data
+  or mutation endpoints for services, reservations, workspaces, owners,
+  environments, invitations, workspace users, or events.
+- Non-activated users may use only auth/session endpoints required to stay
+  logged in or log out, `/api/me`, activation-token validation/activation,
+  `/api/app-info`, static assets, and page routes needed to display the app.
+- Browser controls for activation or role restrictions are advisory UX only.
+  Server-side authorization remains the source of enforcement and must return
+  deterministic `403` responses after authentication succeeds.
+- `POST /api/workspaces` remains governed by the platform-wide
+  `platform_admin` role and creates the workspace creator as that workspace's
+  initial `admin`.
+- Workspace role checks are workspace-scoped. A user's role in one workspace
+  must not affect roles or permissions in another workspace.
+- Resource administration means workspace service, owner, and environment
+  administration. It is allowed for workspace `admin` and `manager` roles.
+- User administration means inviting users, removing workspace memberships, and
+  changing workspace user roles. It is allowed only for workspace `admin`.
+- Workspace `member` users can use service availability and reservation flows
+  for workspaces where they have membership, but cannot administer users or
+  resources.
+- `GET /api/workspaces` returns only workspaces where the current user has a
+  membership and includes the current user's role for each returned workspace.
+- Workspace detail popup routes under `/api/workspaces/:workspaceId/detail/*`
+  remain available to workspace members and return `{ items: [...] }` rows.
+  Existing consumers may rely on `name`; add identifiers only when a behavior
+  change requires them.
+
+## Browser Routes And Frontend Behavior
+- The authenticated app shell is a single-page app served by `public/index.html`.
+  `/`, `/overview`, `/services`, and `/administration` serve the same shell with
+  no-cache headers.
+- `/overview` opens the overview view, `/services` opens service availability,
+  and `/administration` opens administration. Browser navigation should update
+  the path when the top-level view changes.
+- Successful login and registration navigate to `/overview`. Account activation
+  dashboard navigation also targets `/overview`.
+- `/login` serves the unauthenticated login page. `/register` serves the same
+  page shell but initializes the registration mode.
+- The login page header keeps the theme toggle as its header control. Login
+  mode places reset-password and create-account actions below the primary login
+  action.
+- Non-activated users may navigate the authenticated shell, but the browser must
+  avoid protected data fetches, auto-refresh scheduling, event subscription, and
+  protected mutations until activation.
+- The activation banner belongs in the footer-aware bottom banner stack and must
+  remain visible for non-activated authenticated users. Toasts should not
+  overlap persistent bottom banners.
+
+## API Contract Documentation
+- The repository is both an API project and a frontend app; API contracts are
+  first-class deliverables.
+- When creating or changing any API endpoint, request or response body, status
+  code, authentication or authorization behavior, query/path parameter, SSE
+  event, or externally relevant error shape, update `swagger.yml` in the same
+  change.
+- Keep HTTP request examples under `http/` aligned with implemented APIs.
+  Prefer domain-based `.http` files when adding new examples, for example
+  account/auth, workspaces, services, reservations, and events, instead of
+  continually growing one unrelated catch-all file.
+- If a scoped change intentionally leaves `swagger.yml` or `http/*.http`
+  untouched, document why the API contract and examples are unaffected in the
+  spec, plan, or completion report.
+
 ## Configuration
 - Required runtime environment: `DATABASE_URL`.
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
@@ -54,6 +149,16 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Ensure the migration tracking table is created before migration discovery.
 - Run bootstrap migrations once at startup when enabled by config.
 - Provide an explicit npm migration job (`npm run migrate`) that runs pending migrations using the same tracking table regardless of startup flag.
+
+## Specs Folder
+- `specs/` is not a long-term archive for completed implementation history.
+  Keep it focused on active or intentionally retained artifacts.
+- Preserve `specs/SPEC-workspace-owner-environment-deletion.md`; it is an
+  active proposed spec and must not be removed during cleanup.
+- When using `$super-agent`, completed-work spec and plan artifacts may be
+  created under `specs/`, but subsequent cleanup may remove older completed
+  artifacts once durable guidance has been moved into `AGENTS.md` or the
+  relevant documentation.
 
 ## Naming Standards
 - Interfaces are suffixed with `Interface`.

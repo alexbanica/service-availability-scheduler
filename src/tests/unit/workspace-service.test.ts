@@ -148,6 +148,7 @@ class FakeServiceRepository {
     string,
     Map<string, { id: string; name: string }>
   >();
+  private readonly serviceEnvironmentAssociations = new Map<string, Set<string>>();
   private readonly owners = new Map<
     string,
     Map<string, { id: string; name: string }>
@@ -300,6 +301,15 @@ class FakeServiceRepository {
     return input.serviceId;
   }
 
+  async findServiceIdForOwner(ownerId: string): Promise<string | null> {
+    for (const [serviceId, service] of this.services.entries()) {
+      if (service.ownerId === ownerId) {
+        return serviceId;
+      }
+    }
+    return null;
+  }
+
   async findServiceByWorkspaceAndId(
     workspaceId: string,
     serviceId: string,
@@ -347,8 +357,98 @@ class FakeServiceRepository {
     return true;
   }
 
-  async insertServiceEnvironment(): Promise<void> {
+  async insertServiceEnvironment(input: {
+    serviceId: string;
+    environmentId: string;
+    serviceKey?: string;
+  }): Promise<void> {
+    const serviceEnvironmentIds =
+      this.serviceEnvironmentAssociations.get(input.serviceId) ??
+      new Set<string>();
+    serviceEnvironmentIds.add(input.environmentId);
+    this.serviceEnvironmentAssociations.set(
+      input.serviceId,
+      serviceEnvironmentIds,
+    );
     return undefined;
+  }
+
+  async deleteOwnerByWorkspaceAndId(
+    workspaceId: string,
+    ownerId: string,
+  ): Promise<number> {
+    const workspaceOwners = this.owners.get(workspaceId);
+    if (!workspaceOwners) {
+      return 0;
+    }
+
+    for (const [name, owner] of workspaceOwners.entries()) {
+      if (owner.id === ownerId) {
+        workspaceOwners.delete(name);
+        return 1;
+      }
+    }
+
+    return 0;
+  }
+
+  async detachOwnerFromWorkspaceServices(
+    workspaceId: string,
+    ownerId: string,
+  ): Promise<number> {
+    let affected = 0;
+    for (const service of this.services.values()) {
+      if (service.workspaceId === workspaceId && service.ownerId === ownerId) {
+        service.ownerId = null;
+        affected += 1;
+      }
+    }
+    return affected;
+  }
+
+  getServiceEnvironmentIds(serviceId: string): string[] {
+    const ids = this.serviceEnvironmentAssociations.get(serviceId);
+    return ids ? [...ids] : [];
+  }
+
+  async deleteEnvironmentByWorkspaceAndId(
+    workspaceId: string,
+    environmentId: string,
+  ): Promise<number> {
+    const workspaceEnvironments = this.environments.get(workspaceId);
+    if (!workspaceEnvironments) {
+      return 0;
+    }
+
+    for (const [name, entry] of workspaceEnvironments.entries()) {
+      if (entry.id !== environmentId) {
+        continue;
+      }
+      workspaceEnvironments.delete(name);
+      return 1;
+    }
+
+    return 0;
+  }
+
+  async deleteServiceEnvironmentAssociationsForEnvironment(
+    workspaceId: string,
+    environmentId: string,
+  ): Promise<number> {
+    let affected = 0;
+
+    for (const [serviceId, associations] of this
+      .serviceEnvironmentAssociations.entries()) {
+      const service = this.services.get(serviceId);
+      if (!service || service.workspaceId !== workspaceId) {
+        continue;
+      }
+      if (associations.delete(environmentId)) {
+        affected += 1;
+      }
+    }
+
+    return affected;
   }
 
   async deleteServiceEnvironmentAssociationsNotIn(): Promise<void> {
@@ -421,6 +521,32 @@ function makeService(
 
 function extractPopupRowName(row: { name: string }): string {
   return row.name;
+}
+
+type OwnerEnvironmentDeleteOps = {
+  deleteOwner: (
+    workspaceId: string,
+    userId: string,
+    ownerId: string,
+  ) => Promise<unknown>;
+  deleteEnvironment: (
+    workspaceId: string,
+    userId: string,
+    environmentId: string,
+  ) => Promise<unknown>;
+};
+
+function toOwnerEnvironmentDeleteOps(
+  service: WorkspaceService,
+): OwnerEnvironmentDeleteOps {
+  const ops = service as unknown as OwnerEnvironmentDeleteOps;
+  if (typeof ops.deleteOwner !== 'function') {
+    assert.fail('WorkspaceService.deleteOwner is not implemented yet');
+  }
+  if (typeof ops.deleteEnvironment !== 'function') {
+    assert.fail('WorkspaceService.deleteEnvironment is not implemented yet');
+  }
+  return ops;
 }
 
 type WorkspaceMembershipMutationService = {
@@ -635,6 +761,347 @@ test('createOwner and createEnvironment allow admin and manager roles', async ()
 
   assert.equal(typeof owner.ownerId, 'string');
   assert.equal(typeof env.environmentId, 'string');
+});
+
+test('deleteOwner allows admin and manager roles', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+
+  const serviceRepository = new FakeServiceRepository();
+  await serviceRepository.insertOwner({
+    workspaceId: 'workspace-1',
+    ownerId: 'owner-admin',
+    name: 'Owner Admin',
+  });
+  await serviceRepository.insertOwner({
+    workspaceId: 'workspace-1',
+    ownerId: 'owner-manager',
+    name: 'Owner Manager',
+  });
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+  await deleteOps.deleteOwner('workspace-1', 'admin-user', 'owner-admin');
+  await deleteOps.deleteOwner('workspace-1', 'manager-user', 'owner-manager');
+  const remainingOwners = await serviceRepository.listOwnersByWorkspace('workspace-1');
+  assert.equal(remainingOwners.length, 0);
+});
+
+test('deleteOwner allows only admin and manager and rejects member and non-member users', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const serviceRepository = new FakeServiceRepository();
+  await serviceRepository.insertOwner({
+    workspaceId: 'workspace-1',
+    ownerId: 'owner-1',
+    name: 'Owner',
+  });
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+
+  await assert.rejects(
+    () =>
+      deleteOps.deleteOwner('workspace-1', 'member-user', 'owner-1'),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      deleteOps.deleteOwner('workspace-2', 'admin-user', 'owner-1'),
+    /Workspace not found/,
+  );
+
+  await assert.rejects(
+    () =>
+      deleteOps.deleteOwner('workspace-1', 'missing-user', 'owner-1'),
+    /Not authorized|Not found|missing|workspace/,
+  );
+});
+
+test('deleteOwner rejects missing owner in workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+
+  await assert.rejects(
+    () => deleteOps.deleteOwner('workspace-1', 'admin-user', 'missing-owner'),
+    /Owner not found|not found|missing/,
+  );
+});
+
+test('deleteOwner detaches owner from services without deleting services', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+
+  const serviceRepository = new FakeServiceRepository();
+  await serviceRepository.insertOwner({
+    workspaceId: 'workspace-1',
+    ownerId: 'owner-1',
+    name: 'Owner',
+  });
+  await serviceRepository.insertService({
+    workspaceId: 'workspace-1',
+    serviceId: 'service-1',
+    label: 'Service',
+    defaultMinutes: 15,
+    ownerId: 'owner-1',
+  });
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+  await deleteOps.deleteOwner('workspace-1', 'admin-user', 'owner-1');
+
+  const serviceRow = await serviceRepository.findServiceByWorkspaceAndId(
+    'workspace-1',
+    'service-1',
+  );
+  assert.ok(serviceRow);
+  assert.equal(serviceRow?.ownerId, null);
+});
+
+test('deleteEnvironment allows admin and manager roles', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+
+  const serviceRepository = new FakeServiceRepository();
+  await serviceRepository.insertEnvironment({
+    workspaceId: 'workspace-1',
+    environmentId: 'environment-admin',
+    name: 'Admin Env',
+  });
+  await serviceRepository.insertEnvironment({
+    workspaceId: 'workspace-1',
+    environmentId: 'environment-manager',
+    name: 'Manager Env',
+  });
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+  await deleteOps.deleteEnvironment(
+    'workspace-1',
+    'admin-user',
+    'environment-admin',
+  );
+  await deleteOps.deleteEnvironment(
+    'workspace-1',
+    'manager-user',
+    'environment-manager',
+  );
+  const remaining = await serviceRepository.listEnvironmentsByWorkspace(
+    'workspace-1',
+  );
+  assert.equal(remaining.length, 0);
+});
+
+test('deleteEnvironment allows only admin and manager and rejects member and non-member users', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+
+  const serviceRepository = new FakeServiceRepository();
+  await serviceRepository.insertEnvironment({
+    workspaceId: 'workspace-1',
+    environmentId: 'environment-1',
+    name: 'Env',
+  });
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+  await assert.rejects(
+    () =>
+      deleteOps.deleteEnvironment('workspace-1', 'member-user', 'environment-1'),
+    /Not authorized for workspace/,
+  );
+
+  await assert.rejects(
+    () =>
+      deleteOps.deleteEnvironment('workspace-2', 'admin-user', 'environment-1'),
+    /Workspace not found/,
+  );
+
+  await assert.rejects(
+    () =>
+      deleteOps.deleteEnvironment('workspace-1', 'missing-user', 'environment-1'),
+    /Not authorized for workspace|not found|missing/,
+  );
+});
+
+test('deleteEnvironment rejects missing environment in workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+  await assert.rejects(
+    () =>
+      deleteOps.deleteEnvironment('workspace-1', 'admin-user', 'missing-env'),
+    /Environment not found|not found|missing/,
+  );
+});
+
+test('deleteEnvironment removes matching service environment associations and preserves services', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+
+  const serviceRepository = new FakeServiceRepository();
+  await serviceRepository.insertEnvironment({
+    workspaceId: 'workspace-1',
+    environmentId: 'environment-keep',
+    name: 'Keep',
+  });
+  await serviceRepository.insertEnvironment({
+    workspaceId: 'workspace-1',
+    environmentId: 'environment-remove',
+    name: 'Remove',
+  });
+
+  await serviceRepository.insertService({
+    workspaceId: 'workspace-1',
+    serviceId: 'service-1',
+    label: 'Service',
+    defaultMinutes: 15,
+    ownerId: null,
+  });
+  await serviceRepository.insertService({
+    workspaceId: 'workspace-1',
+    serviceId: 'service-2',
+    label: 'Service-two',
+    defaultMinutes: 20,
+    ownerId: null,
+  });
+
+  await serviceRepository.insertServiceEnvironment({
+    serviceId: 'service-1',
+    environmentId: 'environment-keep',
+  });
+  await serviceRepository.insertServiceEnvironment({
+    serviceId: 'service-1',
+    environmentId: 'environment-remove',
+  });
+  await serviceRepository.insertServiceEnvironment({
+    serviceId: 'service-2',
+    environmentId: 'environment-remove',
+  });
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    serviceRepository,
+  );
+
+  const deleteOps = toOwnerEnvironmentDeleteOps(service);
+  await deleteOps.deleteEnvironment(
+    'workspace-1',
+    'admin-user',
+    'environment-remove',
+  );
+
+  const serviceOne = await serviceRepository.findServiceByWorkspaceAndId(
+    'workspace-1',
+    'service-1',
+  );
+  const serviceTwo = await serviceRepository.findServiceByWorkspaceAndId(
+    'workspace-1',
+    'service-2',
+  );
+
+  assert.ok(serviceOne);
+  assert.ok(serviceTwo);
+  assert.deepEqual(serviceRepository.getServiceEnvironmentIds('service-1'), [
+    'environment-keep',
+  ]);
+  assert.deepEqual(serviceRepository.getServiceEnvironmentIds('service-2'), []);
 });
 
 test('resource administration denies member role and allows admin/manager', async () => {
@@ -1415,7 +1882,10 @@ test('listWorkspacePopupRows returns owner name rows for owners', async () => {
     'owners',
   );
 
-  assert.deepEqual(rows, [{ name: 'Acme Team' }, { name: 'Team B' }]);
+  assert.deepEqual(rows, [
+    { ownerId: 'owner-a', name: 'Acme Team' },
+    { ownerId: 'owner-b', name: 'Team B' },
+  ]);
   assert.deepEqual(rows.map(extractPopupRowName), ['Acme Team', 'Team B']);
 });
 
@@ -1457,7 +1927,10 @@ test('listWorkspacePopupRows returns environment name rows for environments', as
     'environments',
   );
 
-  assert.deepEqual(rows, [{ name: 'Dev' }, { name: 'Prod' }]);
+  assert.deepEqual(rows, [
+    { environmentId: 'environment-a', name: 'Dev' },
+    { environmentId: 'environment-b', name: 'Prod' },
+  ]);
   assert.deepEqual(rows.map(extractPopupRowName), ['Dev', 'Prod']);
 });
 

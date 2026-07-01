@@ -364,8 +364,8 @@ export class ServiceRepository extends AbstractMysqlRepository {
       ownerId: string | null;
       ownerName: string | null;
       defaultMinutes: number;
-      environmentId: string;
-      environmentName: string;
+      environmentId: string | null;
+      environmentName: string | null;
     }>
   > {
     const rows = await this.all<
@@ -375,15 +375,15 @@ export class ServiceRepository extends AbstractMysqlRepository {
         owner_id: string | null;
         owner_name: string | null;
         default_minutes: number;
-        environment_id: string;
-        environment_name: string;
+        environment_id: string | null;
+        environment_name: string | null;
       }
     >(
       `SELECT s.service_id, s.label, s.owner_id, o.name AS owner_name,
               s.default_minutes, e.environment_id, e.name AS environment_name
        FROM services s
-       INNER JOIN service_environments se ON se.service_id = s.service_id
-       INNER JOIN environments e ON e.environment_id = se.environment_id
+       LEFT JOIN service_environments se ON se.service_id = s.service_id
+       LEFT JOIN environments e ON e.environment_id = se.environment_id
        LEFT JOIN owners o ON o.owner_id = s.owner_id
        WHERE s.workspace_id = ?
        ORDER BY s.label, e.name`,
@@ -398,6 +398,57 @@ export class ServiceRepository extends AbstractMysqlRepository {
       environmentId: row.environment_id,
       environmentName: row.environment_name,
     }));
+  }
+
+  async detachOwnerFromWorkspaceServices(
+    workspaceId: string,
+    ownerId: string,
+  ): Promise<number> {
+    const [result] = await this.db.query<ResultSetHeader>(
+      `UPDATE services
+       SET owner_id = NULL
+       WHERE workspace_id = ? AND owner_id = ?`,
+      [workspaceId, ownerId],
+    );
+    return result.affectedRows;
+  }
+
+  async deleteOwnerByWorkspaceAndId(
+    workspaceId: string,
+    ownerId: string,
+  ): Promise<number> {
+    const [result] = await this.db.query<ResultSetHeader>(
+      `DELETE FROM owners
+       WHERE workspace_id = ? AND owner_id = ?`,
+      [workspaceId, ownerId],
+    );
+    return result.affectedRows;
+  }
+
+  async deleteServiceEnvironmentAssociationsForEnvironment(
+    workspaceId: string,
+    environmentId: string,
+  ): Promise<number> {
+    const [result] = await this.db.query<ResultSetHeader>(
+      `DELETE se
+       FROM service_environments se
+       INNER JOIN services s ON s.service_id = se.service_id
+       WHERE s.workspace_id = ? AND se.environment_id = ?`,
+      [workspaceId, environmentId],
+    );
+    return result.affectedRows;
+  }
+
+  async deleteEnvironmentByWorkspaceAndId(
+    workspaceId: string,
+    environmentId: string,
+  ): Promise<number> {
+    const [result] = await this.db.query<ResultSetHeader>(
+      `DELETE FROM environments
+       WHERE workspace_id = ? AND environment_id = ?`,
+      [workspaceId, environmentId],
+    );
+    return result.affectedRows;
   }
 
   async listServiceSummariesByWorkspace(

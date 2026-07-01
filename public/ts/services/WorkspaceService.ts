@@ -240,7 +240,9 @@ export class WorkspaceService {
   static async listWorkspaceRows(
     workspaceId: string,
     resourceType: WorkspaceResourceType,
-  ): Promise<Array<{ name: string }>> {
+  ): Promise<
+    Array<{ name: string; ownerId?: string; environmentId?: string }>
+  > {
     const path = `/api/workspaces/${workspaceId}/detail/${resourceType}`;
     const response = await ApiService.get(path);
     const data = (await response.json()) as {
@@ -255,10 +257,53 @@ export class WorkspaceService {
       );
     }
     return Array.isArray(data.items)
-      ? data.items.map((row) => ({
-          name: this.asString((row as { name?: unknown }).name, ''),
-        }))
+      ? data.items.map((row) => {
+          const ownerId = (row as { ownerId?: unknown }).ownerId;
+          const environmentId = (row as { environmentId?: unknown })
+            .environmentId;
+          return {
+            name: this.asString((row as { name?: unknown }).name, ''),
+            ...(typeof ownerId === 'string' ? { ownerId } : {}),
+            ...(typeof environmentId === 'string' ? { environmentId } : {}),
+          };
+        })
       : [];
+  }
+
+  static async deleteOwner(
+    workspaceId: string,
+    ownerId: string,
+  ): Promise<void> {
+    const response = await ApiService.delete(
+      `/api/workspaces/${workspaceId}/owners/${encodeURIComponent(ownerId)}`,
+    );
+    if (!response.ok) {
+      const data = (await response.json()) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to delete owner',
+      );
+    }
+  }
+
+  static async deleteEnvironment(
+    workspaceId: string,
+    environmentId: string,
+  ): Promise<void> {
+    const response = await ApiService.delete(
+      `/api/workspaces/${workspaceId}/environments/${encodeURIComponent(
+        environmentId,
+      )}`,
+    );
+    if (!response.ok) {
+      const data = (await response.json()) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to delete environment',
+      );
+    }
   }
 
   static async listWorkspaceUsers(

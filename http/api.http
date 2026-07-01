@@ -190,6 +190,10 @@ Content-Type: application/json
   "name": "staging"
 }
 
+### Delete workspace environment
+DELETE {{host}}/api/workspaces/{{workspaceId}}/environments/{{environmentId}}
+Authorization: Bearer {{token}}
+
 ### List workspace owners
 GET {{host}}/api/workspaces/{{workspaceId}}/owners
 Authorization: Bearer {{token}}
@@ -202,6 +206,10 @@ Content-Type: application/json
 {
   "name": "Platform"
 }
+
+### Delete workspace owner
+DELETE {{host}}/api/workspaces/{{workspaceId}}/owners/{{ownerId}}
+Authorization: Bearer {{token}}
 
 ### Workspace detail rows: users
 GET {{host}}/api/workspaces/{{workspaceId}}/detail/users

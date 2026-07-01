@@ -613,6 +613,12 @@ main {
   overflow-wrap: anywhere;
 }
 
+.admin-service-env-empty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+}
+
 .admin-service-tags {
   grid-column: 1 / -1;
 }
@@ -669,6 +675,23 @@ main {
 
 .modal-list li {
   overflow-wrap: anywhere;
+}
+
+.workspace-row-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.workspace-row-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.workspace-row-delete {
+  flex: 0 0 auto;
 }
 
 .tag {

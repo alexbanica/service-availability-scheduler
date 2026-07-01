@@ -225,6 +225,22 @@ test('workspace routes return 401 when request-local identity is missing', async
       body: { name: 'Owner' },
     },
     {
+      method: 'delete',
+      path: '/api/workspaces/:workspaceId/owners/:ownerId',
+      params: {
+        workspaceId: 'workspace-1',
+        ownerId: 'owner-1',
+      },
+    },
+    {
+      method: 'delete',
+      path: '/api/workspaces/:workspaceId/environments/:environmentId',
+      params: {
+        workspaceId: 'workspace-1',
+        environmentId: 'environment-1',
+      },
+    },
+    {
       method: 'get',
       path: '/api/workspaces/:workspaceId/detail/users',
       params: { workspaceId: 'workspace-1' },

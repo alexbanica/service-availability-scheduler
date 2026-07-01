@@ -2018,7 +2018,28 @@ type WorkspaceScopedIdOps = {
       owner_id?: string | null;
     },
   ) => Promise<unknown>;
+  deleteOwner: (
+    workspaceId: unknown,
+    userId: unknown,
+    ownerId: string,
+  ) => Promise<unknown>;
+  deleteEnvironment: (
+    workspaceId: unknown,
+    userId: unknown,
+    environmentId: string,
+  ) => Promise<unknown>;
 };
+
+function toOwnerEnvironmentDeleteOps(service: WorkspaceService): WorkspaceScopedIdOps {
+  const ops = service as unknown as WorkspaceScopedIdOps;
+  if (typeof ops.deleteOwner !== 'function') {
+    assert.fail('WorkspaceService.deleteOwner is not implemented yet');
+  }
+  if (typeof ops.deleteEnvironment !== 'function') {
+    assert.fail('WorkspaceService.deleteEnvironment is not implemented yet');
+  }
+  return ops;
+}
 
 test(
   'service update reuses existing environment names and creates missing names from environmentNames',
@@ -2560,6 +2581,217 @@ test(
         workspaceOne.id,
         adminUserId,
         createdService.serviceId,
+      );
+    } finally {
+      if (ALLOW_TRUNCATE) {
+        await truncateAll(db);
+      }
+      await db.end();
+    }
+  },
+);
+
+test(
+  'workspace owner and environment deletion detach resources and preserve services across workspaces',
+  { skip: !TEST_DATABASE_URL || !ALLOW_TRUNCATE },
+  async () => {
+    const db = await mysql.createPool({
+      uri: TEST_DATABASE_URL,
+      dateStrings: true,
+      timezone: 'Z',
+      multipleStatements: true,
+    });
+
+    try {
+      await ensureSchema(db);
+      await truncateAll(db);
+
+      const [adminResult] = await db.query<ResultSetHeader>(
+        'INSERT INTO users (email, nickname) VALUES (?, ?)',
+        ['admin@example.com', 'Admin'],
+      );
+      const adminUserId = adminResult.insertId;
+      await db.query('INSERT INTO user_roles (user_id, role) VALUES (?, ?)', [
+        adminUserId,
+        'platform_admin',
+      ]);
+
+      const workspaceService = new WorkspaceService(
+        db,
+        new WorkspaceRepository(db),
+        new WorkspaceUserRepository(db),
+        new ServiceRepository(db),
+        new WorkspaceInvitationRepository(db),
+        new UserRepository(db),
+        new UserRoleRepository(db),
+      );
+      const managedService = toOwnerEnvironmentDeleteOps(workspaceService);
+
+      const workspaceOne = await workspaceService.createWorkspace(
+        adminUserId,
+        'Workspace One',
+      );
+      const workspaceTwo = await workspaceService.createWorkspace(
+        adminUserId,
+        'Workspace Two',
+      );
+
+      const ownerOne = await managedService.createOwner(
+        workspaceOne.id,
+        adminUserId,
+        { name: 'Owner One' },
+      );
+      const ownerTwo = await managedService.createOwner(
+        workspaceTwo.id,
+        adminUserId,
+        { name: 'Owner Two' },
+      );
+      const keepEnv = await managedService.createEnvironment(
+        workspaceOne.id,
+        adminUserId,
+        { name: 'Keep' },
+      );
+      const removeEnv = await managedService.createEnvironment(
+        workspaceOne.id,
+        adminUserId,
+        { name: 'Remove' },
+      );
+      const otherEnv = await managedService.createEnvironment(
+        workspaceTwo.id,
+        adminUserId,
+        { name: 'Other' },
+      );
+
+      const serviceOne = await managedService.createService(
+        workspaceOne.id,
+        adminUserId,
+        {
+          label: 'Service One',
+          defaultMinutes: 15,
+          environmentIds: [keepEnv.environmentId, removeEnv.environmentId],
+          ownerId: ownerOne.ownerId,
+        },
+      );
+      const serviceTwo = await managedService.createService(
+        workspaceOne.id,
+        adminUserId,
+        {
+          label: 'Service Two',
+          defaultMinutes: 20,
+          environmentIds: [removeEnv.environmentId],
+          ownerId: null,
+        },
+      );
+      const otherService = await managedService.createService(
+        workspaceTwo.id,
+        adminUserId,
+        {
+          label: 'Other Service',
+          defaultMinutes: 25,
+          environmentIds: [otherEnv.environmentId],
+          ownerId: ownerTwo.ownerId,
+        },
+      );
+
+      await managedService.deleteOwner(
+        workspaceOne.id,
+        adminUserId,
+        ownerOne.ownerId,
+      );
+
+      const [serviceOwnerRows] = await db.query<RowDataPacket[]>(
+        `SELECT service_id, owner_id
+         FROM services
+         WHERE service_id IN (?, ?)
+         ORDER BY service_id`,
+        [serviceOne.serviceId, otherService.serviceId],
+      );
+      assert.deepEqual(
+        serviceOwnerRows.map((row) => ({
+          serviceId: row.service_id,
+          ownerId: row.owner_id,
+        })),
+        [
+          { serviceId: otherService.serviceId, ownerId: ownerTwo.ownerId },
+          { serviceId: serviceOne.serviceId, ownerId: null },
+        ].sort((a, b) => a.serviceId.localeCompare(b.serviceId)),
+      );
+
+      await assert.rejects(
+        () =>
+          managedService.deleteOwner(
+            workspaceOne.id,
+            adminUserId,
+            ownerOne.ownerId,
+          ),
+        /Owner not found/,
+      );
+
+      await managedService.deleteEnvironment(
+        workspaceOne.id,
+        adminUserId,
+        removeEnv.environmentId,
+      );
+
+      const [remainingServices] = await db.query<RowDataPacket[]>(
+        `SELECT service_id
+         FROM services
+         WHERE service_id IN (?, ?, ?)
+         ORDER BY service_id`,
+        [serviceOne.serviceId, serviceTwo.serviceId, otherService.serviceId],
+      );
+      assert.deepEqual(
+        remainingServices.map((row) => row.service_id),
+        [otherService.serviceId, serviceOne.serviceId, serviceTwo.serviceId].sort(),
+      );
+
+      const [workspaceOneAssociations] = await db.query<RowDataPacket[]>(
+        `SELECT service_id, environment_id
+         FROM service_environments
+         WHERE service_id IN (?, ?)
+         ORDER BY service_id, environment_id`,
+        [serviceOne.serviceId, serviceTwo.serviceId],
+      );
+      assert.deepEqual(
+        workspaceOneAssociations.map((row) => ({
+          serviceId: row.service_id,
+          environmentId: row.environment_id,
+        })),
+        [
+          {
+            serviceId: serviceOne.serviceId,
+            environmentId: keepEnv.environmentId,
+          },
+        ],
+      );
+
+      const [otherAssociations] = await db.query<RowDataPacket[]>(
+        `SELECT service_id, environment_id
+         FROM service_environments
+         WHERE service_id = ?`,
+        [otherService.serviceId],
+      );
+      assert.equal(otherAssociations.length, 1);
+      assert.equal(otherAssociations[0].environment_id, otherEnv.environmentId);
+
+      const catalog = await workspaceService.listServiceCatalog(
+        workspaceOne.id,
+        adminUserId,
+      );
+      const serviceTwoCatalog = catalog.find(
+        (service) => service.serviceId === serviceTwo.serviceId,
+      );
+      assert.ok(serviceTwoCatalog);
+      assert.deepEqual(serviceTwoCatalog?.environments, []);
+
+      await assert.rejects(
+        () =>
+          managedService.deleteEnvironment(
+            workspaceOne.id,
+            adminUserId,
+            removeEnv.environmentId,
+          ),
+        /Environment not found/,
       );
     } finally {
       if (ALLOW_TRUNCATE) {

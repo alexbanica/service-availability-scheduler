@@ -440,24 +440,6 @@
                   >
                     Create service
                   </button>
-                  <button
-                    v-if="selectedServiceWorkspaceIsAdmin && selectedServiceWorkspaceId"
-                    class="secondary"
-                    type="button"
-                    :disabled="!canUseProtectedActions"
-                    @click="openOwnerModal(selectedServiceWorkspaceId)"
-                  >
-                    Create owner
-                  </button>
-                  <button
-                    v-if="selectedServiceWorkspaceIsAdmin && selectedServiceWorkspaceId"
-                    class="secondary"
-                    type="button"
-                    :disabled="!canUseProtectedActions"
-                    @click="openEnvironmentModal(selectedServiceWorkspaceId)"
-                  >
-                    Create environment
-                  </button>
                 </div>
                 <div v-if="!resourceAdminWorkspaces.length" class="muted">
                   Not authorized
@@ -505,6 +487,12 @@
                               class="admin-service-env-tag"
                             >
                               {{ env.environmentName }}
+                            </span>
+                            <span
+                              v-if="service.environments.length === 0"
+                              class="muted admin-service-env-empty"
+                            >
+                              No environments
                             </span>
                           </div>
                         </div>
@@ -1075,8 +1063,21 @@
             No {{ workspaceResourceLabel(workspaceRowsModal.resourceType) }} found.
           </p>
           <ul v-else class="modal-list">
-            <li v-for="(row, index) in workspaceRowsModal.rows" :key="index">
-              {{ row.name }}
+            <li
+              v-for="(row, index) in workspaceRowsModal.rows"
+              :key="row.ownerId || row.environmentId || index"
+              class="workspace-row-item"
+            >
+              <span>{{ row.name }}</span>
+              <button
+                v-if="canDeleteWorkspaceRow(row, workspaceRowsModal.resourceType, workspaceRowsModal.workspaceId)"
+                type="button"
+                class="danger workspace-row-delete"
+                :disabled="!canUseProtectedActions"
+                @click="openWorkspaceRowDeleteConfirmation(row)"
+              >
+                Delete
+              </button>
             </li>
           </ul>
         </div>
@@ -1095,7 +1096,7 @@
     >
       <div class="modal-card">
         <div class="modal-header">
-          <h3 id="delete-action-title">Delete service</h3>
+          <h3 id="delete-action-title">{{ deleteActionTitle }}</h3>
           <button
             class="modal-close"
             type="button"
@@ -1128,7 +1129,7 @@
             @click="confirmDeleteAction"
             :disabled="pendingDeleteAction.submitting || !canUseProtectedActions"
           >
-            {{ pendingDeleteAction.submitting ? 'Deleting...' : 'Delete service' }}
+            {{ deleteActionSubmitLabel }}
           </button>
         </div>
       </div>

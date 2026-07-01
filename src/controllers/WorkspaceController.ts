@@ -396,6 +396,78 @@ export class WorkspaceController {
       },
     );
 
+    app.delete(
+      '/api/workspaces/:workspaceId/owners/:ownerId',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        const ownerId = decodeURIComponent(String(req.params.ownerId || ''));
+        try {
+          await this.workspaceService.deleteOwner(workspaceId, userId, ownerId);
+          res.status(204).send();
+        } catch (err) {
+          const message = (err as Error).message;
+          if (message === 'Workspace not found') {
+            res.status(404).json({ error: message });
+            return;
+          }
+          if (message === 'Owner not found') {
+            res.status(404).json({ error: message });
+            return;
+          }
+          if (message === 'Not authorized for workspace') {
+            res.status(403).json({ error: message });
+            return;
+          }
+          res.status(400).json({ error: message });
+        }
+      },
+    );
+
+    app.delete(
+      '/api/workspaces/:workspaceId/environments/:environmentId',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        const environmentId = decodeURIComponent(
+          String(req.params.environmentId || ''),
+        );
+        try {
+          await this.workspaceService.deleteEnvironment(
+            workspaceId,
+            userId,
+            environmentId,
+          );
+          res.status(204).send();
+        } catch (err) {
+          const message = (err as Error).message;
+          if (message === 'Workspace not found') {
+            res.status(404).json({ error: message });
+            return;
+          }
+          if (message === 'Environment not found') {
+            res.status(404).json({ error: message });
+            return;
+          }
+          if (message === 'Not authorized for workspace') {
+            res.status(403).json({ error: message });
+            return;
+          }
+          res.status(400).json({ error: message });
+        }
+      },
+    );
+
     app.get(
       '/api/workspaces/:workspaceId/detail/users',
       requireAuth,
@@ -626,6 +698,10 @@ export class WorkspaceController {
       return;
     }
     if (message === 'Workspace user not found') {
+      res.status(404).json({ error: message });
+      return;
+    }
+    if (message === 'Owner not found' || message === 'Environment not found') {
       res.status(404).json({ error: message });
       return;
     }

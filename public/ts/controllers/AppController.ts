@@ -112,7 +112,11 @@ export class AppController {
           workspaceName: string;
           resourceType: WorkspaceResourceType;
           requestId: number;
-          rows: Array<{ name: string }>;
+          rows: Array<{
+            name: string;
+            ownerId?: string;
+            environmentId?: string;
+          }>;
           loading: boolean;
           error: string;
         } | null>(null);
@@ -188,11 +192,11 @@ export class AppController {
         const serviceEditError = ref('');
         const serviceEditSubmitting = ref(false);
         const editingServiceId = ref<string | null>(null);
-        type PendingDeleteActionType = 'service';
+        type PendingDeleteActionType = 'service' | 'owner' | 'environment';
         type PendingDeleteAction = {
           actionType: PendingDeleteActionType;
           workspaceId: string;
-          serviceId: string;
+          targetId: string;
           targetLabel: string;
           submitting: boolean;
         };
@@ -1060,6 +1064,55 @@ export class AppController {
           return 'Environments';
         };
 
+        const canDeleteWorkspaceRow = (
+          row: { ownerId?: string; environmentId?: string },
+          resourceType: WorkspaceResourceType,
+          workspaceId: string,
+        ): boolean => {
+          if (!isWorkspaceResourceAdmin(workspaceId)) {
+            return false;
+          }
+          return (
+            (resourceType === 'owners' && !!row.ownerId) ||
+            (resourceType === 'environments' && !!row.environmentId)
+          );
+        };
+
+        const refreshWorkspaceRowsModal = async (): Promise<void> => {
+          const modal = workspaceRowsModal.value;
+          if (!modal) {
+            return;
+          }
+          const requestId = ++workspaceRowsRequestId.value;
+          workspaceRowsModal.value = {
+            ...modal,
+            requestId,
+            loading: true,
+            error: '',
+          };
+          try {
+            const rows = await WorkspaceService.listWorkspaceRows(
+              modal.workspaceId,
+              modal.resourceType,
+            );
+            if (workspaceRowsModal.value?.requestId === requestId) {
+              workspaceRowsModal.value = {
+                ...workspaceRowsModal.value,
+                rows,
+                loading: false,
+              };
+            }
+          } catch (err) {
+            if (workspaceRowsModal.value?.requestId === requestId) {
+              workspaceRowsModal.value = {
+                ...workspaceRowsModal.value,
+                loading: false,
+                error: (err as Error).message,
+              };
+            }
+          }
+        };
+
         const cancelInvite = () => {
           closeInviteModal();
         };
@@ -1106,12 +1159,12 @@ export class AppController {
           const selectedWorkspace = workspaces.value.find(
             (workspace) => workspace.id === workspaceId,
           );
-          const isAdminWorkspace =
-            !!user.value &&
+          const canManageResources =
             !!selectedWorkspace &&
-            selectedWorkspace.adminUserId === user.value.id;
+            (selectedWorkspace.currentUserRole === 'admin' ||
+              selectedWorkspace.currentUserRole === 'manager');
           const requests = [loadServiceCatalog(workspaceId)];
-          if (isAdminWorkspace) {
+          if (canManageResources) {
             requests.push(
               loadEnvironments(workspaceId),
               loadOwners(workspaceId),
@@ -1656,12 +1709,75 @@ export class AppController {
           pendingDeleteAction.value = {
             actionType: 'service',
             workspaceId: selectedServiceWorkspaceId.value,
-            serviceId,
+            targetId: serviceId,
             targetLabel: serviceLabel?.trim() || serviceId,
             submitting: false,
           };
           pendingDeleteError.value = '';
         };
+
+        const openWorkspaceRowDeleteConfirmation = (row: {
+          name: string;
+          ownerId?: string;
+          environmentId?: string;
+        }) => {
+          const modal = workspaceRowsModal.value;
+          if (!modal || !isProtectedActionAllowed()) {
+            return;
+          }
+          if (!isWorkspaceResourceAdmin(modal.workspaceId)) {
+            showToast('Not authorized for workspace');
+            return;
+          }
+          if (modal.resourceType === 'owners' && row.ownerId) {
+            pendingDeleteAction.value = {
+              actionType: 'owner',
+              workspaceId: modal.workspaceId,
+              targetId: row.ownerId,
+              targetLabel: row.name,
+              submitting: false,
+            };
+            pendingDeleteError.value = '';
+            return;
+          }
+          if (modal.resourceType === 'environments' && row.environmentId) {
+            pendingDeleteAction.value = {
+              actionType: 'environment',
+              workspaceId: modal.workspaceId,
+              targetId: row.environmentId,
+              targetLabel: row.name,
+              submitting: false,
+            };
+            pendingDeleteError.value = '';
+          }
+        };
+
+        const deleteActionNoun = (
+          action: PendingDeleteAction | null,
+        ): string => {
+          if (!action) {
+            return 'item';
+          }
+          if (action.actionType === 'service') {
+            return 'service';
+          }
+          if (action.actionType === 'owner') {
+            return 'owner';
+          }
+          return 'environment';
+        };
+
+        const deleteActionTitle = computed(() =>
+          pendingDeleteAction.value
+            ? `Delete ${deleteActionNoun(pendingDeleteAction.value)}`
+            : 'Delete item',
+        );
+
+        const deleteActionSubmitLabel = computed(() => {
+          const action = pendingDeleteAction.value;
+          const noun = deleteActionNoun(action);
+          return action?.submitting ? 'Deleting...' : `Delete ${noun}`;
+        });
 
         const closeDeleteConfirmation = () => {
           resetPendingDelete();
@@ -1686,16 +1802,38 @@ export class AppController {
           };
           let deleteSucceeded = false;
           try {
-            await WorkspaceService.deleteService(
-              action.workspaceId,
-              action.serviceId,
-            );
+            if (action.actionType === 'service') {
+              await WorkspaceService.deleteService(
+                action.workspaceId,
+                action.targetId,
+              );
+            } else if (action.actionType === 'owner') {
+              await WorkspaceService.deleteOwner(
+                action.workspaceId,
+                action.targetId,
+              );
+            } else {
+              await WorkspaceService.deleteEnvironment(
+                action.workspaceId,
+                action.targetId,
+              );
+            }
             deleteSucceeded = true;
-            if (editingServiceId.value === action.serviceId) {
+            if (
+              action.actionType === 'service' &&
+              editingServiceId.value === action.targetId
+            ) {
               resetServiceEditForm();
             }
             resetPendingDelete();
-            showToast('Service deleted.');
+            showToast(`${deleteActionNoun(action)} deleted.`);
+            if (action.actionType !== 'service') {
+              await refreshWorkspaceRowsModal();
+              await loadWorkspaces();
+              await loadOwners(action.workspaceId);
+              await loadEnvironments(action.workspaceId);
+              await loadServices();
+            }
             await loadServiceManagementWorkspaceData(action.workspaceId);
           } catch (err) {
             const message = (err as Error).message;
@@ -2063,7 +2201,9 @@ export class AppController {
           createEnvironment,
           workspaceRowsModal,
           workspaceResourceLabel,
+          canDeleteWorkspaceRow,
           openWorkspaceRowsModal,
+          openWorkspaceRowDeleteConfirmation,
           closeWorkspaceRowsModal,
           createWorkspace,
           workspaceEnvironments,
@@ -2083,6 +2223,8 @@ export class AppController {
           openDeleteConfirmation,
           closeDeleteConfirmation,
           confirmDeleteAction,
+          deleteActionTitle,
+          deleteActionSubmitLabel,
           pendingDeleteAction,
           pendingDeleteError,
           pendingUnclaimAction,

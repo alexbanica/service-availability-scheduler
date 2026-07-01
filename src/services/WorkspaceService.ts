@@ -17,6 +17,8 @@ export type WorkspaceResourceType =
 
 type WorkspaceDetailItem = {
   name: string;
+  ownerId?: string;
+  environmentId?: string;
 };
 
 type CreateServiceInput = {
@@ -322,13 +324,24 @@ export class WorkspaceService {
 
     rows.forEach((row) => {
       const current = map.get(row.serviceId);
-      const env = {
-        environmentId: row.environmentId,
-        environmentName: row.environmentName,
-      };
       if (current) {
-        current.environments.push(env);
+        if (row.environmentId && row.environmentName) {
+          current.environments.push({
+            environmentId: row.environmentId,
+            environmentName: row.environmentName,
+          });
+        }
         return;
+      }
+      const environments: Array<{
+        environmentId: string;
+        environmentName: string;
+      }> = [];
+      if (row.environmentId && row.environmentName) {
+        environments.push({
+          environmentId: row.environmentId,
+          environmentName: row.environmentName,
+        });
       }
       map.set(row.serviceId, {
         serviceId: row.serviceId,
@@ -336,7 +349,7 @@ export class WorkspaceService {
         owner: row.ownerName,
         ownerId: row.ownerId,
         defaultMinutes: row.defaultMinutes,
-        environments: [env],
+        environments,
       });
     });
 
@@ -367,13 +380,17 @@ export class WorkspaceService {
     if (resourceType === 'owners') {
       const owners =
         await this.serviceRepository.listOwnersByWorkspace(workspaceId);
-      return owners.map((owner) => ({ name: owner.name }));
+      return owners.map((owner) => ({
+        name: owner.name,
+        ownerId: owner.ownerId,
+      }));
     }
 
     const environments =
       await this.serviceRepository.listEnvironmentsByWorkspace(workspaceId);
     return environments.map((environment) => ({
       name: environment.environmentName,
+      environmentId: environment.environmentId,
     }));
   }
 
@@ -389,6 +406,88 @@ export class WorkspaceService {
     );
     if (!affected) {
       throw new Error('Service not found');
+    }
+  }
+
+  async deleteOwner(
+    workspaceId: string,
+    userId: string,
+    ownerId: string,
+  ): Promise<void> {
+    const normalizedOwnerId = this.normalizeRequiredId(ownerId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const serviceRepo = this.serviceRepository.withConnection(connection);
+
+      const ownerExists = await serviceRepo.isWorkspaceOwnerOwnedByWorkspace(
+        workspaceId,
+        normalizedOwnerId,
+      );
+      if (!ownerExists) {
+        throw new Error('Owner not found');
+      }
+      await serviceRepo.detachOwnerFromWorkspaceServices(
+        workspaceId,
+        normalizedOwnerId,
+      );
+      const deleted = await serviceRepo.deleteOwnerByWorkspaceAndId(
+        workspaceId,
+        normalizedOwnerId,
+      );
+      if (!deleted) {
+        throw new Error('Owner not found');
+      }
+
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  async deleteEnvironment(
+    workspaceId: string,
+    userId: string,
+    environmentId: string,
+  ): Promise<void> {
+    const normalizedEnvironmentId = this.normalizeRequiredId(environmentId);
+    await this.assertWorkspaceResourceAdmin(workspaceId, userId);
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const serviceRepo = this.serviceRepository.withConnection(connection);
+
+      const environmentExists = await serviceRepo.getEnvironmentById(
+        workspaceId,
+        normalizedEnvironmentId,
+      );
+      if (!environmentExists) {
+        throw new Error('Environment not found');
+      }
+      await serviceRepo.deleteServiceEnvironmentAssociationsForEnvironment(
+        workspaceId,
+        normalizedEnvironmentId,
+      );
+      const deleted = await serviceRepo.deleteEnvironmentByWorkspaceAndId(
+        workspaceId,
+        normalizedEnvironmentId,
+      );
+      if (!deleted) {
+        throw new Error('Environment not found');
+      }
+
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
   }
 
