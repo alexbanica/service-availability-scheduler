@@ -275,6 +275,10 @@ Content-Type: application/json
   "email": "expired-invite@example.com"
 }
 
+### Remove pending workspace invitation
+DELETE {{host}}/api/workspaces/{{workspaceId}}/invitations/{{workspaceInvitationId}}
+Authorization: Bearer {{token}}
+
 ### List workspace users for administration
 GET {{host}}/api/workspaces/{{workspaceId}}/users
 Authorization: Bearer {{token}}

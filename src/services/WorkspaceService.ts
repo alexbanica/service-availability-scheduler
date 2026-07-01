@@ -1110,6 +1110,28 @@ export class WorkspaceService {
     }
   }
 
+  async removePendingInvitation(
+    workspaceId: string,
+    actorUserId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
+
+    await this.assertWorkspaceResourceAdmin(workspace.id, actorUserId);
+
+    const removed = await this.invitationRepository.markConsumedByWorkspace(
+      workspace.id,
+      invitationId,
+      new Date(),
+    );
+    if (!removed) {
+      throw new Error('Workspace invitation not found');
+    }
+  }
+
   private async assertWorkspaceAdmin(
     workspaceId: string,
     userId: string,

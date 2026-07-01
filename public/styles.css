@@ -477,6 +477,40 @@ main {
   line-height: 1.2;
 }
 
+.admin-workspace-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+}
+
+.admin-workspace-email span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-activation-warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.05rem;
+  height: 1.05rem;
+  clip-path: polygon(50% 6%, 96% 88%, 4% 88%);
+  background: #f8c045;
+  color: #3a2a0a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  padding-top: 0.14rem;
+  cursor: help;
+}
+
+.account-activation-warning:focus-visible {
+  outline: 2px solid color-mix(in srgb, #f8c045, var(--ink) 24%);
+  outline-offset: 2px;
+}
+
 .admin-workspace-id {
   display: inline-flex;
   align-items: baseline;
@@ -527,6 +561,44 @@ main {
   justify-content: flex-end;
 }
 
+.role-selector {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(5.8rem, 1fr));
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface), var(--card) 45%);
+  min-width: min(100%, 12.25rem);
+}
+
+.role-option {
+  min-height: 2.35rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-ink);
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.role-option.active {
+  background: var(--accent-2);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(25, 130, 196, 0.24);
+}
+
+.role-option:not(.active):hover {
+  filter: none;
+  background: color-mix(in srgb, var(--accent-2), transparent 88%);
+  color: var(--ink);
+}
+
+.role-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .admin-invite {
   display: flex;
   flex-wrap: wrap;
@@ -559,9 +631,10 @@ main {
 
 .admin-service-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -570,6 +643,9 @@ main {
 }
 
 .admin-service-item--editing {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  padding: 0.75rem 1rem;
   border-color: color-mix(in srgb, var(--accent-2), var(--border) 50%);
   background: color-mix(in srgb, var(--surface), var(--highlight) 50%);
   box-shadow: 0 8px 18px rgba(25, 130, 196, 0.12);
@@ -577,14 +653,31 @@ main {
 
 .admin-service-row-content {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.3rem;
   min-width: 0;
 }
 
 .admin-service-row-content p,
 .admin-service-row-content strong {
+  margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.admin-service-row-content strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-service-row-details {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-service-item--editing .admin-service-row-content strong {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .admin-service-env-heading {
@@ -785,6 +878,12 @@ main {
 
 .admin-service-item .admin-service-actions {
   margin-top: 0.25rem;
+}
+
+.admin-service-item > .admin-service-actions {
+  grid-column: auto;
+  flex-wrap: nowrap;
+  margin-top: 0;
 }
 
 .admin-service-actions button {
@@ -1283,6 +1382,10 @@ input {
   .admin-workspace-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .role-selector {
+    width: 100%;
   }
 
   .admin-workspace .stat-tag {

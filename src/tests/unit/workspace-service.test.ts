@@ -702,6 +702,23 @@ class FakeInvitationRepository {
     return true;
   }
 
+  async markConsumedByWorkspace(
+    workspaceId: string,
+    invitationId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const invitation = [...this.existingRows, ...this.rows].find(
+      (row) =>
+        row.workspaceId === workspaceId && row.invitationId === invitationId,
+    );
+    if (!invitation || invitation.status !== 'pending') {
+      return false;
+    }
+    invitation.status = 'revoked';
+    invitation.consumedAt = now;
+    return true;
+  }
+
   async forceExpireInvitation(
     invitationCodeHash: string,
     expiresAt: Date,
@@ -1629,6 +1646,124 @@ test('inviteUser allows admin and manager and denies member', async () => {
         'member-invite@example.com',
       ),
     /Not authorized for workspace/,
+  );
+});
+
+test('removePendingInvitation allows admin and manager and denies member', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setManager('workspace-1', 'manager-user');
+  workspaceUsers.setMember('workspace-1', 'member-user');
+  const invitationRepository = new FakeInvitationRepository();
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    undefined,
+    invitationRepository,
+    new FakeUserRepository(new Map()),
+  );
+
+  const adminInvitation = await service.inviteUser(
+    'workspace-1',
+    'admin-user',
+    'admin-remove@example.com',
+  );
+  const managerInvitation = await service.inviteUser(
+    'workspace-1',
+    'admin-user',
+    'manager-remove@example.com',
+  );
+  const memberInvitation = await service.inviteUser(
+    'workspace-1',
+    'admin-user',
+    'member-denied@example.com',
+  );
+
+  await service.removePendingInvitation(
+    'workspace-1',
+    'admin-user',
+    adminInvitation.invitationId,
+  );
+  await service.removePendingInvitation(
+    'workspace-1',
+    'manager-user',
+    managerInvitation.invitationId,
+  );
+
+  await assert.rejects(
+    () =>
+      service.removePendingInvitation(
+        'workspace-1',
+        'member-user',
+        memberInvitation.invitationId,
+      ),
+    /Not authorized for workspace/,
+  );
+
+  const pendingRows =
+    await invitationRepository.listPendingByWorkspace('workspace-1');
+  const pendingEmails = new Set(pendingRows.map((row) => row.invitedEmail));
+  assert.equal(pendingEmails.has('admin-remove@example.com'), false);
+  assert.equal(pendingEmails.has('manager-remove@example.com'), false);
+  assert.equal(pendingEmails.has('member-denied@example.com'), true);
+});
+
+test('removePendingInvitation rejects invitations outside the workspace', async () => {
+  const workspaceUsers = new FakeWorkspaceUserRepository();
+  workspaceUsers.setAdmin('workspace-1', 'admin-user');
+  workspaceUsers.setAdmin('workspace-2', 'admin-user');
+  const invitationRepository = new FakeInvitationRepository();
+
+  const service = makeService(
+    new Map([
+      [
+        'workspace-1',
+        new Workspace('workspace-1', 'A', 'admin-user', 1, 0, 0, 0),
+      ],
+      [
+        'workspace-2',
+        new Workspace('workspace-2', 'B', 'admin-user', 1, 0, 0, 0),
+      ],
+    ]),
+    workspaceUsers,
+    undefined,
+    undefined,
+    undefined,
+    invitationRepository,
+    new FakeUserRepository(new Map()),
+  );
+
+  const invitation = await service.inviteUser(
+    'workspace-2',
+    'admin-user',
+    'other-workspace@example.com',
+  );
+
+  await assert.rejects(
+    () =>
+      service.removePendingInvitation(
+        'workspace-1',
+        'admin-user',
+        invitation.invitationId,
+      ),
+    /Workspace invitation not found/,
+  );
+
+  const pendingRows =
+    await invitationRepository.listPendingByWorkspace('workspace-2');
+  assert.equal(
+    pendingRows.some(
+      (row) => row.invitedEmail === 'other-workspace@example.com',
+    ),
+    true,
   );
 });
 

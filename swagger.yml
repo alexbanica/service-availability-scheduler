@@ -660,6 +660,23 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+  /api/workspaces/{workspaceId}/invitations/{invitationId}:
+    delete:
+      tags: [Workspace resources]
+      summary: Remove a pending workspace invitation.
+      description: Workspace admins and managers may revoke a pending invitation in their workspace. Accepted user membership removal remains admin-only through the workspace users endpoint.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '204':
+          description: Pending workspace invitation removed.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /api/workspace-invitations/{code}/validate:
     get:
       tags: [Workspace invitations]
@@ -703,7 +720,7 @@ paths:
     get:
       tags: [Workspace resources]
       summary: List workspace users and invitation rows.
-      description: Workspace admins and managers may read accepted users plus pending or expired invitation rows. Role mutation and membership removal remain admin-only accepted-user actions.
+      description: Workspace admins and managers may read accepted users plus pending or expired invitation rows. Role mutation and accepted-user membership removal remain admin-only actions. Pending invitation removal is allowed for admins and managers.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       responses:
@@ -809,6 +826,13 @@ components:
       required: true
       schema:
         type: string
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     Ok:
       description: Successful operation.

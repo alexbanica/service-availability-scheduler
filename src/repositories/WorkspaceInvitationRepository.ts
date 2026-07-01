@@ -329,6 +329,23 @@ export class WorkspaceInvitationRepository extends AbstractMysqlRepository {
     return result.affectedRows > 0;
   }
 
+  async markConsumedByWorkspace(
+    workspaceId: string,
+    invitationId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const result = await this.run(
+      `UPDATE workspace_invitations
+       SET consumed_at = ?,
+           status = 'revoked'
+       WHERE workspace_id = ?
+         AND invitation_id = ?
+         AND status = 'pending'`,
+      [now, workspaceId, invitationId],
+    );
+    return result.affectedRows > 0;
+  }
+
   private async resolveInvitedEmail(
     invitedEmail: string | null,
     invitedUserId: string | null,

@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const requireFromRoot = createRequire(process.cwd() + '/');
-const buildRoot = path.join(os.tmpdir(), 'sas-browser-tests');
+const buildRoot = path.join(os.tmpdir(), 'sas-app-controller-renewal-tests');
 
 function compileBrowserBundle(): void {
   const result = spawnSync(
@@ -394,6 +394,7 @@ test('AppController exposes manager resource controls without user administratio
   const originalLoadUser = AuthService.loadUser;
   const originalIsAuthenticated = AuthService.isAuthenticated;
   const originalWorkspaceList = WorkspaceService.list;
+  const originalWorkspaceUsers = WorkspaceService.listWorkspaceUsers;
   const originalLoadServices = ReservationService.loadServices;
   const originalListEnvironments = WorkspaceService.listEnvironments;
   const originalListOwners = WorkspaceService.listOwners;
@@ -421,6 +422,11 @@ test('AppController exposes manager resource controls without user administratio
   WorkspaceService.listEnvironments = async () => [];
   WorkspaceService.listOwners = async () => [];
   WorkspaceService.listServiceCatalog = async () => [];
+  let userListRequested = false;
+  WorkspaceService.listWorkspaceUsers = async () => {
+    userListRequested = true;
+    return [];
+  };
   ReservationService.loadServices = async () => ({
     expiryWarningMinutes: 5,
     autoRefreshSeconds: 30,
@@ -441,12 +447,101 @@ test('AppController exposes manager resource controls without user administratio
   assert.equal(state.selectedServiceWorkspaceIsAdmin?.value, true);
   state.setAdminSection?.('users');
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(state.selectedUserWorkspaceId?.value, 'workspace-1');
+  assert.equal(state.selectedUserWorkspaceId?.value, null);
   assert.equal(state.selectedWorkspaceUsers?.value.length, 0);
+  assert.equal(userListRequested, false);
 
   AuthService.loadUser = originalLoadUser;
   AuthService.isAuthenticated = originalIsAuthenticated;
   WorkspaceService.list = originalWorkspaceList;
+  WorkspaceService.listWorkspaceUsers = originalWorkspaceUsers;
+  WorkspaceService.listEnvironments = originalListEnvironments;
+  WorkspaceService.listOwners = originalListOwners;
+  WorkspaceService.listServiceCatalog = originalListServiceCatalog;
+  ReservationService.loadServices = originalLoadServices;
+  ApiService.get = originalApiGet;
+  EventsService.prototype.start = originalEventsStart;
+  restoreLocalStorage();
+});
+
+test('AppController filters member workspaces out of administration selectors', async () => {
+  const restoreLocalStorage = installLocalStorage();
+  const originalLoadUser = AuthService.loadUser;
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalWorkspaceList = WorkspaceService.list;
+  const originalWorkspaceUsers = WorkspaceService.listWorkspaceUsers;
+  const originalLoadServices = ReservationService.loadServices;
+  const originalListEnvironments = WorkspaceService.listEnvironments;
+  const originalListOwners = WorkspaceService.listOwners;
+  const originalListServiceCatalog = WorkspaceService.listServiceCatalog;
+  const originalApiGet = ApiService.get;
+  const originalEventsStart = EventsService.prototype.start;
+
+  AuthService.loadUser = async () =>
+    ({
+      id: 'mixed-role-user',
+      email: 'mixed@example.com',
+      nickname: 'Mixed',
+      activated: true,
+    }) as never;
+  AuthService.isAuthenticated = () => false;
+  WorkspaceService.list = async () =>
+    [
+      {
+        id: 'workspace-admin',
+        name: 'Admin Workspace',
+        adminUserId: 'mixed-role-user',
+        currentUserRole: 'admin',
+      },
+      {
+        id: 'workspace-manager',
+        name: 'Manager Workspace',
+        adminUserId: 'other-user',
+        currentUserRole: 'manager',
+      },
+      {
+        id: 'workspace-member',
+        name: 'Member Workspace',
+        adminUserId: 'other-user',
+        currentUserRole: 'member',
+      },
+    ] as never;
+  WorkspaceService.listEnvironments = async () => [];
+  WorkspaceService.listOwners = async () => [];
+  WorkspaceService.listServiceCatalog = async () => [];
+  let userWorkspaceId: string | null = null;
+  WorkspaceService.listWorkspaceUsers = async (workspaceId: string) => {
+    userWorkspaceId = workspaceId;
+    return [];
+  };
+  ReservationService.loadServices = async () => ({
+    expiryWarningMinutes: 5,
+    autoRefreshSeconds: 30,
+    services: [],
+  });
+  ApiService.get = async () => createMockResponse(200, { version: 'test' });
+  EventsService.prototype.start = () => {
+    return;
+  };
+
+  const { state, runMounted } = createAppControllerWithFakeVue();
+  await runMounted();
+
+  assert.equal(state.canAccessAdministration?.value, true);
+  assert.equal(state.adminWorkspaces?.value.length, 1);
+  assert.equal(state.resourceAdminWorkspaces?.value.length, 2);
+
+  state.selectedUserWorkspaceId!.value = 'workspace-member';
+  state.setAdminSection?.('users');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(state.selectedUserWorkspaceId?.value, 'workspace-admin');
+  assert.equal(userWorkspaceId, 'workspace-admin');
+
+  AuthService.loadUser = originalLoadUser;
+  AuthService.isAuthenticated = originalIsAuthenticated;
+  WorkspaceService.list = originalWorkspaceList;
+  WorkspaceService.listWorkspaceUsers = originalWorkspaceUsers;
   WorkspaceService.listEnvironments = originalListEnvironments;
   WorkspaceService.listOwners = originalListOwners;
   WorkspaceService.listServiceCatalog = originalListServiceCatalog;

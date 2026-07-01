@@ -9,6 +9,8 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Keep behavior deterministic and testable.
 - Inspect `git status --short --branch` before edits and preserve unrelated worktree changes.
 - Do not commit credentials, `.env` files, local database dumps, generated `public/js` bundles, or `node_modules`.
+- User-facing delete and remove actions must ask for explicit user approval
+  before performing the destructive mutation.
 - Developer agents must run `npm run lint` during implementation validation and fix every lint issue reported by that command before handing work back.
 - The main agent must run `npm run format` before committing accepted changes so Prettier normalizes the codebase.
 
@@ -111,6 +113,8 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - The activation banner belongs in the footer-aware bottom banner stack and must
   remain visible for non-activated authenticated users. Toasts should not
   overlap persistent bottom banners.
+- Browser delete and remove controls must follow the approval requirement before
+  calling the destructive mutation.
 
 ## API Contract Documentation
 - The repository is both an API project and a frontend app; API contracts are

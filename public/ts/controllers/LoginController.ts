@@ -34,6 +34,7 @@ export class LoginController {
         const registerRequestError = ref('');
         const registerRequestSuccess = ref(false);
         const invitationCode = ref('');
+        const loginInvitationCode = ref('');
         const invitationEmailLocked = ref(false);
         const forgotEmail = ref('');
         const forgotChallengeId = ref('');
@@ -50,6 +51,14 @@ export class LoginController {
           submitting.value = true;
           try {
             await LoginService.login(email.value.trim(), password.value);
+            if (loginInvitationCode.value) {
+              window.sessionStorage?.setItem(
+                'workspace_invitation_pending_accept_code',
+                loginInvitationCode.value,
+              );
+              window.location.replace('/overview');
+              return;
+            }
             window.location.replace('/overview');
           } catch (err) {
             error.value = (err as Error).message;
@@ -249,6 +258,9 @@ export class LoginController {
           const params = new URLSearchParams(window.location.search);
           const queryInvitationCode = params.get('invitation_code') || '';
           const queryEmail = params.get('email') || '';
+          const hasInvitationHandoff =
+            window.location.pathname === '/login' &&
+            params.get('invitation_handoff') === '1';
           if (queryInvitationCode) {
             invitationCode.value = queryInvitationCode;
             mode.value = 'register';
@@ -256,6 +268,13 @@ export class LoginController {
               registerEmail.value = queryEmail;
               invitationEmailLocked.value = true;
             }
+          }
+          if (hasInvitationHandoff) {
+            const storedInvitationCode =
+              window.sessionStorage?.getItem(
+                'workspace_invitation_login_code',
+              ) || '';
+            loginInvitationCode.value = storedInvitationCode;
           }
           await loadAppInfo();
         });

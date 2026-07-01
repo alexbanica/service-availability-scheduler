@@ -19,7 +19,6 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces',
       requireAuth,
-      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -234,7 +233,6 @@ export class WorkspaceController {
     app.get(
       '/api/workspaces/:workspaceId/services',
       requireAuth,
-      requireActivated,
       async (req: Request, res: Response) => {
         const userId = getAuthenticatedUserId(req, res);
         if (!userId) {
@@ -698,6 +696,32 @@ export class WorkspaceController {
       },
     );
 
+    app.delete(
+      '/api/workspaces/:workspaceId/invitations/:invitationId',
+      requireAuth,
+      requireActivated,
+      async (req: Request, res: Response) => {
+        const userId = getAuthenticatedUserId(req, res);
+        if (!userId) {
+          return;
+        }
+        const workspaceId = String(req.params.workspaceId || '');
+        const invitationId = decodeURIComponent(
+          String(req.params.invitationId || ''),
+        );
+        try {
+          await this.workspaceService.removePendingInvitation(
+            workspaceId,
+            userId,
+            invitationId,
+          );
+          res.status(204).send();
+        } catch (err) {
+          this.writeWorkspaceError(res, (err as Error).message);
+        }
+      },
+    );
+
     app.get(
       '/api/workspace-invitations/:code/validate',
       async (req: Request, res: Response) => {
@@ -762,7 +786,10 @@ export class WorkspaceController {
       res.status(404).json({ error: message });
       return;
     }
-    if (message === 'Workspace user not found') {
+    if (
+      message === 'Workspace user not found' ||
+      message === 'Workspace invitation not found'
+    ) {
       res.status(404).json({ error: message });
       return;
     }

@@ -1,4 +1,5 @@
 import { ThemeHelper, Theme } from '../helpers/ThemeHelper.js';
+import { AuthService } from '../services/AuthService.js';
 import { WorkspaceService } from '../services/WorkspaceService.js';
 
 export class WorkspaceInvitationController {
@@ -22,6 +23,7 @@ export class WorkspaceInvitationController {
         const status = ref('');
         const invitedEmail = ref('');
         const existingUserInvite = ref(false);
+        const invitationAccountMismatch = ref(false);
         const accepted = ref(false);
         const appVersion = ref('');
 
@@ -36,11 +38,18 @@ export class WorkspaceInvitationController {
 
         const themeLabel = computed(() => ThemeHelper.getLabel(theme.value));
         const isValidExistingInvite = computed(
-          () => status.value === 'valid' && existingUserInvite.value,
+          () =>
+            status.value === 'valid' &&
+            existingUserInvite.value &&
+            !invitationAccountMismatch.value,
         );
         const isUnregisteredInvite = computed(
-          () => status.value === 'unregistered',
+          () =>
+            status.value === 'unregistered' &&
+            !invitationAccountMismatch.value,
         );
+        const normalizeEmail = (value: string): string =>
+          value.trim().toLowerCase();
 
         const loadAppInfo = async () => {
           try {
@@ -59,8 +68,12 @@ export class WorkspaceInvitationController {
         const validateInvitation = async () => {
           loading.value = true;
           error.value = '';
+          invitationAccountMismatch.value = false;
           try {
             const result = await WorkspaceService.validateInvitation(code);
+            const currentUser = AuthService.isAuthenticated()
+              ? await AuthService.loadUser()
+              : null;
             status.value = result.status;
             existingUserInvite.value = result.existingUserInvite;
             invitedEmail.value = result.invitation?.invitedEmail || '';
@@ -72,6 +85,42 @@ export class WorkspaceInvitationController {
             }
             if (result.status === 'wrong_user') {
               error.value = 'This invitation belongs to another account.';
+            }
+            if (
+              currentUser &&
+              (result.status === 'valid' || result.status === 'unregistered')
+            ) {
+              const currentEmail = normalizeEmail(currentUser.email);
+              const invitationEmail = normalizeEmail(
+                result.invitation?.invitedEmail || '',
+              );
+              if (
+                result.status === 'unregistered' ||
+                !currentEmail ||
+                currentEmail !== invitationEmail
+              ) {
+                invitationAccountMismatch.value = true;
+                error.value = 'This invitation belongs to another account.';
+                return;
+              }
+            }
+            if (result.status === 'valid' && result.existingUserInvite) {
+              if (currentUser) {
+                await acceptInvitation();
+                if (!error.value) {
+                  window.sessionStorage?.setItem(
+                    'workspace_invitation_joined_workspace_id',
+                    result.invitation?.workspaceId || '',
+                  );
+                  window.location.replace('/overview');
+                }
+                return;
+              }
+              window.sessionStorage?.setItem(
+                'workspace_invitation_login_code',
+                code,
+              );
+              window.location.replace('/login?invitation_handoff=1');
             }
           } catch (err) {
             error.value = (err as Error).message;
@@ -102,8 +151,11 @@ export class WorkspaceInvitationController {
         };
 
         const goLogin = () => {
-          const params = new URLSearchParams({ invitation_code: code });
-          window.location.assign(`/login?${params.toString()}`);
+          window.sessionStorage?.setItem(
+            'workspace_invitation_login_code',
+            code,
+          );
+          window.location.assign('/login?invitation_handoff=1');
         };
 
         const showDashboard = () => {

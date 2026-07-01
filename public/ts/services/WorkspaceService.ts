@@ -462,6 +462,25 @@ export class WorkspaceService {
     }
   }
 
+  static async removePendingInvitation(
+    workspaceId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const response = await ApiService.delete(
+      `/api/workspaces/${workspaceId}/invitations/${encodeURIComponent(
+        invitationId,
+      )}`,
+    );
+    if (!response.ok) {
+      const data = (await response.json()) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Failed to remove workspace invitation',
+      );
+    }
+  }
+
   static async listServiceCatalog(workspaceId: string): Promise<
     Array<{
       serviceId: string;
