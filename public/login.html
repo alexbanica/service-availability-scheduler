@@ -178,16 +178,16 @@
         </button>
       </form>
     </main>
+    <div v-if="recaptchaEnabled" class="recaptcha-branding-strip">
+      This site is protected by reCAPTCHA.
+      <a href="https://policies.google.com/privacy" rel="noopener noreferrer" target="_blank">Privacy</a>
+      <span aria-hidden="true">and</span>
+      <a href="https://policies.google.com/terms" rel="noopener noreferrer" target="_blank">Terms</a>
+      apply.
+    </div>
     <footer class="site-footer login-footer">
       <span>Service Availability Scheduler</span>
-      <span class="footer-meta">
-        <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
-        <span v-if="recaptchaEnabled" class="recaptcha-footer-branding">
-          This site is protected by reCAPTCHA.
-          <a href="https://policies.google.com/privacy" rel="noopener noreferrer" target="_blank">Privacy</a>
-          <a href="https://policies.google.com/terms" rel="noopener noreferrer" target="_blank">Terms</a>
-        </span>
-      </span>
+      <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>
     </footer>
   </div>
 
