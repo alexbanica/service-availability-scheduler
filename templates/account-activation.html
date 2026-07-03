@@ -1,0 +1,22 @@
+Template: account-activation
+Subject: Activate your Service Availability Scheduler account
+Preheader: Confirm your account to finish setup.
+Required custom_data keys: activation_url, nickname, recipient_email
+
+HTML:
+<p>Hello {{nickname}},</p>
+<p>Your account for {{recipient_email}} needs activation before protected actions are available.</p>
+<p>
+  <a href="{{activation_url}}">Activate account</a>
+</p>
+<p>Opening this link activates your existing account.</p>
+<p>Fallback URL: {{activation_url}}</p>
+
+Text:
+Hello {{nickname}},
+
+Your account for {{recipient_email}} needs activation before protected actions are available.
+
+Activate account: {{activation_url}}
+
+Opening this link activates your existing account.

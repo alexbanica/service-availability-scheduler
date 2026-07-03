@@ -125,7 +125,9 @@ class FakeGoogleVerifier {
     this.error = message;
   }
 
-  async verifyIdToken(credential: string): Promise<{ payload: GooglePayload } | null> {
+  async verifyIdToken(
+    credential: string,
+  ): Promise<{ payload: GooglePayload } | null> {
     this.verifyCalls += 1;
     assert.ok(credential, 'credential should be forwarded to verifier');
 
@@ -363,9 +365,7 @@ function getGoogleAuthHandlers(app: express.Express): RouteHandler[] {
     const route = (
       layer as { route?: { path?: string; methods?: Record<string, boolean> } }
     ).route;
-    return (
-      route?.methods?.post === true && route.path === '/api/google-auth'
-    );
+    return route?.methods?.post === true && route.path === '/api/google-auth';
   }) as
     | {
         route: {
@@ -567,11 +567,15 @@ test('POST /api/google-auth requires a credential', async () => {
   controller.register(app);
 
   await withGoogleClientId('test-google-client-id', async () => {
-    const response = await runGoogleAuth(app, {
-      g_csrf_token: 'csrf-token',
-    }, {
-      g_csrf_token: 'csrf-token',
-    });
+    const response = await runGoogleAuth(
+      app,
+      {
+        g_csrf_token: 'csrf-token',
+      },
+      {
+        g_csrf_token: 'csrf-token',
+      },
+    );
 
     assert.equal(response.statusCode, 400);
     assert.equal(
@@ -728,7 +732,7 @@ test('POST /api/google-auth creates authoritative new users as activated with pl
   });
 });
 
-test('POST /api/google-auth creates non-authoritative new users as inactive and logs activation URL', async () => {
+test('POST /api/google-auth creates non-authoritative new users as inactive without logging activation URL', async () => {
   const app = express();
   app.use(express.json());
 
@@ -775,9 +779,9 @@ test('POST /api/google-auth creates non-authoritative new users as inactive and 
     assert.equal(tokenService.createCount, 1);
     assert.equal(
       resetLogger.messages.some((entry) =>
-        String(entry.message).includes('/activate-account/activate-token-1'),
+        String(entry.message).includes('/activate-account/'),
       ),
-      true,
+      false,
     );
     assert.equal(verifier.verifyCalls, 1);
   });
@@ -999,7 +1003,12 @@ test('POST /api/google-auth does not accept invitation code for an existing user
   });
   const workspaceService = new FakeWorkspaceService();
   const userService = new FakeUserService([seeded]);
-  const controller = createController(userService, verifier, undefined, workspaceService);
+  const controller = createController(
+    userService,
+    verifier,
+    undefined,
+    workspaceService,
+  );
   controller.register(app);
 
   await withGoogleClientId('test-google-client-id', async () => {
@@ -1016,7 +1025,10 @@ test('POST /api/google-auth does not accept invitation code for an existing user
     );
 
     assert.equal(response.statusCode, 200);
-    assert.equal(workspaceService.acceptWorkspaceInvitationForRegistrationCalls.length, 0);
+    assert.equal(
+      workspaceService.acceptWorkspaceInvitationForRegistrationCalls.length,
+      0,
+    );
     assert.equal(userService.createCalls.length, 0);
   });
 });

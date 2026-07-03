@@ -15,6 +15,28 @@ type AppConfigWithJwt = {
   runMigrationsOnStartup: boolean;
 };
 
+type AppConfigWithOneSignal = AppConfigWithJwt & {
+  oneSignalAppId: string;
+  oneSignalRestApiKey: string;
+  appPublicBaseUrl: string;
+  oneSignalTemplatePasswordResetId: string;
+  oneSignalTemplateAccountActivationId: string;
+  oneSignalTemplateWorkspaceInvitationId: string;
+};
+
+const BASE_ONESIGNAL_ENV = {
+  ONESIGNAL_APP_ID: 'onesignal-app-id',
+  ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+  APP_PUBLIC_BASE_URL: 'https://example.com',
+  ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+  ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+  ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+};
+
+for (const [name, value] of Object.entries(BASE_ONESIGNAL_ENV)) {
+  process.env[name] = process.env[name] ?? value;
+}
+
 function writeTempAppConfig(yamlContent: string): string {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'config-loader-'));
   const configPath = path.join(tempDir, 'app.yml');
@@ -44,6 +66,38 @@ function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
     } else {
       process.env[name] = previous;
     }
+  }
+}
+
+function withEnvMap<T>(
+  values: Record<string, string | undefined>,
+  fn: () => T,
+): T {
+  const previous = new Map<string, string | undefined>();
+  const names = new Set([
+    ...Object.keys(BASE_ONESIGNAL_ENV),
+    ...Object.keys(values),
+  ]);
+  names.forEach((name) => {
+    previous.set(name, process.env[name]);
+    const value = values[name];
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  });
+  try {
+    return fn();
+  } finally {
+    Object.keys(values).forEach((name) => {
+      const previousValue = previous.get(name);
+      if (previousValue === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = previousValue;
+      }
+    });
   }
 }
 
@@ -546,6 +600,161 @@ test('non-boolean RUN_MIGRATIONS_ON_STARTUP is rejected', () => {
         new ConfigLoaderService().loadConfig(configPath);
       }, /RUN_MIGRATIONS_ON_STARTUP/);
     });
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing ONESIGNAL_APP_ID is rejected as required startup configuration', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnvMap(
+      {
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        APP_PUBLIC_BASE_URL: 'https://example.com',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () => {
+        assert.throws(() => {
+          new ConfigLoaderService().loadConfig(configPath);
+        }, /ONESIGNAL_APP_ID/);
+      },
+    );
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing ONESIGNAL_REST_API_KEY is rejected as required startup configuration', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        APP_PUBLIC_BASE_URL: 'https://example.com',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () => {
+        assert.throws(() => {
+          new ConfigLoaderService().loadConfig(configPath);
+        }, /ONESIGNAL_REST_API_KEY/);
+      },
+    );
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing APP_PUBLIC_BASE_URL is rejected as required startup configuration', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () => {
+        assert.throws(() => {
+          new ConfigLoaderService().loadConfig(configPath);
+        }, /APP_PUBLIC_BASE_URL/);
+      },
+    );
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID is rejected as required startup configuration', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        APP_PUBLIC_BASE_URL: 'https://example.com',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () => {
+        assert.throws(() => {
+          new ConfigLoaderService().loadConfig(configPath);
+        }, /ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID/);
+      },
+    );
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID is rejected as required startup configuration', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        APP_PUBLIC_BASE_URL: 'https://example.com',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () => {
+        assert.throws(() => {
+          new ConfigLoaderService().loadConfig(configPath);
+        }, /ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID/);
+      },
+    );
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('missing ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID is rejected as required startup configuration', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        APP_PUBLIC_BASE_URL: 'https://example.com',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+      },
+      () => {
+        assert.throws(() => {
+          new ConfigLoaderService().loadConfig(configPath);
+        }, /ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID/);
+      },
+    );
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('APP_PUBLIC_BASE_URL is trimmed and normalized to no trailing slash', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const config = withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        APP_PUBLIC_BASE_URL: 'https://example.com/  ',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
+    );
+    assert.equal(config.appPublicBaseUrl, 'https://example.com');
   } finally {
     cleanupConfig(configPath);
   }

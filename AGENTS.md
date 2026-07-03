@@ -50,9 +50,9 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   captcha-protected non-answer fields after loading a captcha should clear the
   loaded challenge and require a fresh captcha.
 - Registration creates a non-activated user, creates a single active activation
-  token, logs the activation URL server-side with a TODO for future email
-  delivery, and returns the normal authenticated session payload without
-  returning the activation token or URL.
+  token, queues an asynchronous OneSignal account-activation email job, and
+  returns the normal authenticated session payload without returning the
+  activation token or URL.
 - Activation tokens are stored hashed. Issuing a new activation token for a user
   invalidates prior active activation tokens for that user.
 - Activation links use `/activate-account/<token>`. Successful activation marks
@@ -61,8 +61,9 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Successful activation stores the returned bearer token in the browser and
   redirects to `/overview` after a 5-second countdown, with a visible manual
   dashboard button.
-- Reset and activation links are logged server-side until email delivery exists;
-  UI copy must not claim email delivery has happened.
+- Reset, activation, and workspace invitation links are delivered through
+  asynchronous OneSignal template email jobs and must not be logged as fallback
+  delivery.
 
 ## Authorization
 - Non-activated users are authenticated but must not access protected app data
@@ -136,6 +137,14 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
 - Optional invitation runtime environment: `WORKSPACE_INVITATION_EXPIRES_IN_SECONDS`.
 - Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
+- Required OneSignal email env: `ONESIGNAL_APP_ID`,
+  `ONESIGNAL_REST_API_KEY`, `APP_PUBLIC_BASE_URL`,
+  `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID`,
+  `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID`, and
+  `ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID`.
+- Optional OneSignal sender env: `ONESIGNAL_EMAIL_FROM_NAME`,
+  `ONESIGNAL_EMAIL_FROM_ADDRESS`, and
+  `ONESIGNAL_EMAIL_REPLY_TO_ADDRESS`.
 - Test-only environment: `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_TRUNCATE`.
 - Runtime timing keys live in `config/app.yml`:
   - `expiry_warning_minutes`

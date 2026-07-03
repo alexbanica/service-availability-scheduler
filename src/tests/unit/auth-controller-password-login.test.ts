@@ -67,10 +67,7 @@ class CaptchaServiceStub {
     return this.createPayload();
   }
 
-  async validateChallenge(
-    _id: string,
-    _answer: string,
-  ): Promise<boolean> {
+  async validateChallenge(_id: string, _answer: string): Promise<boolean> {
     this.validateCalls += 1;
     this.lastValidateCalls.push({
       challengeId: _id,
@@ -1155,9 +1152,9 @@ test('POST /api/register creates user, token, and returns authenticated non-acti
   assert.equal(userService.createdUsers[0]?.nickname, 'New User');
   assert.equal(
     logger.messages.some((message) =>
-      message.message.includes('/activate-account/activation-token-abc'),
+      message.message.includes('/activate-account/'),
     ),
-    true,
+    false,
   );
 });
 
@@ -1479,7 +1476,7 @@ test('POST /api/register rolls back and releases connection when activation toke
           nickname: 'New User',
           password: 'long-enough-password',
           confirm_password: 'long-enough-password',
-        recaptcha_token: 'register-token',
+          recaptcha_token: 'register-token',
         },
       }),
     );
@@ -1893,8 +1890,10 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
   assert.equal(knownTokenService.createCount, 1);
   assert.equal(knownTokenService.updatedToken, 'user-1');
   assert.equal(
-    knownLogger.messages[0]?.message.includes('/reset-password/known-token'),
-    true,
+    knownLogger.messages.some((message) =>
+      message.message.includes('/reset-password/'),
+    ),
+    false,
   );
 
   const appUnknown = express();

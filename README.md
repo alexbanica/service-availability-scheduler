@@ -53,6 +53,45 @@ Open `http://localhost:3000`.
 | `GOOGLE_RECAPTCHA_SITE_KEY` | No | Disabled | Public Google reCAPTCHA v3 site key used by the login/register page. |
 | `GOOGLE_RECAPTCHA_SECRET_KEY` | No | Disabled | Private Google reCAPTCHA v3 secret key used only by the server for siteverify validation. Keep it out of source control. |
 | `GOOGLE_RECAPTCHA_MIN_SCORE` | No | `0.5` | Minimum accepted reCAPTCHA v3 score for password reset requests and password registration. |
+| `ONESIGNAL_APP_ID` | Yes | None | OneSignal app ID used for transactional email delivery. |
+| `ONESIGNAL_REST_API_KEY` | Yes | None | OneSignal REST API key used only by the server. Keep it out of source control. |
+| `APP_PUBLIC_BASE_URL` | Yes | None | Public app origin/base URL used to build email links, for example `https://app.example.com`. Trailing slashes are ignored. |
+| `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID` | Yes | None | OneSignal template ID for password reset email. |
+| `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID` | Yes | None | OneSignal template ID for account activation email. |
+| `ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID` | Yes | None | OneSignal template ID for workspace invitation email. |
+| `ONESIGNAL_EMAIL_FROM_NAME` | No | OneSignal default | Optional sender display-name override. |
+| `ONESIGNAL_EMAIL_FROM_ADDRESS` | No | OneSignal default | Optional sender address override. |
+| `ONESIGNAL_EMAIL_REPLY_TO_ADDRESS` | No | OneSignal default | Optional reply-to address override. |
+
+### OneSignal transactional email setup
+
+Password reset, account activation, and workspace invitation links are queued as
+durable email jobs and sent asynchronously through OneSignal templates. Startup
+fails when required OneSignal configuration is missing.
+
+Copy the repository template source files into OneSignal manually:
+
+- `templates/password-reset.html`
+- `templates/account-activation.html`
+- `templates/workspace-invitation.html`
+
+Each file lists the subject, preheader, required `custom_data` keys, HTML body,
+and plain-text fallback. The app does not create or update OneSignal templates.
+Email jobs retry up to three total attempts. Failed attempts are logged with
+email kind, template ID, user ID when available, recipient, attempt number,
+payload key names, and non-secret failure details. Raw reset, activation, and
+invitation URLs are not logged.
+
+Platform admins can requeue permanently failed jobs without sending email
+synchronously:
+
+```http
+POST /api/email-jobs/failed/retry
+Authorization: Bearer <platform-admin-token>
+Content-Type: application/json
+
+{ "email_kind": "password_reset", "job_ids": ["<email-job-id>"] }
+```
 
 ### Google Cloud OAuth client setup
 
@@ -153,7 +192,8 @@ environments; it does not create them inline.
   `410` because local math CAPTCHA challenges are no longer created.
 - `POST /api/password-reset/request`: accepts `{ "email": "...", "recaptcha_token": "..." }`, verifies Google reCAPTCHA v3 action `password_reset_request`, and creates or replaces an
   active reset token for existing users. Response is generic and does not expose
-  whether an account exists.
+  whether an account exists. Known-account reset links are queued for
+  asynchronous OneSignal email delivery.
 - `POST /api/password-reset/validate`: validates `{ "token" }` and returns `ok: true` for active tokens.
 - `POST /api/password-reset`: accepts `{ "token": "...", "password": "...", "confirm_password": "..." }`, requires matching password and confirmation, sets the user password, and returns generic success. Responses are generic and do not return a token.
 - `POST /api/register/captcha`: legacy compatibility endpoint returning `410`
@@ -162,7 +202,7 @@ environments; it does not create them inline.
   and `recaptcha_token` with Google reCAPTCHA v3 action `register`, creates a
   non-activated user, creates a one-time activation token, and returns the
   authenticated bearer token payload with `activated: false`.
-  The activation link is currently logged on the server with a TODO for email delivery.
+  The activation link is queued for asynchronous OneSignal email delivery.
 - `POST /api/account-activation/validate`: validates `{ "token": "..." }` and returns
   `ok: true` for a valid activation token.
 - `POST /api/account-activation`: accepts `{ "token": "..." }`, activates the user,
@@ -193,9 +233,9 @@ the token and redirects to `/login`.
 Browser pages load Vue from the installed pinned `vue` package through the local
 `/vendor/vue/vue.global.prod.js` route rather than from an external CDN.
 
-Reset URLs are currently logged temporarily for existing users and include a TODO
-note to replace this with email delivery. Reset URLs are never returned in API
-responses.
+Reset, activation, and invitation URLs are queued for asynchronous OneSignal
+email delivery. Raw token and invitation URLs are never returned in API
+responses or logged as fallback delivery.
 
 ### Migrations
 

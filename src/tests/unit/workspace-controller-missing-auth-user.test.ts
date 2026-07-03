@@ -39,6 +39,28 @@ function createResponse(): {
   };
 }
 
+async function runRouteHandlers(
+  handlers: RouteHandler[],
+  req: Request,
+): Promise<HttpResponse> {
+  const { response, getResponse } = createResponse();
+  let index = 0;
+
+  const next: NextFunction = async (error?: unknown) => {
+    if (error) {
+      throw error;
+    }
+    index += 1;
+    if (index < handlers.length) {
+      await handlers[index](req, response, next);
+    }
+  };
+
+  await handlers[0](req, response, next);
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+  return getResponse();
+}
+
 function getRouteHandlers(
   app: express.Express,
   method: 'get' | 'post' | 'patch' | 'delete',
@@ -121,8 +143,78 @@ class FakeWorkspaceService {
     return { items: [] };
   }
 
-  async inviteUser() {
+  async inviteUser(
+    _workspaceId: string,
+    _userId: string,
+    _email: string,
+  ): Promise<{
+    workspaceId: string;
+    invitationId: string;
+    invitedUserId: string | null;
+    invitedByUserId: string;
+    status: string;
+    invitedEmail: string;
+    invitationCode: string;
+    workspaceName: string;
+  }> {
+    void _workspaceId;
+    void _userId;
+    void _email;
     throw new Error('not implemented');
+  }
+}
+
+class FakeJwtAuthService {
+  async verifyToken(token: string): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  }> {
+    if (token === 'workspace-admin-token') {
+      return {
+        userId: 'user-admin',
+        email: 'admin@example.com',
+        nickname: 'Admin',
+        activated: true,
+      };
+    }
+    throw new Error('invalid token');
+  }
+}
+
+class WorkspaceInviteServiceStub extends FakeWorkspaceService {
+  public inviteUserCalls: Array<{
+    workspaceId: string;
+    userId: string;
+    email: string;
+  }> = [];
+
+  async inviteUser(
+    workspaceId: string,
+    userId: string,
+    email: string,
+  ): Promise<{
+    workspaceId: string;
+    invitationId: string;
+    invitedUserId: string | null;
+    invitedByUserId: string;
+    status: string;
+    invitedEmail: string;
+    invitationCode: string;
+    workspaceName: string;
+  }> {
+    this.inviteUserCalls.push({ workspaceId, userId, email });
+    return {
+      workspaceId,
+      invitationId: 'invitation-id-1',
+      invitedUserId: null,
+      invitedByUserId: userId,
+      status: 'pending',
+      invitedEmail: email,
+      invitationCode: 'invite-code-abc',
+      workspaceName: 'Operations',
+    };
   }
 }
 
@@ -314,5 +406,82 @@ test('workspace routes return 401 when request-local identity is missing', async
       (result.body as { error?: string }).error,
       'Not authenticated',
     );
+  }
+});
+
+test('POST /api/workspaces/:workspaceId/invitations does not log raw invitation links', async () => {
+  const app = express();
+  const workspaceService = new WorkspaceInviteServiceStub();
+  const controller = new WorkspaceController(workspaceService as never);
+  (
+    app as unknown as { locals: { jwtAuthService: FakeJwtAuthService } }
+  ).locals = { jwtAuthService: new FakeJwtAuthService() };
+  controller.register(app);
+
+  const originalConsoleInfo = console.info;
+  const infoMessages: Array<string> = [];
+  console.info = (message: string, ...params: Array<unknown>) => {
+    infoMessages.push([message, ...params].map(String).join(' '));
+  };
+
+  try {
+    const route = getRouteHandlers(
+      app,
+      'post',
+      '/api/workspaces/:workspaceId/invitations',
+    );
+    const response = await runRouteHandlers(route, {
+      path: '/api/workspaces/workspace-1/invitations',
+      method: 'POST',
+      body: { email: 'new-user@example.com' },
+      params: { workspaceId: 'workspace-1' },
+      app,
+      header: (name: string) =>
+        name.toLowerCase() === 'authorization'
+          ? 'Bearer workspace-admin-token'
+          : '',
+    } as unknown as Request);
+
+    assert.equal(response.statusCode, 201, JSON.stringify(response.body));
+    assert.equal(
+      workspaceService.inviteUserCalls[0]?.workspaceId,
+      'workspace-1',
+      'Expected invite to target the requested workspace',
+    );
+    assert.equal(
+      workspaceService.inviteUserCalls[0]?.userId,
+      'user-admin',
+      'Expected request to use authenticated user as inviter',
+    );
+    assert.equal(
+      workspaceService.inviteUserCalls[0]?.email,
+      'new-user@example.com',
+    );
+
+    const responseBody = response.body as Record<string, unknown>;
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(responseBody, 'invitation_code'),
+      false,
+    );
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(responseBody, 'invitation_url'),
+      false,
+    );
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(responseBody, 'invitation_link'),
+      false,
+    );
+    assert.equal(
+      infoMessages.some((entry) =>
+        entry.includes('/workspace-invitations/invite-code-abc'),
+      ),
+      false,
+    );
+    assert.equal(
+      infoMessages.some((entry) => entry.includes('TODO')),
+      false,
+    );
+  } finally {
+    console.info = originalConsoleInfo;
   }
 });
