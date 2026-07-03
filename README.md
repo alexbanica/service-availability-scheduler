@@ -51,6 +51,44 @@ Open `http://localhost:3000`.
 | `APP_VERSION` | No | `development` | Version string exposed in page footers. Docker images built with `docker/build.sh --release <tag>` set this to the release tag automatically. |
 | `GOOGLE_AUTH_CLIENT_ID` | No | Disabled | Public Google OAuth client ID that enables Google Identity Services login/register. No client secret or Google API access token is used. |
 
+### Google Cloud OAuth client setup
+
+Google login and registration use Google Identity Services with a browser
+credential callback. The app needs only a public OAuth 2.0 Web application
+client ID in `GOOGLE_AUTH_CLIENT_ID`; it does not use a Google client secret,
+OAuth redirect endpoint, Google API access token, or extra Google API scopes.
+
+Create the client ID in Google Cloud:
+
+1. Open the Google Auth Platform Clients page in Google Cloud Console.
+2. Create or select the Google Cloud project for this deployment.
+3. Register the app branding/consent information if Google Cloud asks for it.
+4. Create a client with application type `Web application`.
+5. Add each app origin under Authorized JavaScript origins. Origins include only
+   scheme, host, and optional port, with no path:
+   - `http://localhost`
+   - `http://localhost:3000`
+   - your production origin, for example `https://app.example.com`
+6. Leave Authorized redirect URIs empty for this app unless the implementation
+   is changed to use a redirect-based Google flow.
+7. Copy the generated client ID, which looks like
+   `1234567890-example.apps.googleusercontent.com`.
+8. Configure the server and restart it:
+
+```bash
+export GOOGLE_AUTH_CLIENT_ID='1234567890-example.apps.googleusercontent.com'
+```
+
+The Google button is hidden when `GOOGLE_AUTH_CLIENT_ID` is unset. After it is
+set, the login page loads the Google Identity Services script from
+`https://accounts.google.com/gsi/client`, renders the Google button, receives an
+ID token credential in the browser, and sends it to `POST /api/google-auth` for
+server-side verification.
+
+Google requires HTTPS origins for non-localhost browser applications. Local
+development may use localhost over HTTP, but the exact localhost port must be
+listed when it is not the default port.
+
 ### Application file config
 
 Edit `config/app.yml` for app timing behavior.
