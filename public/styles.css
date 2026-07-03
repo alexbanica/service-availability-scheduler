@@ -1163,6 +1163,16 @@ select:focus-visible {
   margin-top: 1rem;
 }
 
+.login-choice-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.login-choice-panel button {
+  width: 100%;
+}
+
 .login-action-stack {
   display: grid;
   gap: 0.65rem;
@@ -1170,6 +1180,20 @@ select:focus-visible {
 
 .login-action-stack button {
   width: 100%;
+}
+
+.google-auth-panel {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.google-auth-button {
+  min-height: 2.5rem;
+  width: 100%;
+}
+
+.google-auth-button > div {
+  width: 100% !important;
 }
 
 .login-choice-divider {

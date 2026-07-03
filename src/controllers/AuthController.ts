@@ -9,6 +9,12 @@ import { AccountActivationTokenService } from '../services/AccountActivationToke
 import { WorkspaceService } from '../services/WorkspaceService';
 import { RateLimiter } from '../helpers/RateLimiter';
 import { assignJwtAuthService, requireAuth } from './AuthMiddleware';
+import {
+  GoogleAuthVerifier,
+  GoogleAuthVerifierInterface,
+  GoogleIdTokenPayload,
+} from '../services/GoogleAuthVerifier';
+import type { MysqlConnection } from '../repositories/AbstractMysqlRepository';
 
 type Logger = {
   info: (message: string, ...params: Array<unknown>) => void;
@@ -40,6 +46,7 @@ export class AuthController {
     activationLogger?: Logger,
     private readonly db?: Pool,
     private readonly workspaceService?: WorkspaceService,
+    private readonly googleVerifier?: GoogleAuthVerifierInterface,
   ) {
     this.activationLogger = activationLogger ?? this.resetLogger;
   }
@@ -47,7 +54,7 @@ export class AuthController {
   private readonly activationLogger: Logger;
 
   private getClientIp(req: Request): string {
-    return req.ip || req.socket.remoteAddress || 'unknown';
+    return req.ip || req.socket?.remoteAddress || 'unknown';
   }
 
   private accountKey(req: Request): string | null {
@@ -55,6 +62,72 @@ export class AuthController {
       .trim()
       .toLowerCase();
     return email ? email : null;
+  }
+
+  private googleAccountKey(req: Request): string | null {
+    const credential = String(req.body.credential || '').trim();
+    return credential || null;
+  }
+
+  private googleAuthClientId(): string {
+    return (process.env.GOOGLE_AUTH_CLIENT_ID || '').trim();
+  }
+
+  private readCookie(req: Request, name: string): string {
+    const cookieHeader = req.header('cookie') || '';
+    const prefix = `${name}=`;
+    const cookie = cookieHeader
+      .split(';')
+      .map((entry) => entry.trim())
+      .find((entry) => entry.startsWith(prefix));
+    if (!cookie) {
+      return '';
+    }
+    return decodeURIComponent(cookie.slice(prefix.length));
+  }
+
+  private normalizeEmail(email: string | null | undefined): string {
+    return String(email || '')
+      .trim()
+      .toLowerCase();
+  }
+
+  private isAuthoritativeGoogleEmail(payload: GoogleIdTokenPayload): boolean {
+    const email = this.normalizeEmail(payload.email);
+    if (!payload.email_verified || !email) {
+      return false;
+    }
+    return email.endsWith('@gmail.com') || Boolean(payload.hd);
+  }
+
+  private nicknameFromGoogleProfile(payload: GoogleIdTokenPayload): string {
+    const name = String(payload.name || '').trim();
+    if (name) {
+      return name.slice(0, 120);
+    }
+
+    const email = this.normalizeEmail(payload.email);
+    const localPart = email.split('@')[0]?.trim();
+    return (localPart || 'Google user').slice(0, 120);
+  }
+
+  private isInvitationError(message: string): boolean {
+    return (
+      message === 'Invalid invitation code' ||
+      message === 'Invitation expired' ||
+      message === 'Invitation already used' ||
+      message === 'Invitation already assigned' ||
+      message === 'Invitation email mismatch'
+    );
+  }
+
+  private isGoogleLinkConflict(message: string): boolean {
+    const normalizedMessage = message.toLowerCase();
+    return (
+      normalizedMessage.includes('google subject') ||
+      normalizedMessage.includes('google_subject') ||
+      normalizedMessage.includes('er_dup_entry')
+    );
   }
 
   private enforceRateLimit(
@@ -65,8 +138,7 @@ export class AuthController {
     return (req: Request, res: Response, next: NextFunction): void => {
       const key = keyFactory(req);
       if (!key) {
-        next();
-        return;
+        return next();
       }
 
       if (!limiter.allowRequest(`${keyPrefix}:${key}`, Date.now())) {
@@ -74,7 +146,7 @@ export class AuthController {
         return;
       }
 
-      next();
+      return next();
     };
   }
 
@@ -128,6 +200,193 @@ export class AuthController {
     });
   }
 
+  private async handleGoogleAuthWithTransaction(
+    googleSubject: string,
+    email: string,
+    nickname: string,
+    authoritative: boolean,
+    invitationCode: string,
+  ): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  }> {
+    if (!this.db) {
+      return this.handleGoogleAuthWithoutTransaction(
+        googleSubject,
+        email,
+        nickname,
+        authoritative,
+        invitationCode,
+      );
+    }
+
+    const connection = await this.db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const user = await this.resolveGoogleUser(
+        googleSubject,
+        email,
+        nickname,
+        authoritative,
+        invitationCode,
+        connection,
+      );
+      await connection.commit();
+      return user;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  private async handleGoogleAuthWithoutTransaction(
+    googleSubject: string,
+    email: string,
+    nickname: string,
+    authoritative: boolean,
+    invitationCode: string,
+  ): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  }> {
+    return this.resolveGoogleUser(
+      googleSubject,
+      email,
+      nickname,
+      authoritative,
+      invitationCode,
+    );
+  }
+
+  private async resolveGoogleUser(
+    googleSubject: string,
+    email: string,
+    nickname: string,
+    authoritative: boolean,
+    invitationCode: string,
+    connection?: MysqlConnection,
+  ): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  }> {
+    const linkedUser = await this.userService.findByGoogleSubject(
+      googleSubject,
+      connection,
+    );
+    if (linkedUser) {
+      return this.applyAuthoritativeActivation(
+        linkedUser,
+        authoritative,
+        connection,
+      );
+    }
+
+    const existingUser = await this.userService.findByEmail(email, connection);
+    if (existingUser) {
+      if (
+        existingUser.googleSubject &&
+        existingUser.googleSubject !== googleSubject
+      ) {
+        throw new Error('Google subject already linked for user');
+      }
+      await this.userService.linkGoogleSubjectToUser(
+        existingUser.userId,
+        googleSubject,
+        connection,
+      );
+      return this.applyAuthoritativeActivation(
+        existingUser,
+        authoritative,
+        connection,
+      );
+    }
+
+    const user = await this.userService.createUser(
+      email,
+      nickname,
+      null,
+      authoritative,
+      connection,
+      googleSubject,
+    );
+
+    if (authoritative) {
+      await this.userService.grantPlatformAdminRole(user.userId, connection);
+    } else {
+      const accountActivationTokenService =
+        this.accountActivationTokenService;
+      if (!accountActivationTokenService) {
+        throw new Error('Account activation token service unavailable');
+      }
+      const activationToken =
+        await accountActivationTokenService.createTokenForUser(
+          user.userId,
+          connection,
+        );
+      this.activationLogger.info(
+        `Activation requested for ${user.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
+      );
+    }
+
+    if (invitationCode && this.workspaceService) {
+      await this.workspaceService.acceptWorkspaceInvitationForRegistration(
+        invitationCode,
+        user.userId,
+        user.email,
+        connection,
+      );
+    }
+
+    return {
+      userId: user.userId,
+      email: user.email,
+      nickname: user.nickname,
+      activated: authoritative,
+    };
+  }
+
+  private async applyAuthoritativeActivation(
+    user: {
+      userId: string;
+      email: string;
+      nickname: string;
+      activated: boolean;
+    },
+    authoritative: boolean,
+    connection?: MysqlConnection,
+  ): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  }> {
+    if (!user.activated && authoritative) {
+      await this.userService.setUserActivated(user.userId, true, connection);
+      await this.userService.grantPlatformAdminRole(user.userId, connection);
+      return {
+        userId: user.userId,
+        email: user.email,
+        nickname: user.nickname,
+        activated: true,
+      };
+    }
+
+    return {
+      userId: user.userId,
+      email: user.email,
+      nickname: user.nickname,
+      activated: user.activated,
+    };
+  }
+
   register(app: Express): void {
     app.post(
       '/api/login',
@@ -166,6 +425,93 @@ export class AuthController {
         }
 
         await this.sendAuthenticatedResponse(res, user);
+      },
+    );
+
+    app.post(
+      '/api/google-auth',
+      this.ipRateLimit(this.authIpRateLimiter, 'google-auth-ip'),
+      this.enforceRateLimit(
+        this.authAccountRateLimiter,
+        'google-auth-account',
+        (req) => this.googleAccountKey(req),
+      ),
+      async (req: Request, res: Response) => {
+        const googleClientId = this.googleAuthClientId();
+        if (!googleClientId) {
+          res.status(400).json({ error: 'Google auth is not configured' });
+          return;
+        }
+
+        const credential = String(req.body.credential || '').trim();
+        if (!credential) {
+          res.status(400).json({ error: 'Google credential required' });
+          return;
+        }
+
+        const bodyCsrf = String(req.body.g_csrf_token || '').trim();
+        const cookieCsrf = this.readCookie(req, 'g_csrf_token');
+        if (!bodyCsrf || !cookieCsrf || bodyCsrf !== cookieCsrf) {
+          res.status(400).json({ error: 'Google CSRF token mismatch' });
+          return;
+        }
+
+        const verifier =
+          this.googleVerifier ?? new GoogleAuthVerifier(googleClientId);
+        let verification;
+        try {
+          verification = await verifier.verifyIdToken(credential);
+        } catch {
+          res
+            .status(400)
+            .json({ error: 'Google credential verification failed' });
+          return;
+        }
+
+        const payload = verification?.payload;
+        const googleSubject = String(payload?.sub || '').trim();
+        const email = this.normalizeEmail(payload?.email);
+        if (!payload || !googleSubject || !email) {
+          res.status(400).json({ error: 'Invalid Google credential' });
+          return;
+        }
+
+        const authoritative = this.isAuthoritativeGoogleEmail(payload);
+        const nickname = this.nicknameFromGoogleProfile(payload);
+        const invitationCode = String(
+          req.body.invitation_code || req.body.invitationCode || '',
+        ).trim();
+
+        try {
+          const authenticatedUser = this.db
+            ? await this.handleGoogleAuthWithTransaction(
+                googleSubject,
+                email,
+                nickname,
+                authoritative,
+                invitationCode,
+              )
+            : await this.handleGoogleAuthWithoutTransaction(
+                googleSubject,
+                email,
+                nickname,
+                authoritative,
+                invitationCode,
+              );
+
+          await this.sendAuthenticatedResponse(res, authenticatedUser);
+        } catch (error) {
+          const message = (error as Error).message;
+          if (this.isInvitationError(message)) {
+            res.status(400).json({ error: message });
+            return;
+          }
+          if (this.isGoogleLinkConflict(message)) {
+            res.status(409).json({ error: message });
+            return;
+          }
+          throw error;
+        }
       },
     );
 

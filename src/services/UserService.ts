@@ -9,6 +9,7 @@ export type UserWithPasswordHash = {
   email: string;
   nickname: string;
   passwordHash: string | null;
+  googleSubject?: string | null;
   activatedAt: Date | null;
   activated: boolean;
 };
@@ -19,12 +20,28 @@ export class UserService {
     private readonly userRoleRepository?: UserRoleRepository,
   ) {}
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.userRepository.findByEmail(email);
+  async findByEmail(
+    email: string,
+    connection?: MysqlConnection,
+  ): Promise<User | null> {
+    const repository = connection
+      ? new UserRepository(connection)
+      : this.userRepository;
+    return repository.findByEmail(email);
   }
 
   async findById(userId: string): Promise<User | null> {
     return this.userRepository.findById(userId);
+  }
+
+  async findByGoogleSubject(
+    googleSubject: string,
+    connection?: MysqlConnection,
+  ): Promise<User | null> {
+    const repository = connection
+      ? new UserRepository(connection)
+      : this.userRepository;
+    return repository.findByGoogleSubject(googleSubject);
   }
 
   async findByEmailWithPasswordHash(
@@ -40,6 +57,7 @@ export class UserService {
       email: user.email,
       nickname: user.nickname,
       passwordHash: user.passwordHash,
+      googleSubject: user.googleSubject,
       activatedAt: user.activatedAt,
       activated: user.activated,
     };
@@ -48,9 +66,10 @@ export class UserService {
   async createUser(
     email: string,
     nickname: string,
-    passwordHash: string,
+    passwordHash: string | null,
     activated = true,
     connection?: MysqlConnection,
+    googleSubject: string | null = null,
   ): Promise<User> {
     const repository = connection
       ? new UserRepository(connection)
@@ -68,8 +87,21 @@ export class UserService {
       user.nickname,
       passwordHash,
       user.activatedAt,
+      googleSubject,
     );
+    user.googleSubject = googleSubject;
     return user;
+  }
+
+  async linkGoogleSubjectToUser(
+    userId: string,
+    googleSubject: string,
+    connection?: MysqlConnection,
+  ): Promise<void> {
+    const repository = connection
+      ? new UserRepository(connection)
+      : this.userRepository;
+    await repository.linkGoogleSubjectToUser(userId, googleSubject);
   }
 
   async setUserActivated(

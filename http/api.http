@@ -80,6 +80,20 @@ Content-Type: application/json
   "invitation_code": "{{workspaceInvitationCode}}"
 }
 
+### Google auth register or login
+# Requires GOOGLE_AUTH_CLIENT_ID on the server. For the browser popup callback
+# flow, the app sets a same-origin g_csrf_token cookie and sends the same value
+# in the JSON body.
+POST {{host}}/api/google-auth
+Content-Type: application/json
+Cookie: g_csrf_token={{googleCsrfToken}}
+
+{
+  "credential": "{{googleCredentialIdToken}}",
+  "g_csrf_token": "{{googleCsrfToken}}",
+  "invitation_code": "{{workspaceInvitationCode}}"
+}
+
 ### Validate account activation token
 POST {{host}}/api/account-activation/validate
 Content-Type: application/json

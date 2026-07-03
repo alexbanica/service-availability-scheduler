@@ -74,3 +74,28 @@ test('npm migration job script is declared', () => {
     'Expected an npm migration job script (migrate) or equivalent key',
   );
 });
+
+test('google subject migration exists and defines one-to-one unique linking constraints', () => {
+  const migrationDir = path.join(process.cwd(), 'config', 'migrations');
+  const files = listMigrationFiles();
+  const googleMigration = files.find((file) =>
+    /google_subject|google|google-auth/i.test(file),
+  );
+  assert.ok(
+    googleMigration,
+    'Expected a migration file for Google subject linking',
+  );
+
+  const sql = fs
+    .readFileSync(path.join(migrationDir, googleMigration), 'utf8')
+    .toLowerCase();
+  assert.ok(
+    /google_subject/.test(sql),
+    `Expected google_subject field in migration ${googleMigration}`,
+  );
+  assert.ok(
+    /unique[^\\n\\r;]*google_subject/.test(sql) ||
+      /unique key[^\\n\\r;]*google_subject/.test(sql),
+    `Expected unique Google subject constraint in migration ${googleMigration}`,
+  );
+});
