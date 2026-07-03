@@ -1163,6 +1163,16 @@ select:focus-visible {
   margin-top: 1rem;
 }
 
+.login-choice-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.login-choice-panel button {
+  width: 100%;
+}
+
 .login-action-stack {
   display: grid;
   gap: 0.65rem;

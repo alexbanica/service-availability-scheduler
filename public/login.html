@@ -25,7 +25,24 @@
           <span v-else class="theme-icon moon" aria-hidden="true"></span>
         </button>
       </div>
-      <form v-if="isLoginMode" @submit.prevent="submit">
+      <div v-if="isLoginMode" class="login-choice-panel">
+        <button type="button" @click="openEmailLoginMode">
+          Sign in with email
+        </button>
+        <div v-if="googleAuthEnabled" class="google-auth-panel">
+          <div id="google-login-button" class="google-auth-button"></div>
+          <div v-if="googleAuthSubmitting" class="muted">Signing in...</div>
+          <div v-if="googleAuthError" class="error">{{ googleAuthError }}</div>
+        </div>
+        <div class="login-choice-divider" aria-hidden="true">
+          <span>or</span>
+        </div>
+        <button type="button" class="secondary" @click="openRegisterMode">
+          Create new account
+        </button>
+      </div>
+
+      <form v-if="isEmailLoginMode" @submit.prevent="submit">
         <label for="email">Email</label>
         <input
           id="email"
@@ -46,25 +63,14 @@
           required
         >
         <button type="submit" :disabled="submitting">
-          {{ submitting ? 'Logging in...' : 'Log In' }}
+          {{ submitting ? 'Signing in...' : 'Sign in' }}
         </button>
-        <div v-if="googleAuthEnabled" class="google-auth-panel">
-          <div class="login-choice-divider" aria-hidden="true">
-            <span>or</span>
-          </div>
-          <div id="google-login-button" class="google-auth-button"></div>
-          <div v-if="googleAuthSubmitting" class="muted">Signing in...</div>
-          <div v-if="googleAuthError" class="error">{{ googleAuthError }}</div>
-        </div>
         <div class="login-action-stack">
           <button type="button" class="secondary" @click="openForgotMode">
             Reset Password
           </button>
-          <div class="login-choice-divider" aria-hidden="true">
-            <span>or</span>
-          </div>
-          <button type="button" class="secondary" @click="openRegisterMode">
-            Create new Account
+          <button type="button" class="secondary" @click="openLoginMode">
+            Back
           </button>
         </div>
         <div class="error">{{ error }}</div>

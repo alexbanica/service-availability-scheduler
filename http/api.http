@@ -81,8 +81,9 @@ Content-Type: application/json
 }
 
 ### Google auth register or login
-# Requires GOOGLE_AUTH_CLIENT_ID on the server. The g_csrf_token body value must
-# match the g_csrf_token cookie set by Google Identity Services in the browser.
+# Requires GOOGLE_AUTH_CLIENT_ID on the server. For the browser popup callback
+# flow, the app sets a same-origin g_csrf_token cookie and sends the same value
+# in the JSON body.
 POST {{host}}/api/google-auth
 Content-Type: application/json
 Cookie: g_csrf_token={{googleCsrfToken}}

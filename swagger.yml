@@ -46,7 +46,7 @@ paths:
       tags: [Auth]
       security: []
       summary: Register or log in with a Google Identity Services credential.
-      description: Requires GOOGLE_AUTH_CLIENT_ID. The browser must submit the Google credential and the Google double-submit CSRF token from the g_csrf_token cookie. Returns the same application bearer token shape as password login and registration; Google ID tokens are not accepted as application bearer tokens.
+      description: Requires GOOGLE_AUTH_CLIENT_ID. The browser popup callback flow submits the Google credential with a same-origin double-submit CSRF token from the g_csrf_token cookie. Returns the same application bearer token shape as password login and registration; Google ID tokens are not accepted as application bearer tokens.
       requestBody:
         required: true
         content:
@@ -936,7 +936,7 @@ components:
           description: Google Identity Services ID-token credential from the browser button flow.
         g_csrf_token:
           type: string
-          description: Body value that must match the g_csrf_token cookie created by Google Identity Services.
+          description: Body value that must match the same-origin g_csrf_token cookie.
         invitation_code:
           type: string
           description: Optional workspace invitation code applied only for new Google-created users.

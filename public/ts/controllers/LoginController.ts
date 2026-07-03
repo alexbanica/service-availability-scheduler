@@ -41,7 +41,9 @@ export class LoginController {
         const submitting = ref(false);
         const initialMode =
           window.location.pathname === '/register' ? 'register' : 'login';
-        const mode = ref<'login' | 'register' | 'forgot'>(initialMode);
+        const mode = ref<'login' | 'emailLogin' | 'register' | 'forgot'>(
+          initialMode,
+        );
         const registerEmail = ref('');
         const registerNickname = ref('');
         const registerPassword = ref('');
@@ -99,6 +101,15 @@ export class LoginController {
           error.value = '';
           googleAuthError.value = '';
           renderGoogleButtonSoon();
+        };
+
+        const openEmailLoginMode = () => {
+          if (window.location.pathname === '/register') {
+            window.history.pushState({}, '', '/login');
+          }
+          mode.value = 'emailLogin';
+          error.value = '';
+          googleAuthError.value = '';
         };
 
         const openForgotMode = () => {
@@ -240,6 +251,7 @@ export class LoginController {
         };
 
         const isLoginMode = computed(() => mode.value === 'login');
+        const isEmailLoginMode = computed(() => mode.value === 'emailLogin');
         const isForgotMode = computed(() => mode.value === 'forgot');
         const isRegisterModeComputed = computed(
           () => mode.value === 'register',
@@ -251,6 +263,9 @@ export class LoginController {
           }
           if (mode.value === 'forgot') {
             return 'Reset password';
+          }
+          if (mode.value === 'emailLogin') {
+            return 'Sign in with email';
           }
           return 'Sign in';
         });
@@ -285,6 +300,7 @@ export class LoginController {
                 ? data.google_auth_client_id
                 : '';
             if (googleAuthEnabled.value && googleAuthClientId.value) {
+              ensureGoogleCsrfToken();
               await loadGoogleScript();
               initializeGoogleAuth();
               renderGoogleButtonSoon();
@@ -303,6 +319,31 @@ export class LoginController {
             .map((entry) => entry.trim())
             .find((entry) => entry.startsWith(prefix));
           return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : '';
+        };
+
+        const createCsrfToken = (): string => {
+          const bytes = new Uint8Array(24);
+          if (window.crypto?.getRandomValues) {
+            window.crypto.getRandomValues(bytes);
+            return Array.from(bytes, (byte) =>
+              byte.toString(16).padStart(2, '0'),
+            ).join('');
+          }
+          return `${Date.now()}-${Math.random()}`;
+        };
+
+        const ensureGoogleCsrfToken = (): string => {
+          const existing = readCookie('g_csrf_token');
+          if (existing) {
+            return existing;
+          }
+
+          const token = createCsrfToken();
+          const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+          document.cookie = `g_csrf_token=${encodeURIComponent(
+            token,
+          )}; Path=/; SameSite=Lax${secure}`;
+          return token;
         };
 
         const loadGoogleScript = async (): Promise<void> => {
@@ -402,7 +443,7 @@ export class LoginController {
           try {
             await LoginService.loginWithGoogle({
               credential: response.credential || '',
-              g_csrf_token: readCookie('g_csrf_token'),
+              g_csrf_token: ensureGoogleCsrfToken(),
               invitation_code:
                 mode.value === 'register'
                   ? invitationCode.value || undefined
@@ -456,6 +497,7 @@ export class LoginController {
           submitting,
           mode,
           isLoginMode,
+          isEmailLoginMode,
           isForgotMode,
           isRegisterModeComputed,
           registerModeTitle,
@@ -478,6 +520,7 @@ export class LoginController {
           forgotRequestError,
           forgotRequestSuccess,
           submit,
+          openEmailLoginMode,
           openForgotMode,
           openLoginMode,
           openRegisterMode,

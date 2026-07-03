@@ -448,12 +448,14 @@ function createWindowAndStorage(): {
   remove: (key: string) => void;
   clear: () => void;
   hasDocumentClass: (className: string) => boolean;
+  getCookie: (key: string) => string | null;
   getHref: () => string;
   setHref: (nextHref: string) => void;
   restore: () => void;
 } {
   const data = new Map<string, string>();
   const sessionData = new Map<string, string>();
+  const cookieData = new Map<string, string>();
   const classes = new Set<string>();
   let href = '/';
 
@@ -501,11 +503,20 @@ function createWindowAndStorage(): {
         get search() {
           return new URL(href, 'http://localhost').search;
         },
+        get protocol() {
+          return new URL(href, 'http://localhost').protocol;
+        },
         replace(nextHref: string) {
           href = nextHref;
         },
         assign(nextHref: string) {
           href = nextHref;
+        },
+      },
+      crypto: {
+        getRandomValues: (bytes: Uint8Array): Uint8Array => {
+          bytes.fill(10);
+          return bytes;
         },
       },
       history: {
@@ -530,6 +541,22 @@ function createWindowAndStorage(): {
 
   Object.defineProperty(globalThis, 'document', {
     value: {
+      get cookie() {
+        return Array.from(cookieData.entries())
+          .map(([key, value]) => `${key}=${value}`)
+          .join('; ');
+      },
+      set cookie(nextCookie: string) {
+        const [pair] = nextCookie.split(';');
+        const separatorIndex = pair.indexOf('=');
+        if (separatorIndex <= 0) {
+          return;
+        }
+        cookieData.set(
+          pair.slice(0, separatorIndex),
+          pair.slice(separatorIndex + 1),
+        );
+      },
       documentElement: {
         dataset: {},
         classList: {
@@ -556,6 +583,7 @@ function createWindowAndStorage(): {
     remove: (key: string) => localStorage.removeItem(key),
     clear: () => localStorage.clear(),
     hasDocumentClass: (className: string) => classes.has(className),
+    getCookie: (key: string) => cookieData.get(key) ?? null,
     getHref: () => href,
     setHref: (nextHref: string) => {
       href = nextHref;
@@ -1006,7 +1034,7 @@ test('LoginController hides Google auth controls when app info reports Google au
 });
 
 test('LoginController exposes Google auth controls when app info reports client id', async () => {
-  const { restore, setHref } = createWindowAndStorage();
+  const { restore, setHref, getCookie } = createWindowAndStorage();
   const originalFetch = globalThis.fetch;
   const fetch = setupFetchMock(() =>
     Promise.resolve(
@@ -1028,6 +1056,7 @@ test('LoginController exposes Google auth controls when app info reports client 
     }
     assert.equal(state.googleAuthEnabled.value, true);
     assert.equal(state.googleAuthClientId.value, 'test-google-client-id');
+    assert.match(getCookie('g_csrf_token') || '', /^[a-f0-9]{48}$/);
   } finally {
     globalThis.fetch = originalFetch;
     restore();
