@@ -411,6 +411,31 @@ main {
   font-size: 0.8rem;
 }
 
+.footer-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.recaptcha-footer-branding {
+  color: var(--muted-ink);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.recaptcha-footer-branding a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12rem;
+}
+
+.grecaptcha-badge {
+  visibility: hidden;
+}
+
 .admin-panel {
   margin-bottom: 2rem;
   background: var(--card);
@@ -1465,9 +1490,19 @@ input {
   }
 
   .site-footer {
-    flex-direction: column;
-    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .footer-meta {
+    flex-wrap: wrap;
     gap: 0.35rem;
+    justify-content: flex-end;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .recaptcha-footer-branding {
+    font-size: 0.62rem;
   }
 }
 

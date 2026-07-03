@@ -556,6 +556,7 @@ export class LoginController {
           googleAuthClientId,
           googleAuthError,
           googleAuthSubmitting,
+          recaptchaEnabled,
           theme,
           themeLabel,
           toggleTheme,
