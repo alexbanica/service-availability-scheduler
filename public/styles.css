@@ -411,6 +411,10 @@ main {
   font-size: 0.8rem;
 }
 
+.grecaptcha-badge {
+  visibility: hidden;
+}
+
 .admin-panel {
   margin-bottom: 2rem;
   background: var(--card);
@@ -1134,7 +1138,7 @@ select:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 2rem 2rem calc(var(--site-footer-height) + 3.5rem);
 }
 
 .login-card {
@@ -1161,6 +1165,25 @@ select:focus-visible {
   display: grid;
   gap: 0.75rem;
   margin-top: 1rem;
+}
+
+.recaptcha-branding-strip {
+  position: fixed;
+  right: 4vw;
+  bottom: calc(var(--site-footer-height) + 0.5rem);
+  z-index: 4;
+  width: min(420px, calc(100vw - 2rem));
+  color: var(--muted-ink);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.recaptcha-branding-strip a {
+  color: var(--muted-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.12rem;
 }
 
 .login-choice-panel {
@@ -1468,6 +1491,13 @@ input {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.35rem;
+  }
+
+  .recaptcha-branding-strip {
+    right: 4vw;
+    bottom: calc(var(--site-footer-height) + 0.45rem);
+    font-size: 0.76rem;
+    width: min(420px, calc(100vw - 1.25rem));
   }
 }
 

@@ -78,7 +78,7 @@
 
       <form v-if="isForgotMode" @submit.prevent="requestResetLink">
         <h2 style="margin: 0 0 0.5rem; font-size: 1.1rem;">Reset Password</h2>
-        <p>Enter your email and solve the captcha challenge.</p>
+        <p>Enter your email to request a password reset link.</p>
         <label for="forgot-email">Email</label>
         <input
           id="forgot-email"
@@ -88,34 +88,9 @@
           placeholder="you@example.com"
           required
         >
-
-        <template v-if="!forgotChallengePrompt">
-          <button
-            type="button"
-            @click="loadResetChallenge"
-            :disabled="forgotRequestSubmitting"
-          >
-            {{ forgotRequestSubmitting ? 'Loading challenge...' : 'Load Captcha' }}
-          </button>
-        </template>
-
-        <template v-else>
-          <p>{{ forgotChallengePrompt }}</p>
-          <label for="forgot-answer">Answer</label>
-          <input
-            id="forgot-answer"
-            v-model="forgotChallengeAnswer"
-            type="text"
-            placeholder="Enter answer"
-            required
-          >
-          <button
-            type="submit"
-            :disabled="forgotRequestSubmitting"
-          >
-            {{ forgotRequestSubmitting ? 'Sending...' : 'Send reset link' }}
-          </button>
-        </template>
+        <button type="submit" :disabled="forgotRequestSubmitting">
+          {{ forgotRequestSubmitting ? 'Sending...' : 'Send reset link' }}
+        </button>
 
         <div v-if="forgotRequestError" class="error">
           {{ forgotRequestError }}
@@ -177,34 +152,9 @@
           autocomplete="new-password"
           required
         >
-
-        <template v-if="!registerChallengePrompt">
-          <button
-            type="button"
-            @click="loadRegisterChallenge"
-            :disabled="registerRequestSubmitting"
-          >
-            {{ registerRequestSubmitting ? 'Loading challenge...' : 'Load Captcha' }}
-          </button>
-        </template>
-
-        <template v-else>
-          <p>{{ registerChallengePrompt }}</p>
-          <label for="register-answer">Answer</label>
-          <input
-            id="register-answer"
-            v-model="registerChallengeAnswer"
-            type="text"
-            placeholder="Enter answer"
-            required
-          >
-          <button
-            type="submit"
-            :disabled="registerRequestSubmitting"
-          >
-            {{ registerRequestSubmitting ? 'Creating account...' : 'Create account' }}
-          </button>
-        </template>
+        <button type="submit" :disabled="registerRequestSubmitting">
+          {{ registerRequestSubmitting ? 'Creating account...' : 'Create account' }}
+        </button>
 
         <div v-if="googleAuthEnabled" class="google-auth-panel">
           <div class="login-choice-divider" aria-hidden="true">
@@ -228,6 +178,13 @@
         </button>
       </form>
     </main>
+    <div v-if="recaptchaEnabled" class="recaptcha-branding-strip">
+      This site is protected by reCAPTCHA.
+      <a href="https://policies.google.com/privacy" rel="noopener noreferrer" target="_blank">Privacy</a>
+      <span aria-hidden="true">and</span>
+      <a href="https://policies.google.com/terms" rel="noopener noreferrer" target="_blank">Terms</a>
+      apply.
+    </div>
     <footer class="site-footer login-footer">
       <span>Service Availability Scheduler</span>
       <span v-if="appVersion" class="muted">Version {{ appVersion }}</span>

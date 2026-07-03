@@ -1,80 +1,103 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { URLSearchParams } from 'node:url';
 
-export type CaptchaChallenge = {
-  id: string;
-  prompt: string;
-  answer: string;
-  expiresAt: Date;
+export type RecaptchaAction = 'password_reset_request' | 'register';
+
+export type RecaptchaVerificationResult =
+  | { status: 'valid' }
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
+
+export type RecaptchaSiteVerifyResponse = {
+  success?: boolean;
+  score?: number;
+  action?: string;
+  hostname?: string;
+  challenge_ts?: string;
+  'error-codes'?: string[];
 };
 
-type Logger = {
-  debug: (message: string, ...params: Array<unknown>) => void;
-};
-
-type ChallengeStore = Map<string, CaptchaChallenge>;
+type FetchLike = (
+  input: string,
+  init: {
+    method: 'POST';
+    headers: Record<string, string>;
+    body: string;
+  },
+) => Promise<{
+  ok: boolean;
+  json: () => Promise<unknown>;
+}>;
 
 export class CaptchaService {
-  private readonly store: ChallengeStore = new Map();
-  private readonly challengeTtlMs = 5 * 60 * 1000;
+  private readonly siteVerifyUrl =
+    'https://www.google.com/recaptcha/api/siteverify';
 
   constructor(
-    private readonly now: () => Date = () => new Date(),
-    private readonly logger: Logger = console,
+    private readonly fetchImpl: FetchLike = globalThis.fetch.bind(
+      globalThis,
+    ) as FetchLike,
+    private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
-  async createChallenge(): Promise<{ challengeId: string; prompt: string }> {
-    this.purgeExpiredChallenges();
-
-    const left = randomInt(10, 99);
-    const right = randomInt(10, 99);
-    const answer = `${left + right}`;
-    const id = randomBytes(16).toString('hex');
-
-    const challenge: CaptchaChallenge = {
-      id,
-      prompt: `What is ${left} + ${right}?`,
-      answer,
-      expiresAt: new Date(this.now().getTime() + this.challengeTtlMs),
-    };
-
-    this.store.set(id, challenge);
-    this.logger.debug('Created reset captcha challenge', {
-      id,
-      prompt: challenge.prompt,
-    });
-    return { challengeId: id, prompt: challenge.prompt };
+  isRecaptchaEnabled(): boolean {
+    return Boolean(this.getSiteKey());
   }
 
-  async validateChallenge(
-    challengeId: string,
-    answer: string,
-  ): Promise<boolean> {
-    this.purgeExpiredChallenges();
-    const challenge = this.store.get(challengeId);
-    if (!challenge) {
-      return false;
-    }
-
-    if (challenge.expiresAt < this.now()) {
-      this.store.delete(challengeId);
-      return false;
-    }
-
-    const provided = String(answer ?? '').trim();
-    if (challenge.answer !== provided) {
-      return false;
-    }
-
-    this.store.delete(challengeId);
-    return true;
+  getSiteKey(): string {
+    return String(this.env.GOOGLE_RECAPTCHA_SITE_KEY || '').trim();
   }
 
-  purgeExpiredChallenges(): void {
-    const now = this.now();
-    this.store.forEach((challenge, id) => {
-      if (challenge.expiresAt < now) {
-        this.store.delete(id);
+  async verifyRecaptchaToken(
+    token: string,
+    expectedAction: RecaptchaAction,
+  ): Promise<RecaptchaVerificationResult> {
+    const secretKey = this.getSecretKey();
+    if (!this.getSiteKey() || !secretKey) {
+      return { status: 'unavailable' };
+    }
+
+    try {
+      const body = new URLSearchParams({
+        secret: secretKey,
+        response: token,
+      }).toString();
+      const response = await this.fetchImpl(this.siteVerifyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        return { status: 'invalid' };
       }
-    });
+
+      const payload = (await response.json()) as RecaptchaSiteVerifyResponse;
+      if (
+        payload.success !== true ||
+        payload.action !== expectedAction ||
+        typeof payload.score !== 'number' ||
+        payload.score < this.getMinimumScore()
+      ) {
+        return { status: 'invalid' };
+      }
+
+      return { status: 'valid' };
+    } catch {
+      return { status: 'invalid' };
+    }
+  }
+
+  private getSecretKey(): string {
+    return String(this.env.GOOGLE_RECAPTCHA_SECRET_KEY || '').trim();
+  }
+
+  private getMinimumScore(): number {
+    const configured = Number(this.env.GOOGLE_RECAPTCHA_MIN_SCORE);
+    if (Number.isFinite(configured)) {
+      return configured;
+    }
+    return 0.5;
   }
 }

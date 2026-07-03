@@ -116,22 +116,32 @@ test('PageController disables browser caching for workspace invitation page', ()
 
 test('PageController exposes app info with Google auth disabled when client id is missing', () => {
   const previous = process.env.GOOGLE_AUTH_CLIENT_ID;
+  const previousRecaptchaSiteKey = process.env.GOOGLE_RECAPTCHA_SITE_KEY;
   const app = express();
   new PageController('/repo').register(app);
   const handler = getRouteHandler(app, '/api/app-info');
   const { response, getPayload } = createJsonResponse();
 
   delete process.env.GOOGLE_AUTH_CLIENT_ID;
+  delete process.env.GOOGLE_RECAPTCHA_SITE_KEY;
   handler({} as Request, response);
 
   const payload = getPayload() as {
     google_auth_enabled?: boolean;
     google_auth_client_id?: string;
+    recaptcha_enabled?: boolean;
+    recaptcha_site_key?: string;
   };
   assert.equal(payload.google_auth_enabled, false);
+  assert.equal(payload.recaptcha_enabled, false);
   assert.equal(
     typeof payload.google_auth_client_id === 'undefined' ||
       payload.google_auth_client_id === '',
+    true,
+  );
+  assert.equal(
+    typeof payload.recaptcha_site_key === 'undefined' ||
+      payload.recaptcha_site_key === '',
     true,
   );
 
@@ -139,6 +149,11 @@ test('PageController exposes app info with Google auth disabled when client id i
     delete process.env.GOOGLE_AUTH_CLIENT_ID;
   } else {
     process.env.GOOGLE_AUTH_CLIENT_ID = previous;
+  }
+  if (typeof previousRecaptchaSiteKey === 'undefined') {
+    delete process.env.GOOGLE_RECAPTCHA_SITE_KEY;
+  } else {
+    process.env.GOOGLE_RECAPTCHA_SITE_KEY = previousRecaptchaSiteKey;
   }
 });
 
@@ -163,5 +178,31 @@ test('PageController exposes app info with Google auth enabled when client id is
     delete process.env.GOOGLE_AUTH_CLIENT_ID;
   } else {
     process.env.GOOGLE_AUTH_CLIENT_ID = previous;
+  }
+});
+
+test('PageController exposes app info with reCAPTCHA enabled when site key is configured', () => {
+  const previous = process.env.GOOGLE_RECAPTCHA_SITE_KEY;
+  process.env.GOOGLE_RECAPTCHA_SITE_KEY = 'test-recaptcha-site-key';
+  const app = express();
+  new PageController('/repo').register(app);
+  const handler = getRouteHandler(app, '/api/app-info');
+  const { response, getPayload } = createJsonResponse();
+
+  handler({} as Request, response);
+
+  const payload = getPayload() as {
+    recaptcha_enabled?: boolean;
+    recaptcha_site_key?: string;
+    recaptcha_secret_key?: string;
+  };
+  assert.equal(payload.recaptcha_enabled, true);
+  assert.equal(payload.recaptcha_site_key, 'test-recaptcha-site-key');
+  assert.equal(payload.recaptcha_secret_key, undefined);
+
+  if (typeof previous === 'undefined') {
+    delete process.env.GOOGLE_RECAPTCHA_SITE_KEY;
+  } else {
+    process.env.GOOGLE_RECAPTCHA_SITE_KEY = previous;
   }
 });

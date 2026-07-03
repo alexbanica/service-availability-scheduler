@@ -76,22 +76,23 @@ paths:
     post:
       tags: [Account]
       security: []
-      summary: Create a password-reset CAPTCHA challenge.
+      summary: Legacy password-reset CAPTCHA challenge endpoint.
+      description: Local math CAPTCHA challenges have been replaced by Google reCAPTCHA v3. This endpoint no longer creates challenges.
       responses:
-        '200':
-          description: CAPTCHA challenge prompt.
+        '410':
+          description: Local CAPTCHA challenge endpoint removed.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CaptchaResponse'
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           $ref: '#/components/responses/TooManyRequests'
   /api/password-reset/request:
     post:
       tags: [Account]
       security: []
-      summary: Request a password-reset token after solving CAPTCHA.
-      description: Always returns ok for known and unknown emails; reset links are logged server-side until email delivery exists.
+      summary: Request a password-reset token after reCAPTCHA verification.
+      description: Verifies a Google reCAPTCHA v3 token for action password_reset_request. Always returns ok for known and unknown emails after valid verification; reset links are logged server-side until email delivery exists.
       requestBody:
         required: true
         content:
@@ -102,6 +103,8 @@ paths:
         '200':
           $ref: '#/components/responses/Ok'
         '400':
+          $ref: '#/components/responses/Error'
+        '503':
           $ref: '#/components/responses/Error'
         '429':
           $ref: '#/components/responses/TooManyRequests'
@@ -151,14 +154,15 @@ paths:
     post:
       tags: [Account]
       security: []
-      summary: Create a registration CAPTCHA challenge.
+      summary: Legacy registration CAPTCHA challenge endpoint.
+      description: Local math CAPTCHA challenges have been replaced by Google reCAPTCHA v3. This endpoint no longer creates challenges.
       responses:
-        '200':
-          description: CAPTCHA challenge prompt.
+        '410':
+          description: Local CAPTCHA challenge endpoint removed.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CaptchaResponse'
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           $ref: '#/components/responses/TooManyRequests'
   /api/register:
@@ -166,7 +170,7 @@ paths:
       tags: [Account]
       security: []
       summary: Register a non-activated user and receive a bearer token.
-      description: Activation links are logged server-side until email delivery exists. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
+      description: Verifies a Google reCAPTCHA v3 token for action register. Activation links are logged server-side until email delivery exists. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
       requestBody:
         required: true
         content:
@@ -186,6 +190,8 @@ paths:
           $ref: '#/components/responses/Error'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Error'
         '500':
           $ref: '#/components/responses/Error'
   /api/account-activation/validate:
@@ -940,30 +946,16 @@ components:
         invitation_code:
           type: string
           description: Optional workspace invitation code applied only for new Google-created users.
-    CaptchaResponse:
-      type: object
-      required: [ok, challenge_id, challenge_prompt]
-      properties:
-        ok:
-          type: boolean
-        challenge_id:
-          type: string
-        challenge_prompt:
-          type: string
     PasswordResetRequest:
       type: object
-      required: [email, challenge_id, challenge_answer]
+      required: [email, recaptcha_token]
       properties:
         email:
           type: string
           format: email
-        challenge_id:
+        recaptcha_token:
           type: string
-        challenge_answer:
-          type: string
-        invitation_code:
-          type: string
-          description: Optional workspace invitation code from a valid unregistered invitation link.
+          description: Google reCAPTCHA v3 token executed with action password_reset_request.
     TokenRequest:
       type: object
       required: [token]
@@ -992,8 +984,7 @@ components:
         - nickname
         - password
         - confirm_password
-        - challenge_id
-        - challenge_answer
+        - recaptcha_token
       properties:
         email:
           type: string
@@ -1008,10 +999,12 @@ components:
           type: string
           format: password
           minLength: 8
-        challenge_id:
+        recaptcha_token:
           type: string
-        challenge_answer:
+          description: Google reCAPTCHA v3 token executed with action register.
+        invitation_code:
           type: string
+          description: Optional workspace invitation code from a valid unregistered invitation link.
     LoginResponse:
       type: object
       required: [ok, user, token, token_type, expires_in_seconds]
@@ -1047,7 +1040,7 @@ components:
           type: boolean
     AppInfoResponse:
       type: object
-      required: [version, google_auth_enabled]
+      required: [version, google_auth_enabled, recaptcha_enabled]
       properties:
         version:
           type: string
@@ -1057,6 +1050,12 @@ components:
         google_auth_client_id:
           type: string
           description: Public Google OAuth client ID used by Google Identity Services when enabled.
+        recaptcha_enabled:
+          type: boolean
+          description: True when GOOGLE_RECAPTCHA_SITE_KEY is configured.
+        recaptcha_site_key:
+          type: string
+          description: Public Google reCAPTCHA v3 site key used by browser forms when enabled.
     ServiceKeyRequest:
       type: object
       required: [service_key]

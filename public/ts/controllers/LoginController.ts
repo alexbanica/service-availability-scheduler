@@ -22,6 +22,11 @@ type GoogleIdentityServices = {
   };
 };
 
+type RecaptchaApi = {
+  ready: (callback: () => void) => void;
+  execute: (siteKey: string, options: { action: string }) => Promise<string>;
+};
+
 export class LoginController {
   bootstrap(Vue: any): void {
     const { createApp, ref, computed, onMounted } = Vue as {
@@ -48,9 +53,6 @@ export class LoginController {
         const registerNickname = ref('');
         const registerPassword = ref('');
         const registerConfirmPassword = ref('');
-        const registerChallengeId = ref('');
-        const registerChallengePrompt = ref('');
-        const registerChallengeAnswer = ref('');
         const registerRequestSubmitting = ref(false);
         const registerRequestError = ref('');
         const registerRequestSuccess = ref(false);
@@ -58,9 +60,6 @@ export class LoginController {
         const loginInvitationCode = ref('');
         const invitationEmailLocked = ref(false);
         const forgotEmail = ref('');
-        const forgotChallengeId = ref('');
-        const forgotChallengePrompt = ref('');
-        const forgotChallengeAnswer = ref('');
         const forgotRequestSubmitting = ref(false);
         const forgotRequestError = ref('');
         const forgotRequestSuccess = ref(false);
@@ -70,6 +69,9 @@ export class LoginController {
         const googleAuthError = ref('');
         const googleAuthSubmitting = ref(false);
         const googleScriptLoaded = ref(false);
+        const recaptchaEnabled = ref(false);
+        const recaptchaSiteKey = ref('');
+        const recaptchaScriptLoaded = ref(false);
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
 
         const submit = async () => {
@@ -120,18 +122,12 @@ export class LoginController {
           forgotEmail.value = email.value;
           forgotRequestError.value = '';
           forgotRequestSuccess.value = false;
-          forgotChallengeId.value = '';
-          forgotChallengePrompt.value = '';
-          forgotChallengeAnswer.value = '';
         };
 
         const resetForgotMode = () => {
           mode.value = 'login';
           forgotRequestError.value = '';
           forgotRequestSuccess.value = false;
-          forgotChallengeId.value = '';
-          forgotChallengePrompt.value = '';
-          forgotChallengeAnswer.value = '';
         };
 
         const openRegisterMode = () => {
@@ -145,9 +141,6 @@ export class LoginController {
           registerNickname.value = '';
           registerPassword.value = '';
           registerConfirmPassword.value = '';
-          registerChallengeId.value = '';
-          registerChallengePrompt.value = '';
-          registerChallengeAnswer.value = '';
           registerRequestError.value = '';
           registerRequestSuccess.value = false;
           error.value = '';
@@ -155,56 +148,12 @@ export class LoginController {
           renderGoogleButtonSoon();
         };
 
-        const loadResetChallenge = async () => {
-          forgotRequestSubmitting.value = true;
-          forgotRequestError.value = '';
-          forgotRequestSuccess.value = false;
-          try {
-            const challenge = await PasswordResetService.requestChallenge();
-            forgotChallengeId.value = challenge.challengeId;
-            forgotChallengePrompt.value = challenge.challengePrompt;
-            forgotChallengeAnswer.value = '';
-          } catch (err) {
-            forgotRequestError.value = (err as Error).message;
-          } finally {
-            forgotRequestSubmitting.value = false;
-          }
-        };
-
         const resetForgotChallenge = () => {
-          if (!forgotChallengePrompt.value && !forgotChallengeId.value) {
-            return;
-          }
-          forgotChallengeId.value = '';
-          forgotChallengePrompt.value = '';
-          forgotChallengeAnswer.value = '';
           forgotRequestError.value = '';
           forgotRequestSuccess.value = false;
-        };
-
-        const loadRegisterChallenge = async () => {
-          registerRequestSubmitting.value = true;
-          registerRequestError.value = '';
-          registerRequestSuccess.value = false;
-          try {
-            const challenge = await RegistrationService.requestChallenge();
-            registerChallengeId.value = challenge.challengeId;
-            registerChallengePrompt.value = challenge.challengePrompt;
-            registerChallengeAnswer.value = '';
-          } catch (err) {
-            registerRequestError.value = (err as Error).message;
-          } finally {
-            registerRequestSubmitting.value = false;
-          }
         };
 
         const resetRegisterChallenge = () => {
-          if (!registerChallengePrompt.value && !registerChallengeId.value) {
-            return;
-          }
-          registerChallengeId.value = '';
-          registerChallengePrompt.value = '';
-          registerChallengeAnswer.value = '';
           registerRequestError.value = '';
           registerRequestSuccess.value = false;
         };
@@ -214,10 +163,12 @@ export class LoginController {
           forgotRequestError.value = '';
           forgotRequestSuccess.value = false;
           try {
+            const recaptchaToken = await executeRecaptcha(
+              'password_reset_request',
+            );
             await PasswordResetService.requestPasswordReset(
               forgotEmail.value.trim(),
-              forgotChallengeId.value,
-              forgotChallengeAnswer.value,
+              recaptchaToken,
             );
             forgotRequestSuccess.value = true;
           } catch (err) {
@@ -232,13 +183,13 @@ export class LoginController {
           registerRequestSuccess.value = false;
           registerRequestSubmitting.value = true;
           try {
+            const recaptchaToken = await executeRecaptcha('register');
             await RegistrationService.register({
               email: registerEmail.value.trim(),
               nickname: registerNickname.value.trim(),
               password: registerPassword.value,
               confirm_password: registerConfirmPassword.value,
-              challenge_id: registerChallengeId.value,
-              challenge_answer: registerChallengeAnswer.value,
+              recaptcha_token: recaptchaToken,
               invitation_code: invitationCode.value || undefined,
             });
             registerRequestSuccess.value = true;
@@ -291,6 +242,8 @@ export class LoginController {
               version?: string;
               google_auth_enabled?: boolean;
               google_auth_client_id?: string;
+              recaptcha_enabled?: boolean;
+              recaptcha_site_key?: string;
             };
             appVersion.value =
               typeof data.version === 'string' ? data.version : '';
@@ -299,16 +252,26 @@ export class LoginController {
               typeof data.google_auth_client_id === 'string'
                 ? data.google_auth_client_id
                 : '';
+            recaptchaEnabled.value = data.recaptcha_enabled === true;
+            recaptchaSiteKey.value =
+              typeof data.recaptcha_site_key === 'string'
+                ? data.recaptcha_site_key
+                : '';
             if (googleAuthEnabled.value && googleAuthClientId.value) {
               ensureGoogleCsrfToken();
               await loadGoogleScript();
               initializeGoogleAuth();
               renderGoogleButtonSoon();
             }
+            if (recaptchaEnabled.value && recaptchaSiteKey.value) {
+              await loadRecaptchaScript();
+            }
           } catch {
             appVersion.value = '';
             googleAuthEnabled.value = false;
             googleAuthClientId.value = '';
+            recaptchaEnabled.value = false;
+            recaptchaSiteKey.value = '';
           }
         };
 
@@ -385,6 +348,71 @@ export class LoginController {
             document.head.appendChild(script);
           });
           googleScriptLoaded.value = true;
+        };
+
+        const loadRecaptchaScript = async (): Promise<void> => {
+          if (recaptchaScriptLoaded.value) {
+            return;
+          }
+          if ((window as unknown as { grecaptcha?: RecaptchaApi }).grecaptcha) {
+            recaptchaScriptLoaded.value = true;
+            return;
+          }
+          if (
+            typeof document.querySelector !== 'function' ||
+            typeof document.createElement !== 'function' ||
+            !document.head
+          ) {
+            recaptchaScriptLoaded.value = true;
+            return;
+          }
+          await new Promise<void>((resolve, reject) => {
+            const existing = document.querySelector(
+              'script[data-google-recaptcha="true"]',
+            );
+            if (existing) {
+              existing.addEventListener('load', () => resolve(), {
+                once: true,
+              });
+              existing.addEventListener('error', () => reject(), {
+                once: true,
+              });
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(
+              recaptchaSiteKey.value,
+            )}`;
+            script.async = true;
+            script.defer = true;
+            script.dataset.googleRecaptcha = 'true';
+            script.addEventListener('load', () => resolve(), { once: true });
+            script.addEventListener('error', () => reject(), { once: true });
+            document.head.appendChild(script);
+          });
+          recaptchaScriptLoaded.value = true;
+        };
+
+        const executeRecaptcha = async (action: string): Promise<string> => {
+          if (!recaptchaEnabled.value || !recaptchaSiteKey.value) {
+            throw new Error('Captcha is not configured.');
+          }
+          await loadRecaptchaScript();
+          const grecaptcha = (window as unknown as { grecaptcha?: RecaptchaApi })
+            .grecaptcha;
+          if (!grecaptcha?.execute || !grecaptcha.ready) {
+            throw new Error('Captcha is unavailable.');
+          }
+          await new Promise<void>((resolve) => {
+            grecaptcha.ready(() => resolve());
+          });
+          const token = await grecaptcha.execute(recaptchaSiteKey.value, {
+            action,
+          });
+          if (!token) {
+            throw new Error('Captcha is unavailable.');
+          }
+          return token;
         };
 
         const initializeGoogleAuth = () => {
@@ -505,17 +533,11 @@ export class LoginController {
           registerNickname,
           registerPassword,
           registerConfirmPassword,
-          registerChallengeId,
-          registerChallengePrompt,
-          registerChallengeAnswer,
           registerRequestSubmitting,
           registerRequestError,
           registerRequestSuccess,
           invitationEmailLocked,
           forgotEmail,
-          forgotChallengeId,
-          forgotChallengePrompt,
-          forgotChallengeAnswer,
           forgotRequestSubmitting,
           forgotRequestError,
           forgotRequestSuccess,
@@ -526,9 +548,7 @@ export class LoginController {
           openRegisterMode,
           resetForgotMode,
           resetForgotChallenge,
-          loadRegisterChallenge,
           resetRegisterChallenge,
-          loadResetChallenge,
           requestResetLink,
           register,
           appVersion,
@@ -536,6 +556,7 @@ export class LoginController {
           googleAuthClientId,
           googleAuthError,
           googleAuthSubmitting,
+          recaptchaEnabled,
           theme,
           themeLabel,
           toggleTheme,

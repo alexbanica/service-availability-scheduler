@@ -50,6 +50,9 @@ Open `http://localhost:3000`.
 | `PORT` | No | `3000` | HTTP port used by `npm start` and `npm run dev`. |
 | `APP_VERSION` | No | `development` | Version string exposed in page footers. Docker images built with `docker/build.sh --release <tag>` set this to the release tag automatically. |
 | `GOOGLE_AUTH_CLIENT_ID` | No | Disabled | Public Google OAuth client ID that enables Google Identity Services login/register. No client secret or Google API access token is used. |
+| `GOOGLE_RECAPTCHA_SITE_KEY` | No | Disabled | Public Google reCAPTCHA v3 site key used by the login/register page. |
+| `GOOGLE_RECAPTCHA_SECRET_KEY` | No | Disabled | Private Google reCAPTCHA v3 secret key used only by the server for siteverify validation. Keep it out of source control. |
+| `GOOGLE_RECAPTCHA_MIN_SCORE` | No | `0.5` | Minimum accepted reCAPTCHA v3 score for password reset requests and password registration. |
 
 ### Google Cloud OAuth client setup
 
@@ -89,6 +92,27 @@ Google requires HTTPS origins for non-localhost browser applications. Local
 development may use localhost over HTTP, but the exact localhost port must be
 listed when it is not the default port.
 
+### Free Google reCAPTCHA setup
+
+Password-reset requests and password-based registration use Google reCAPTCHA v3.
+This is separate from the Google OAuth client ID used for Google Identity
+Services; `GOOGLE_AUTH_CLIENT_ID` does not enable reCAPTCHA.
+
+Create or select reCAPTCHA keys in the reCAPTCHA Admin Console:
+
+1. Choose reCAPTCHA v3 when registering the site.
+2. Add every served domain that should use the key, including localhost domains
+   for local development and production domains as needed.
+3. Copy the site key into `GOOGLE_RECAPTCHA_SITE_KEY`.
+4. Copy the secret key into `GOOGLE_RECAPTCHA_SECRET_KEY`.
+5. Keep the secret key out of source control and deployment logs.
+6. Start with the default score threshold, then tune
+   `GOOGLE_RECAPTCHA_MIN_SCORE` from observed staging or production behavior.
+
+When reCAPTCHA is not fully configured, password-reset requests and
+password-based registration fail closed until both keys are supplied. Google auth
+login and registration remain controlled only by `GOOGLE_AUTH_CLIENT_ID`.
+
 ### Application file config
 
 Edit `config/app.yml` for app timing behavior.
@@ -125,16 +149,19 @@ environments; it does not create them inline.
   - `expires_in_seconds`
   - `user.activated`.
 - `POST /api/google-auth`: accepts `{ "credential": "...", "g_csrf_token": "...", "invitation_code": "..." }` when `GOOGLE_AUTH_CLIENT_ID` is configured. The body CSRF token must match the `g_csrf_token` cookie set by Google Identity Services. It creates or links a local user, applies new-user invitation codes when the verified Google email matches, and returns the same application bearer token shape as password login.
-- `POST /api/password-reset/captcha`: returns `challenge_id` and `challenge_prompt`.
-- `POST /api/password-reset/request`: validates CAPTCHA and creates or replaces an
+- `POST /api/password-reset/captcha`: legacy compatibility endpoint returning
+  `410` because local math CAPTCHA challenges are no longer created.
+- `POST /api/password-reset/request`: accepts `{ "email": "...", "recaptcha_token": "..." }`, verifies Google reCAPTCHA v3 action `password_reset_request`, and creates or replaces an
   active reset token for existing users. Response is generic and does not expose
   whether an account exists.
 - `POST /api/password-reset/validate`: validates `{ "token" }` and returns `ok: true` for active tokens.
 - `POST /api/password-reset`: accepts `{ "token": "...", "password": "...", "confirm_password": "..." }`, requires matching password and confirmation, sets the user password, and returns generic success. Responses are generic and do not return a token.
-- `POST /api/register/captcha`: returns `{ "challenge_id", "challenge_prompt" }`.
+- `POST /api/register/captcha`: legacy compatibility endpoint returning `410`
+  because local math CAPTCHA challenges are no longer created.
 - `POST /api/register`: accepts registration values, validates required fields
-  and CAPTCHA, creates a non-activated user, creates a one-time activation token,
-  and returns `{ ok: true }`.
+  and `recaptcha_token` with Google reCAPTCHA v3 action `register`, creates a
+  non-activated user, creates a one-time activation token, and returns the
+  authenticated bearer token payload with `activated: false`.
   The activation link is currently logged on the server with a TODO for email delivery.
 - `POST /api/account-activation/validate`: validates `{ "token": "..." }` and returns
   `ok: true` for a valid activation token.
