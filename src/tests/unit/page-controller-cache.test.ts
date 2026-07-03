@@ -48,6 +48,21 @@ function createResponse(): {
   return { response, headers, sentFiles };
 }
 
+function createJsonResponse(): {
+  response: Response;
+  getPayload: () => unknown;
+} {
+  let payload: unknown = null;
+  const response = {
+    json(body: unknown) {
+      payload = body;
+      return this;
+    },
+  } as unknown as Response;
+
+  return { response, getPayload: () => payload };
+}
+
 test('PageController disables browser caching for authenticated app page', () => {
   const app = express();
   new PageController('/repo').register(app);
@@ -97,4 +112,56 @@ test('PageController disables browser caching for workspace invitation page', ()
   assert.equal(headers.Pragma, 'no-cache');
   assert.equal(headers.Expires, '0');
   assert.equal(sentFiles[0], '/repo/public/workspace-invitation.html');
+});
+
+test('PageController exposes app info with Google auth disabled when client id is missing', () => {
+  const previous = process.env.GOOGLE_AUTH_CLIENT_ID;
+  const app = express();
+  new PageController('/repo').register(app);
+  const handler = getRouteHandler(app, '/api/app-info');
+  const { response, getPayload } = createJsonResponse();
+
+  delete process.env.GOOGLE_AUTH_CLIENT_ID;
+  handler({} as Request, response);
+
+  const payload = getPayload() as {
+    google_auth_enabled?: boolean;
+    google_auth_client_id?: string;
+  };
+  assert.equal(payload.google_auth_enabled, false);
+  assert.equal(
+    typeof payload.google_auth_client_id === 'undefined' ||
+      payload.google_auth_client_id === '',
+    true,
+  );
+
+  if (typeof previous === 'undefined') {
+    delete process.env.GOOGLE_AUTH_CLIENT_ID;
+  } else {
+    process.env.GOOGLE_AUTH_CLIENT_ID = previous;
+  }
+});
+
+test('PageController exposes app info with Google auth enabled when client id is configured', () => {
+  const previous = process.env.GOOGLE_AUTH_CLIENT_ID;
+  process.env.GOOGLE_AUTH_CLIENT_ID = 'test-google-client-id';
+  const app = express();
+  new PageController('/repo').register(app);
+  const handler = getRouteHandler(app, '/api/app-info');
+  const { response, getPayload } = createJsonResponse();
+
+  handler({} as Request, response);
+
+  const payload = getPayload() as {
+    google_auth_enabled?: boolean;
+    google_auth_client_id?: string;
+  };
+  assert.equal(payload.google_auth_enabled, true);
+  assert.equal(payload.google_auth_client_id, 'test-google-client-id');
+
+  if (typeof previous === 'undefined') {
+    delete process.env.GOOGLE_AUTH_CLIENT_ID;
+  } else {
+    process.env.GOOGLE_AUTH_CLIENT_ID = previous;
+  }
 });

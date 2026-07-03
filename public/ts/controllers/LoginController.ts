@@ -3,6 +3,25 @@ import { PasswordResetService } from '../services/PasswordResetService.js';
 import { RegistrationService } from '../services/RegistrationService.js';
 import { ThemeHelper, Theme } from '../helpers/ThemeHelper.js';
 
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+type GoogleIdentityServices = {
+  accounts?: {
+    id?: {
+      initialize: (options: {
+        client_id: string;
+        callback: (response: GoogleCredentialResponse) => void;
+      }) => void;
+      renderButton: (
+        element: HTMLElement,
+        options: Record<string, string | number | boolean>,
+      ) => void;
+    };
+  };
+};
+
 export class LoginController {
   bootstrap(Vue: any): void {
     const { createApp, ref, computed, onMounted } = Vue as {
@@ -44,6 +63,11 @@ export class LoginController {
         const forgotRequestError = ref('');
         const forgotRequestSuccess = ref(false);
         const appVersion = ref('');
+        const googleAuthEnabled = ref(false);
+        const googleAuthClientId = ref('');
+        const googleAuthError = ref('');
+        const googleAuthSubmitting = ref(false);
+        const googleScriptLoaded = ref(false);
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
 
         const submit = async () => {
@@ -73,6 +97,8 @@ export class LoginController {
           }
           mode.value = 'login';
           error.value = '';
+          googleAuthError.value = '';
+          renderGoogleButtonSoon();
         };
 
         const openForgotMode = () => {
@@ -114,6 +140,8 @@ export class LoginController {
           registerRequestError.value = '';
           registerRequestSuccess.value = false;
           error.value = '';
+          googleAuthError.value = '';
+          renderGoogleButtonSoon();
         };
 
         const loadResetChallenge = async () => {
@@ -244,11 +272,153 @@ export class LoginController {
             if (!response.ok) {
               return;
             }
-            const data = (await response.json()) as { version?: string };
+            const data = (await response.json()) as {
+              version?: string;
+              google_auth_enabled?: boolean;
+              google_auth_client_id?: string;
+            };
             appVersion.value =
               typeof data.version === 'string' ? data.version : '';
+            googleAuthEnabled.value = data.google_auth_enabled === true;
+            googleAuthClientId.value =
+              typeof data.google_auth_client_id === 'string'
+                ? data.google_auth_client_id
+                : '';
+            if (googleAuthEnabled.value && googleAuthClientId.value) {
+              await loadGoogleScript();
+              initializeGoogleAuth();
+              renderGoogleButtonSoon();
+            }
           } catch {
             appVersion.value = '';
+            googleAuthEnabled.value = false;
+            googleAuthClientId.value = '';
+          }
+        };
+
+        const readCookie = (name: string): string => {
+          const prefix = `${name}=`;
+          const cookie = (document.cookie || '')
+            .split(';')
+            .map((entry) => entry.trim())
+            .find((entry) => entry.startsWith(prefix));
+          return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : '';
+        };
+
+        const loadGoogleScript = async (): Promise<void> => {
+          if (googleScriptLoaded.value) {
+            return;
+          }
+          if ((window as unknown as { google?: GoogleIdentityServices }).google) {
+            googleScriptLoaded.value = true;
+            return;
+          }
+          if (
+            typeof document.querySelector !== 'function' ||
+            typeof document.createElement !== 'function' ||
+            !document.head
+          ) {
+            googleScriptLoaded.value = true;
+            return;
+          }
+          await new Promise<void>((resolve, reject) => {
+            const existing = document.querySelector(
+              'script[data-google-identity-services="true"]',
+            );
+            if (existing) {
+              existing.addEventListener('load', () => resolve(), {
+                once: true,
+              });
+              existing.addEventListener('error', () => reject(), {
+                once: true,
+              });
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.async = true;
+            script.defer = true;
+            script.dataset.googleIdentityServices = 'true';
+            script.addEventListener('load', () => resolve(), { once: true });
+            script.addEventListener('error', () => reject(), { once: true });
+            document.head.appendChild(script);
+          });
+          googleScriptLoaded.value = true;
+        };
+
+        const initializeGoogleAuth = () => {
+          const google = (window as unknown as { google?: GoogleIdentityServices })
+            .google;
+          google?.accounts?.id?.initialize({
+            client_id: googleAuthClientId.value,
+            callback: (response: GoogleCredentialResponse) => {
+              void handleGoogleCredential(response);
+            },
+          });
+        };
+
+        const renderGoogleButtonSoon = () => {
+          window.setTimeout(() => {
+            renderGoogleButton();
+          }, 0);
+        };
+
+        const renderGoogleButton = () => {
+          if (!googleAuthEnabled.value || !googleAuthClientId.value) {
+            return;
+          }
+          if (
+            typeof window === 'undefined' ||
+            typeof document === 'undefined' ||
+            typeof document.getElementById !== 'function'
+          ) {
+            return;
+          }
+          const google = (window as unknown as { google?: GoogleIdentityServices })
+            .google;
+          const containerId =
+            mode.value === 'register'
+              ? 'google-register-button'
+              : 'google-login-button';
+          const container = document.getElementById(containerId);
+          if (!container || !google?.accounts?.id?.renderButton) {
+            return;
+          }
+          container.innerHTML = '';
+          google.accounts.id.renderButton(container, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            width: container.clientWidth || 280,
+            text: mode.value === 'register' ? 'signup_with' : 'signin_with',
+          });
+        };
+
+        const handleGoogleCredential = async (
+          response: GoogleCredentialResponse,
+        ) => {
+          googleAuthError.value = '';
+          googleAuthSubmitting.value = true;
+          try {
+            await LoginService.loginWithGoogle({
+              credential: response.credential || '',
+              g_csrf_token: readCookie('g_csrf_token'),
+              invitation_code:
+                mode.value === 'register'
+                  ? invitationCode.value || undefined
+                  : loginInvitationCode.value || undefined,
+            });
+            if (loginInvitationCode.value && mode.value !== 'register') {
+              window.sessionStorage?.setItem(
+                'workspace_invitation_pending_accept_code',
+                loginInvitationCode.value,
+              );
+            }
+            window.location.replace('/overview');
+          } catch (err) {
+            googleAuthError.value = (err as Error).message;
+          } finally {
+            googleAuthSubmitting.value = false;
           }
         };
 
@@ -319,6 +489,10 @@ export class LoginController {
           requestResetLink,
           register,
           appVersion,
+          googleAuthEnabled,
+          googleAuthClientId,
+          googleAuthError,
+          googleAuthSubmitting,
           theme,
           themeLabel,
           toggleTheme,

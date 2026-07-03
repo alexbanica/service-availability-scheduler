@@ -49,6 +49,7 @@ Open `http://localhost:3000`.
 | `RUN_MIGRATIONS_ON_STARTUP` | No | `true` | When true, runs checked-in SQL migrations on startup. Set to `false` to skip startup migrations when running migrations separately. |
 | `PORT` | No | `3000` | HTTP port used by `npm start` and `npm run dev`. |
 | `APP_VERSION` | No | `development` | Version string exposed in page footers. Docker images built with `docker/build.sh --release <tag>` set this to the release tag automatically. |
+| `GOOGLE_AUTH_CLIENT_ID` | No | Disabled | Public Google OAuth client ID that enables Google Identity Services login/register. No client secret or Google API access token is used. |
 
 ### Application file config
 
@@ -85,6 +86,7 @@ environments; it does not create them inline.
   - `token_type: "Bearer"`
   - `expires_in_seconds`
   - `user.activated`.
+- `POST /api/google-auth`: accepts `{ "credential": "...", "g_csrf_token": "...", "invitation_code": "..." }` when `GOOGLE_AUTH_CLIENT_ID` is configured. The body CSRF token must match the `g_csrf_token` cookie set by Google Identity Services. It creates or links a local user, applies new-user invitation codes when the verified Google email matches, and returns the same application bearer token shape as password login.
 - `POST /api/password-reset/captcha`: returns `challenge_id` and `challenge_prompt`.
 - `POST /api/password-reset/request`: validates CAPTCHA and creates or replaces an
   active reset token for existing users. Response is generic and does not expose

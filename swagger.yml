@@ -41,6 +41,37 @@ paths:
           $ref: '#/components/responses/Error'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+  /api/google-auth:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register or log in with a Google Identity Services credential.
+      description: Requires GOOGLE_AUTH_CLIENT_ID. The browser must submit the Google credential and the Google double-submit CSRF token from the g_csrf_token cookie. Returns the same application bearer token shape as password login and registration; Google ID tokens are not accepted as application bearer tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleAuthRequest'
+      responses:
+        '200':
+          description: Authenticated user and application bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Missing configuration, missing credential, CSRF mismatch, invalid Google credential, or invitation validation error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/Error'
   /api/password-reset/captcha:
     post:
       tags: [Account]
@@ -896,6 +927,19 @@ components:
           type: string
           format: password
           minLength: 8
+    GoogleAuthRequest:
+      type: object
+      required: [credential, g_csrf_token]
+      properties:
+        credential:
+          type: string
+          description: Google Identity Services ID-token credential from the browser button flow.
+        g_csrf_token:
+          type: string
+          description: Body value that must match the g_csrf_token cookie created by Google Identity Services.
+        invitation_code:
+          type: string
+          description: Optional workspace invitation code applied only for new Google-created users.
     CaptchaResponse:
       type: object
       required: [ok, challenge_id, challenge_prompt]
@@ -1003,10 +1047,16 @@ components:
           type: boolean
     AppInfoResponse:
       type: object
-      required: [version]
+      required: [version, google_auth_enabled]
       properties:
         version:
           type: string
+        google_auth_enabled:
+          type: boolean
+          description: True when GOOGLE_AUTH_CLIENT_ID is configured.
+        google_auth_client_id:
+          type: string
+          description: Public Google OAuth client ID used by Google Identity Services when enabled.
     ServiceKeyRequest:
       type: object
       required: [service_key]

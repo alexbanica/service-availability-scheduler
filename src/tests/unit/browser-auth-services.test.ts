@@ -51,6 +51,11 @@ const { LoginService } = requireFromRoot(
 ) as {
   LoginService: {
     login: (email: string, password: string) => Promise<void>;
+    loginWithGoogle?: (payload: {
+      credential: string;
+      g_csrf_token: string;
+      invitation_code?: string;
+    }) => Promise<void>;
   };
 };
 
@@ -262,6 +267,8 @@ type LoginControllerState = {
   resetForgotChallenge: () => void;
   loadRegisterChallenge: () => Promise<void>;
   resetRegisterChallenge: () => void;
+  googleAuthEnabled?: Ref<boolean>;
+  googleAuthClientId?: Ref<string>;
 };
 
 type AppView = 'overview' | 'availability' | 'admin';
@@ -657,6 +664,84 @@ test('LoginService stores token returned by /api/login', async () => {
   restore();
 });
 
+test('LoginService stores token returned by /api/google-auth', async () => {
+  if (!LoginService.loginWithGoogle) {
+    assert.fail('LoginService.loginWithGoogle is not available in browser bundle');
+  }
+  const loginWithGoogle = LoginService.loginWithGoogle;
+
+  const { get, clear, restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        token: 'google-issued-token',
+        token_type: 'Bearer',
+        expires_in_seconds: 3600,
+      }),
+    ),
+  );
+  const originalNow = Date.now;
+  (Date as { now: () => number }).now = () => 1_000;
+
+  try {
+    await loginWithGoogle({
+      credential: 'google-credential',
+      g_csrf_token: 'csrf-token',
+      invitation_code: 'invite-code',
+    });
+  } finally {
+    (Date as { now: () => number }).now = originalNow;
+  }
+
+  const request = fetch.state[0];
+  const payload = JSON.parse(request.body ?? '{}') as {
+    credential: string;
+    g_csrf_token: string;
+    invitation_code: string;
+  };
+  assert.equal(payload.credential, 'google-credential');
+  assert.equal(payload.g_csrf_token, 'csrf-token');
+  assert.equal(payload.invitation_code, 'invite-code');
+  assert.equal(get('auth_token'), 'google-issued-token');
+  assert.equal(get('auth_token_expires_at_ms'), String(1_000 + 3_600_000));
+
+  fetch.restore();
+  clear();
+  restore();
+});
+
+test('LoginService.loginWithGoogle propagates backend error without storing a token', async () => {
+  if (!LoginService.loginWithGoogle) {
+    assert.fail('LoginService.loginWithGoogle is not available in browser bundle');
+  }
+  const loginWithGoogle = LoginService.loginWithGoogle;
+
+  const { get, clear, restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(400, {
+        error: 'Google authentication failed',
+      }),
+    ),
+  );
+
+  await assert.rejects(
+    () =>
+      loginWithGoogle({
+        credential: 'google-credential',
+        g_csrf_token: 'csrf-token',
+      }),
+    /Google authentication failed/,
+  );
+
+  assert.equal(fetch.state[0].url, '/api/google-auth');
+  assert.equal(get('auth_token'), null);
+
+  fetch.restore();
+  clear();
+  restore();
+});
+
 test('PasswordResetService.requestPasswordReset sends email and captcha payload', async () => {
   const { restore } = createWindowAndStorage();
   const fetch = setupFetchMock(() =>
@@ -889,6 +974,64 @@ test('LoginController opens registration mode when served from /register', () =>
     assert.equal(state.isLoginMode.value, false);
   } finally {
     restore();
+  }
+});
+
+test('LoginController hides Google auth controls when app info reports Google auth disabled', () => {
+  const { restore, setHref } = createWindowAndStorage();
+  const originalFetch = globalThis.fetch;
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        version: 'test',
+        google_auth_enabled: false,
+      }),
+    ),
+  );
+
+  try {
+    setHref('/login');
+    const state = createLoginControllerState();
+
+    if (!state.googleAuthEnabled) {
+      assert.fail('LoginController.googleAuthEnabled is not available');
+    }
+    assert.equal(state.googleAuthEnabled.value, false);
+    assert.equal(state.googleAuthClientId?.value, '');
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    fetch.restore();
+  }
+});
+
+test('LoginController exposes Google auth controls when app info reports client id', async () => {
+  const { restore, setHref } = createWindowAndStorage();
+  const originalFetch = globalThis.fetch;
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(
+      createMockResponse(200, {
+        version: 'test',
+        google_auth_enabled: true,
+        google_auth_client_id: 'test-google-client-id',
+      }),
+    ),
+  );
+
+  try {
+    setHref('/login');
+    const state = createLoginControllerState();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    if (!state.googleAuthEnabled || !state.googleAuthClientId) {
+      assert.fail('LoginController Google auth state is not available');
+    }
+    assert.equal(state.googleAuthEnabled.value, true);
+    assert.equal(state.googleAuthClientId.value, 'test-google-client-id');
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    fetch.restore();
   }
 });
 

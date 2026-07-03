@@ -1172,6 +1172,20 @@ select:focus-visible {
   width: 100%;
 }
 
+.google-auth-panel {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.google-auth-button {
+  min-height: 2.5rem;
+  width: 100%;
+}
+
+.google-auth-button > div {
+  width: 100% !important;
+}
+
 .login-choice-divider {
   display: grid;
   grid-template-columns: 1fr auto 1fr;

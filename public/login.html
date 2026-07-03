@@ -48,6 +48,14 @@
         <button type="submit" :disabled="submitting">
           {{ submitting ? 'Logging in...' : 'Log In' }}
         </button>
+        <div v-if="googleAuthEnabled" class="google-auth-panel">
+          <div class="login-choice-divider" aria-hidden="true">
+            <span>or</span>
+          </div>
+          <div id="google-login-button" class="google-auth-button"></div>
+          <div v-if="googleAuthSubmitting" class="muted">Signing in...</div>
+          <div v-if="googleAuthError" class="error">{{ googleAuthError }}</div>
+        </div>
         <div class="login-action-stack">
           <button type="button" class="secondary" @click="openForgotMode">
             Reset Password
@@ -191,6 +199,15 @@
             {{ registerRequestSubmitting ? 'Creating account...' : 'Create account' }}
           </button>
         </template>
+
+        <div v-if="googleAuthEnabled" class="google-auth-panel">
+          <div class="login-choice-divider" aria-hidden="true">
+            <span>or</span>
+          </div>
+          <div id="google-register-button" class="google-auth-button"></div>
+          <div v-if="googleAuthSubmitting" class="muted">Signing in...</div>
+          <div v-if="googleAuthError" class="error">{{ googleAuthError }}</div>
+        </div>
 
         <div v-if="registerRequestError" class="error">
           {{ registerRequestError }}

@@ -10,6 +10,7 @@ type UserRow = RowDataPacket & {
   email: string;
   nickname: string;
   password_hash: string | null;
+  google_subject: string | null;
   activated_at: string | Date | null;
 };
 
@@ -24,20 +25,20 @@ export class UserRepository extends AbstractMysqlRepository {
 
   async findByEmail(email: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT user_id, email, nickname, activated_at FROM users WHERE email = ?',
+      'SELECT user_id, email, nickname, google_subject, activated_at FROM users WHERE email = ?',
       [email],
     );
     if (!row) {
       return null;
     }
-    return new User(row.user_id, row.email, row.nickname, row.activated_at);
+    return this.mapRowToUser(row);
   }
 
   async findByEmailWithPasswordHash(
     email: string,
   ): Promise<UserWithPasswordHash | null> {
     const row = await this.get<UserRow>(
-      'SELECT user_id, email, nickname, password_hash, activated_at FROM users WHERE email = ?',
+      'SELECT user_id, email, nickname, password_hash, google_subject, activated_at FROM users WHERE email = ?',
       [email],
     );
     if (!row) {
@@ -49,6 +50,7 @@ export class UserRepository extends AbstractMysqlRepository {
       row.email,
       row.nickname,
       row.activated_at,
+      row.google_subject,
     ) as UserWithPasswordHash;
     user.passwordHash = row.password_hash;
     return user;
@@ -56,12 +58,10 @@ export class UserRepository extends AbstractMysqlRepository {
 
   async findById(id: string): Promise<User | null> {
     const row = await this.get<UserRow>(
-      'SELECT user_id, email, nickname, activated_at FROM users WHERE user_id = ?',
+      'SELECT user_id, email, nickname, google_subject, activated_at FROM users WHERE user_id = ?',
       [id],
     );
-    return row
-      ? new User(row.user_id, row.email, row.nickname, row.activated_at)
-      : null;
+    return row ? this.mapRowToUser(row) : null;
   }
 
   async findByIds(ids: string[]): Promise<User[]> {
@@ -70,12 +70,18 @@ export class UserRepository extends AbstractMysqlRepository {
     }
     const placeholders = ids.map(() => '?').join(',');
     const rows = await this.all<UserRow>(
-      `SELECT user_id, email, nickname, activated_at FROM users WHERE user_id IN (${placeholders})`,
+      `SELECT user_id, email, nickname, google_subject, activated_at FROM users WHERE user_id IN (${placeholders})`,
       ids,
     );
-    return rows.map(
-      (row) => new User(row.user_id, row.email, row.nickname, row.activated_at),
+    return rows.map((row) => this.mapRowToUser(row));
+  }
+
+  async findByGoogleSubject(googleSubject: string): Promise<User | null> {
+    const row = await this.get<UserRow>(
+      'SELECT user_id, email, nickname, google_subject, activated_at FROM users WHERE google_subject = ?',
+      [googleSubject],
     );
+    return row ? this.mapRowToUser(row) : null;
   }
 
   async insert(id: string, email: string, nickname: string): Promise<void> {
@@ -89,13 +95,30 @@ export class UserRepository extends AbstractMysqlRepository {
     id: string,
     email: string,
     nickname: string,
-    passwordHash: string,
+    passwordHash: string | null,
     activatedAt: Date | null,
+    googleSubject: string | null = null,
   ): Promise<void> {
     await this.run(
-      'INSERT INTO users (user_id, email, nickname, password_hash, activated_at) VALUES (?, ?, ?, ?, ?)',
-      [id, email, nickname, passwordHash, activatedAt],
+      'INSERT INTO users (user_id, email, nickname, password_hash, google_subject, activated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, email, nickname, passwordHash, googleSubject, activatedAt],
     );
+  }
+
+  async linkGoogleSubjectToUser(
+    userId: string,
+    googleSubject: string,
+  ): Promise<void> {
+    const result = await this.run(
+      `UPDATE users
+       SET google_subject = ?
+       WHERE user_id = ?
+         AND (google_subject IS NULL OR google_subject = ?)`,
+      [googleSubject, userId, googleSubject],
+    );
+    if (result.affectedRows === 0) {
+      throw new Error('Google subject already linked for user');
+    }
   }
 
   async updatePasswordHash(
@@ -113,5 +136,15 @@ export class UserRepository extends AbstractMysqlRepository {
       activatedAt,
       userId,
     ]);
+  }
+
+  private mapRowToUser(row: UserRow): User {
+    return new User(
+      row.user_id,
+      row.email,
+      row.nickname,
+      row.activated_at,
+      row.google_subject,
+    );
   }
 }

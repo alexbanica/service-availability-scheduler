@@ -8,6 +8,7 @@ export class User {
     public readonly email: string,
     public readonly nickname: string,
     activatedAt: Date | string | null = null,
+    public googleSubject: string | null = null,
   ) {
     this.id = userId;
     this.activatedAt =

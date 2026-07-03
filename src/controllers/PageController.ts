@@ -33,8 +33,13 @@ export class PageController {
     });
 
     app.get('/api/app-info', (_req: Request, res: Response) => {
+      const googleAuthClientId = (
+        process.env.GOOGLE_AUTH_CLIENT_ID || ''
+      ).trim();
       res.json({
         version: process.env.APP_VERSION || 'development',
+        google_auth_enabled: Boolean(googleAuthClientId),
+        google_auth_client_id: googleAuthClientId || undefined,
       });
     });
 
