@@ -36,11 +36,9 @@ export class ApiService {
 
     const isUnauthenticatedRoute = [
       '/api/login',
-      '/api/password-reset/captcha',
       '/api/password-reset/request',
       '/api/password-reset/validate',
       '/api/password-reset',
-      '/api/register/captcha',
       '/api/register',
       '/api/account-activation/validate',
       '/api/account-activation',

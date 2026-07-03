@@ -1,38 +1,13 @@
 import { ApiService } from './ApiService.js';
 
-export type PasswordResetChallenge = {
-  challengeId: string;
-  challengePrompt: string;
-};
-
 export class PasswordResetService {
-  static async requestChallenge(): Promise<PasswordResetChallenge> {
-    const response = await ApiService.post('/api/password-reset/captcha');
-    const data = (await response.json()) as {
-      challenge_id?: string;
-      challenge_prompt?: string;
-      error?: string;
-    };
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to create captcha challenge.');
-    }
-
-    return {
-      challengeId: String(data.challenge_id || ''),
-      challengePrompt: String(data.challenge_prompt || ''),
-    };
-  }
-
   static async requestPasswordReset(
     email: string,
-    challengeId: string,
-    challengeAnswer: string,
+    recaptchaToken: string,
   ): Promise<void> {
     const response = await ApiService.post('/api/password-reset/request', {
       email,
-      challenge_id: challengeId,
-      challenge_answer: challengeAnswer,
+      recaptcha_token: recaptchaToken,
     });
     const data = (await response.json()) as {
       ok?: boolean;

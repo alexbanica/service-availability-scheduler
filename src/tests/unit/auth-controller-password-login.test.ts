@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { URLSearchParams } from 'node:url';
 import express, { NextFunction, Response } from 'express';
 import test from 'node:test';
 import type { Request } from 'express';
 
 import { AuthController } from '../../controllers/AuthController';
 import { User } from '../../entities/User';
+import { CaptchaService } from '../../services/CaptchaService';
 import type { PasswordResetTokenValidation } from '../../services/PasswordResetTokenService';
 
 class PasswordServiceStub {
@@ -35,23 +37,68 @@ type LoggerMessage = {
   params: Array<unknown>;
 };
 
+type CaptchaStubResult =
+  | boolean
+  | { status: 'valid' | 'invalid' | 'unavailable' };
+
 class CaptchaServiceStub {
+  public lastValidateCalls: Array<{
+    challengeId: string;
+    challengeAnswer: string;
+  }> = [];
+  public lastRecaptchaCalls: Array<{
+    token: string;
+    expectedAction: string;
+  }> = [];
+  public validateCalls = 0;
+  public recaptchaCalls = 0;
+
   constructor(
     private readonly createPayload: () => {
       challengeId: string;
       prompt: string;
     },
-    private readonly validateResult: boolean,
+    private readonly validateResult:
+      | CaptchaStubResult
+      | ((challengeId: string, challengeAnswer: string) => CaptchaStubResult),
   ) {}
 
   async createChallenge(): Promise<{ challengeId: string; prompt: string }> {
     return this.createPayload();
   }
 
-  async validateChallenge(_id: string, _answer: string): Promise<boolean> {
-    void _id;
-    void _answer;
-    return this.validateResult;
+  async validateChallenge(
+    _id: string,
+    _answer: string,
+  ): Promise<boolean> {
+    this.validateCalls += 1;
+    this.lastValidateCalls.push({
+      challengeId: _id,
+      challengeAnswer: _answer,
+    });
+    if (typeof this.validateResult === 'function') {
+      const result = this.validateResult(_id, _answer);
+      return typeof result === 'boolean' ? result : result.status === 'valid';
+    }
+    return typeof this.validateResult === 'boolean'
+      ? this.validateResult
+      : this.validateResult.status === 'valid';
+  }
+
+  async verifyRecaptchaToken(
+    token: string,
+    expectedAction: string,
+  ): Promise<{ status: 'valid' | 'invalid' | 'unavailable' }> {
+    this.recaptchaCalls += 1;
+    this.lastRecaptchaCalls.push({ token, expectedAction });
+    const valid =
+      typeof this.validateResult === 'function'
+        ? this.validateResult(token, expectedAction)
+        : this.validateResult;
+    if (typeof valid === 'boolean') {
+      return { status: valid ? 'valid' : 'invalid' };
+    }
+    return valid;
   }
 }
 
@@ -522,6 +569,133 @@ function createUser(
   return user;
 }
 
+function createCaptchaService(options: {
+  response?: unknown;
+  ok?: boolean;
+  reject?: boolean;
+  env?: NodeJS.ProcessEnv;
+  calls?: Array<{
+    url: string;
+    body: string;
+    headers: Record<string, string>;
+  }>;
+}): CaptchaService {
+  const fetchImpl = async (
+    url: string,
+    init: {
+      method: 'POST';
+      headers: Record<string, string>;
+      body: string;
+    },
+  ) => {
+    options.calls?.push({
+      url,
+      body: init.body,
+      headers: init.headers,
+    });
+    if (options.reject) {
+      throw new Error('network failed');
+    }
+    return {
+      ok: options.ok ?? true,
+      json: async () => options.response ?? {},
+    };
+  };
+
+  return new CaptchaService(fetchImpl, {
+    GOOGLE_RECAPTCHA_SITE_KEY: 'site-key',
+    GOOGLE_RECAPTCHA_SECRET_KEY: 'secret-key',
+    ...options.env,
+  });
+}
+
+test('CaptchaService reports unavailable when reCAPTCHA is not fully configured', async () => {
+  const service = createCaptchaService({
+    env: {
+      GOOGLE_RECAPTCHA_SITE_KEY: '',
+      GOOGLE_RECAPTCHA_SECRET_KEY: '',
+    },
+  });
+
+  const result = await service.verifyRecaptchaToken('token', 'register');
+
+  assert.deepEqual(result, { status: 'unavailable' });
+});
+
+test('CaptchaService posts token to Google siteverify and accepts valid score/action', async () => {
+  const calls: Array<{
+    url: string;
+    body: string;
+    headers: Record<string, string>;
+  }> = [];
+  const service = createCaptchaService({
+    calls,
+    response: {
+      success: true,
+      score: 0.9,
+      action: 'register',
+      hostname: 'localhost',
+    },
+  });
+
+  const result = await service.verifyRecaptchaToken(
+    'recaptcha-token',
+    'register',
+  );
+
+  assert.deepEqual(result, { status: 'valid' });
+  assert.equal(
+    calls[0]?.url,
+    'https://www.google.com/recaptcha/api/siteverify',
+  );
+  assert.equal(
+    calls[0]?.headers['Content-Type'],
+    'application/x-www-form-urlencoded',
+  );
+  const body = new URLSearchParams(calls[0]?.body);
+  assert.equal(body.get('secret'), 'secret-key');
+  assert.equal(body.get('response'), 'recaptcha-token');
+});
+
+test('CaptchaService rejects unsuccessful, low-score, and wrong-action responses', async () => {
+  const unsuccessful = await createCaptchaService({
+    response: { success: false, score: 0.9, action: 'register' },
+  }).verifyRecaptchaToken('token', 'register');
+  assert.deepEqual(unsuccessful, { status: 'invalid' });
+
+  const lowScore = await createCaptchaService({
+    response: { success: true, score: 0.4, action: 'register' },
+  }).verifyRecaptchaToken('token', 'register');
+  assert.deepEqual(lowScore, { status: 'invalid' });
+
+  const wrongAction = await createCaptchaService({
+    response: {
+      success: true,
+      score: 0.9,
+      action: 'password_reset_request',
+    },
+  }).verifyRecaptchaToken('token', 'register');
+  assert.deepEqual(wrongAction, { status: 'invalid' });
+});
+
+test('CaptchaService honors configured minimum score and maps Google failures to invalid', async () => {
+  const belowConfiguredScore = await createCaptchaService({
+    env: { GOOGLE_RECAPTCHA_MIN_SCORE: '0.8' },
+    response: { success: true, score: 0.7, action: 'register' },
+  }).verifyRecaptchaToken('token', 'register');
+  assert.deepEqual(belowConfiguredScore, { status: 'invalid' });
+
+  const httpFailure = await createCaptchaService({
+    ok: false,
+  }).verifyRecaptchaToken('token', 'register');
+  assert.deepEqual(httpFailure, { status: 'invalid' });
+
+  const networkFailure = await createCaptchaService({
+    reject: true,
+  }).verifyRecaptchaToken('token', 'register');
+  assert.deepEqual(networkFailure, { status: 'invalid' });
+});
+
 test('POST /api/login rejects missing email', async () => {
   const app = express();
   app.use(express.json());
@@ -717,7 +891,7 @@ test('POST /api/login normalizes email and returns token payload on success', as
   assert.equal(user && 'passwordHash' in user, false);
 });
 
-test('POST /api/register/captcha returns challenge data without answer', async () => {
+test('POST /api/register/captcha returns deterministic compatibility response', async () => {
   const app = express();
   app.use(express.json());
   const captchaService = new CaptchaServiceStub(
@@ -744,21 +918,10 @@ test('POST /api/register/captcha returns challenge data without answer', async (
     }),
   );
 
-  assert.equal(response.statusCode, 200);
-  const body = response.body as {
-    ok?: boolean;
-    challenge_id?: string;
-    challenge_prompt?: string;
-    answer?: unknown;
-    challenge_answer?: unknown;
-  };
-  assert.equal(body.ok, true);
-  assert.equal(body.challenge_id, 'register-challenge-id');
-  assert.equal(body.challenge_prompt, 'What is the capital of Canada?');
-  assert.equal(Object.prototype.hasOwnProperty.call(body, 'answer'), false);
+  assert.equal(response.statusCode, 410);
   assert.equal(
-    Object.prototype.hasOwnProperty.call(body, 'challenge_answer'),
-    false,
+    (response.body as { error?: string }).error,
+    'Captcha challenge endpoint removed',
   );
 });
 
@@ -788,8 +951,7 @@ test('POST /api/register validates required fields and captcha', async () => {
         nickname: 'Alice',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -809,8 +971,7 @@ test('POST /api/register validates required fields and captcha', async () => {
         email: 'alice@example.com',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -831,8 +992,7 @@ test('POST /api/register validates required fields and captcha', async () => {
         nickname: 'Alice',
         password: 'tiny',
         confirm_password: 'tiny',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -853,8 +1013,7 @@ test('POST /api/register validates required fields and captcha', async () => {
         nickname: 'Alice',
         password: 'long-enough-password',
         confirm_password: 'different-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -875,8 +1034,7 @@ test('POST /api/register validates required fields and captcha', async () => {
         nickname: 'Alice',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -913,8 +1071,7 @@ test('POST /api/register returns duplicate email as 409 when user exists', async
         nickname: 'Alice',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -967,8 +1124,7 @@ test('POST /api/register creates user, token, and returns authenticated non-acti
         nickname: '  New User  ',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -1049,8 +1205,7 @@ test('POST /api/register accepts a valid invitation code and creates workspace m
         nickname: 'Invited User',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
         invitation_code: 'invite-code',
       },
     }),
@@ -1128,8 +1283,7 @@ test('POST /api/register rejects invitation registration when invitation email d
         nickname: 'Invited User',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
         invitationCode: 'invite-code',
       },
     }),
@@ -1195,8 +1349,7 @@ test('POST /api/register rejects invalid invitation code with a 400', async () =
         nickname: 'Invited User',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
         invitationCode: 'invite-code',
       },
     }),
@@ -1254,8 +1407,7 @@ test('POST /api/register uses one production transaction when a DB pool is avail
         nickname: 'New User',
         password: 'long-enough-password',
         confirm_password: 'long-enough-password',
-        challenge_id: 'register-challenge-id',
-        challenge_answer: '2',
+        recaptcha_token: 'register-token',
       },
     }),
   );
@@ -1327,8 +1479,7 @@ test('POST /api/register rolls back and releases connection when activation toke
           nickname: 'New User',
           password: 'long-enough-password',
           confirm_password: 'long-enough-password',
-          challenge_id: 'register-challenge-id',
-          challenge_answer: '2',
+        recaptcha_token: 'register-token',
         },
       }),
     );
@@ -1614,7 +1765,7 @@ test('POST /api/account-activation activates user, grants role, and marks token 
   assert.equal(userService.roleGrantedUserIds.includes('user-1'), true);
 });
 
-test('POST /api/password-reset/captcha returns challenge data without answer', async () => {
+test('POST /api/password-reset/captcha returns deterministic compatibility response', async () => {
   const app = express();
   app.use(express.json());
   const captchaService = new CaptchaServiceStub(
@@ -1639,20 +1790,10 @@ test('POST /api/password-reset/captcha returns challenge data without answer', a
     }),
   );
 
-  assert.equal(response.statusCode, 200);
-  const body = response.body as {
-    ok?: boolean;
-    challenge_id?: string;
-    challenge_prompt?: string;
-    answer?: unknown;
-  };
-  assert.equal(body.ok, true);
-  assert.equal(body.challenge_id, 'challenge-id');
-  assert.equal(body.challenge_prompt, 'What is 2 + 3?');
-  assert.equal(Object.prototype.hasOwnProperty.call(body, 'answer'), false);
+  assert.equal(response.statusCode, 410);
   assert.equal(
-    Object.prototype.hasOwnProperty.call(body, 'challenge_answer'),
-    false,
+    (response.body as { error?: string }).error,
+    'Captcha challenge endpoint removed',
   );
 });
 
@@ -1687,8 +1828,7 @@ test('POST /api/password-reset/request returns invalid-captcha for wrong answer'
       path: '/api/password-reset/request',
       body: {
         email: 'alice@example.com',
-        challenge_id: 'challenge-id',
-        challenge_answer: 'wrong',
+        recaptcha_token: 'reset-token',
       },
     }),
   );
@@ -1734,8 +1874,7 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
       path: '/api/password-reset/request',
       body: {
         email: 'alice@example.com',
-        challenge_id: 'challenge-id',
-        challenge_answer: 'any',
+        recaptcha_token: 'reset-token',
       },
     }),
   );
@@ -1784,8 +1923,7 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
       path: '/api/password-reset/request',
       body: {
         email: 'missing@example.com',
-        challenge_id: 'challenge-id',
-        challenge_answer: 'any',
+        recaptcha_token: 'reset-token',
       },
     }),
   );
@@ -1794,6 +1932,287 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
   assert.equal((unknownResponse.body as { ok?: boolean }).ok, true);
   assert.equal(unknownTokenService.createCount, 0);
   assert.equal(unknownLogger.messages.length, 0);
+});
+
+test('POST /api/register validates reCAPTCHA outcomes for production-like payloads', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new AccountActivationTokenServiceStub({
+    createResult: 'activation-token-abc',
+  });
+  const logger = new ResetLoggerStub();
+  const captchaService = new CaptchaServiceStub(
+    () => ({
+      challengeId: 'recaptcha-challenge-id',
+      prompt: 'ignored',
+    }),
+    (token, expectedAction) => {
+      if (token === 'register-valid-token' && expectedAction === 'register') {
+        return true;
+      }
+      if (token === 'register-misconfigured') {
+        return { status: 'unavailable' };
+      }
+      if (token === 'register-network-fail') {
+        return false;
+      }
+      return false;
+    },
+  );
+
+  const controller = new (AuthController as unknown as {
+    new (...args: unknown[]): AuthController;
+  })(
+    new FakeUserService(null) as unknown,
+    new FakeJwtAuthService(3600),
+    new PasswordServiceStub('correct-password'),
+    captchaService as unknown,
+    undefined as unknown,
+    logger as unknown,
+    tokenService as unknown,
+  );
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/register');
+
+  const missingToken = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: 'New User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+      },
+    }),
+  );
+  assert.equal(missingToken.statusCode, 400);
+  assert.equal(
+    (missingToken.body as { error?: string }).error,
+    'Captcha required',
+  );
+  assert.equal(captchaService.recaptchaCalls, 0);
+
+  const invalidToken = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: 'New User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        recaptcha_token: 'register-invalid-token',
+      },
+    }),
+  );
+  assert.equal(invalidToken.statusCode, 400);
+  assert.equal(
+    (invalidToken.body as { error?: string }).error,
+    'Invalid captcha',
+  );
+  assert.equal(
+    captchaService.lastRecaptchaCalls.at(-1)?.token,
+    'register-invalid-token',
+  );
+  assert.equal(
+    captchaService.lastRecaptchaCalls.at(-1)?.expectedAction,
+    'register',
+  );
+
+  const unavailable = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: 'New User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        recaptcha_token: 'register-misconfigured',
+      },
+    }),
+  );
+  assert.equal(unavailable.statusCode, 503);
+  assert.equal(
+    (unavailable.body as { error?: string }).error,
+    'Captcha service unavailable',
+  );
+
+  const networkFailure = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: 'New User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        recaptcha_token: 'register-network-fail',
+      },
+    }),
+  );
+  assert.equal(networkFailure.statusCode, 400);
+  assert.equal(
+    (networkFailure.body as { error?: string }).error,
+    'Invalid captcha',
+  );
+
+  const success = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'new@example.com',
+        nickname: 'New User',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        recaptcha_token: 'register-valid-token',
+      },
+    }),
+  );
+  assert.equal(success.statusCode, 200);
+  assert.equal((success.body as { ok?: boolean }).ok, true);
+});
+
+test('POST /api/password-reset/request validates reCAPTCHA outcomes for production-like payloads', async () => {
+  const app = express();
+  app.use(express.json());
+  const tokenService = new PasswordResetTokenServiceStub({
+    createResult: 'known-token',
+  });
+  const logger = new ResetLoggerStub();
+  const captchaService = new CaptchaServiceStub(
+    () => ({
+      challengeId: 'recaptcha-challenge-id',
+      prompt: 'ignored',
+    }),
+    (token, expectedAction) => {
+      if (
+        token === 'password-reset-valid-token' &&
+        expectedAction === 'password_reset_request'
+      ) {
+        return true;
+      }
+      if (token === 'password-reset-misconfigured') {
+        return { status: 'unavailable' };
+      }
+      if (token === 'password-reset-network-fail') {
+        return false;
+      }
+      return false;
+    },
+  );
+  const controller = createLoginController(
+    createUser('alice@example.com', true),
+    'correct-password',
+    tokenService,
+    captchaService,
+    logger,
+  );
+  controller.register(app);
+  const route = getRouteHandlers(app, 'post', '/api/password-reset/request');
+
+  const missingToken = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset/request',
+      body: {
+        email: 'alice@example.com',
+      },
+    }),
+  );
+  assert.equal(missingToken.statusCode, 400);
+  assert.equal(
+    (missingToken.body as { error?: string }).error,
+    'Captcha required',
+  );
+
+  const invalidToken = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset/request',
+      body: {
+        email: 'alice@example.com',
+        recaptcha_token: 'password-reset-invalid-token',
+      },
+    }),
+  );
+  assert.equal(invalidToken.statusCode, 400);
+  assert.equal(
+    (invalidToken.body as { error?: string }).error,
+    'Invalid captcha',
+  );
+  assert.equal(
+    captchaService.lastRecaptchaCalls.at(-1)?.expectedAction,
+    'password_reset_request',
+  );
+
+  const unavailable = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset/request',
+      body: {
+        email: 'alice@example.com',
+        recaptcha_token: 'password-reset-misconfigured',
+      },
+    }),
+  );
+  assert.equal(unavailable.statusCode, 503);
+  assert.equal(
+    (unavailable.body as { error?: string }).error,
+    'Captcha service unavailable',
+  );
+
+  const networkFailure = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset/request',
+      body: {
+        email: 'alice@example.com',
+        recaptcha_token: 'password-reset-network-fail',
+      },
+    }),
+  );
+  assert.equal(networkFailure.statusCode, 400);
+  assert.equal(
+    (networkFailure.body as { error?: string }).error,
+    'Invalid captcha',
+  );
+
+  const success = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/password-reset/request',
+      body: {
+        email: 'alice@example.com',
+        recaptcha_token: 'password-reset-valid-token',
+      },
+    }),
+  );
+  assert.equal(success.statusCode, 200);
+  assert.equal((success.body as { ok?: boolean }).ok, true);
+  assert.equal(tokenService.createCount, 1);
 });
 
 test('POST /api/password-reset/validate returns correct outcomes for token states', async () => {

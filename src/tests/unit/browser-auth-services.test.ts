@@ -63,14 +63,9 @@ const { PasswordResetService } = requireFromRoot(
   path.join(buildRoot, 'services/PasswordResetService.js'),
 ) as {
   PasswordResetService: {
-    requestChallenge: () => Promise<{
-      challengeId: string;
-      challengePrompt: string;
-    }>;
     requestPasswordReset: (
       email: string,
-      challengeId: string,
-      challengeAnswer: string,
+      recaptchaToken: string,
     ) => Promise<void>;
     resetPassword: (
       token: string,
@@ -92,18 +87,12 @@ const { AuthService } = requireFromRoot(
   };
 };
 
-type ChallengePayload = {
-  challengeId: string;
-  challengePrompt: string;
-};
-
 type RegistrationPayload = {
   email: string;
   nickname: string;
   password: string;
   confirm_password: string;
-  challenge_id: string;
-  challenge_answer: string;
+  recaptcha_token: string;
 };
 
 type ActivationPayload = {
@@ -127,7 +116,6 @@ function loadBuildService<T>(
 }
 
 const RegistrationService = loadBuildService<{
-  requestChallenge: () => Promise<ChallengePayload>;
   register: (payload: RegistrationPayload) => Promise<void>;
 }>(
   path.join(buildRoot, 'services/RegistrationService.js'),
@@ -248,25 +236,22 @@ type LoginControllerState = {
   isForgotMode: Ref<boolean>;
   isRegisterModeComputed: Ref<boolean>;
   forgotEmail: Ref<string>;
-  forgotChallengeId: Ref<string>;
-  forgotChallengePrompt: Ref<string>;
-  forgotChallengeAnswer: Ref<string>;
   forgotRequestError: Ref<string>;
   forgotRequestSuccess: Ref<boolean>;
   registerEmail: Ref<string>;
-  registerChallengeId: Ref<string>;
-  registerChallengePrompt: Ref<string>;
-  registerChallengeAnswer: Ref<string>;
+  registerNickname: Ref<string>;
+  registerPassword: Ref<string>;
+  registerConfirmPassword: Ref<string>;
   registerRequestError: Ref<string>;
   registerRequestSuccess: Ref<boolean>;
   submit: () => Promise<void>;
   openLoginMode: () => void;
   openForgotMode: () => void;
   openRegisterMode: () => void;
-  loadResetChallenge: () => Promise<void>;
   resetForgotChallenge: () => void;
-  loadRegisterChallenge: () => Promise<void>;
   resetRegisterChallenge: () => void;
+  requestResetLink: () => Promise<void>;
+  register: () => Promise<void>;
   googleAuthEnabled?: Ref<boolean>;
   googleAuthClientId?: Ref<string>;
 };
@@ -770,29 +755,25 @@ test('LoginService.loginWithGoogle propagates backend error without storing a to
   restore();
 });
 
-test('PasswordResetService.requestPasswordReset sends email and captcha payload', async () => {
+test('PasswordResetService.requestPasswordReset sends email and reCAPTCHA token', async () => {
   const { restore } = createWindowAndStorage();
   const fetch = setupFetchMock(() =>
     Promise.resolve(
       createMockResponse(200, {
         ok: true,
-        challenge_id: 'challenge-id',
-        challenge_prompt: 'Any?',
       }),
     ),
   );
 
   await PasswordResetService.requestPasswordReset(
     'alice@example.com',
-    'challenge-id',
-    'answer',
+    'recaptcha-token',
   );
 
   const request = fetch.state[0];
   const payload = JSON.parse(request.body ?? '{}');
   assert.equal(payload.email, 'alice@example.com');
-  assert.equal(payload.challenge_id, 'challenge-id');
-  assert.equal(payload.challenge_answer, 'answer');
+  assert.equal(payload.recaptcha_token, 'recaptcha-token');
 
   fetch.restore();
   restore();
@@ -823,7 +804,7 @@ test('PasswordResetService.resetPassword submits token, password, and confirmati
   restore();
 });
 
-test('ApiService does not send Authorization for unauthenticated reset/captcha endpoints', async () => {
+test('ApiService does not send Authorization for unauthenticated reset endpoints', async () => {
   const { set, clear, remove, restore } = createWindowAndStorage();
   const fetch = setupFetchMock(() =>
     Promise.resolve(createMockResponse(200, { ok: true })),
@@ -832,7 +813,6 @@ test('ApiService does not send Authorization for unauthenticated reset/captcha e
   set('auth_token', 'stored-token');
 
   const routes = [
-    '/api/password-reset/captcha',
     '/api/password-reset/request',
     '/api/password-reset/validate',
     '/api/password-reset',
@@ -861,7 +841,6 @@ test('ApiService does not send Authorization for registration and activation una
   set('auth_token', 'stored-token');
 
   const routes = [
-    '/api/register/captcha',
     '/api/register',
     '/api/account-activation/validate',
     '/api/account-activation',
@@ -881,40 +860,20 @@ test('ApiService does not send Authorization for registration and activation una
   remove('auth_token');
 });
 
-test('RegistrationService requests challenge and registration payload through unauthenticated endpoints', async () => {
+test('RegistrationService sends registration payload with reCAPTCHA token through unauthenticated endpoint', async () => {
   if (!RegistrationService) {
     assert.fail('RegistrationService is not available in browser bundle');
   }
 
   const { get, restore } = createWindowAndStorage();
-  const request = setupFetchMock(() =>
-    Promise.resolve(
-      createMockResponse(200, {
-        challenge_id: 'register-challenge-id',
-        challenge_prompt: 'What is your favorite color?',
-        ok: true,
-      }),
-    ),
-  );
-
-  const challenge = await RegistrationService.requestChallenge();
-  assert.equal(challenge.challengeId, 'register-challenge-id');
-  assert.equal(challenge.challengePrompt, 'What is your favorite color?');
-  assert.equal(
-    getHeader(request.state[request.state.length - 1], 'Authorization'),
-    null,
-  );
-
   const registrationPayload = {
     email: 'alice@example.com',
     nickname: 'Alice',
     password: 'password123',
     confirm_password: 'password123',
-    challenge_id: 'register-challenge-id',
-    challenge_answer: 'blue',
+    recaptcha_token: 'recaptcha-token',
   };
 
-  request.restore();
   const register = setupFetchMock(() =>
     Promise.resolve(
       createMockResponse(200, {
@@ -937,10 +896,9 @@ test('RegistrationService requests challenge and registration payload through un
     registerBody.confirm_password,
     registrationPayload.confirm_password,
   );
-  assert.equal(registerBody.challenge_id, registrationPayload.challenge_id);
   assert.equal(
-    registerBody.challenge_answer,
-    registrationPayload.challenge_answer,
+    registerBody.recaptcha_token,
+    registrationPayload.recaptcha_token,
   );
   assert.equal(
     getHeader(register.state[register.state.length - 1], 'Authorization'),
@@ -953,40 +911,22 @@ test('RegistrationService requests challenge and registration payload through un
   restore();
 });
 
-test('LoginController resets loaded registration captcha when registration fields change', async () => {
-  if (!RegistrationService) {
-    assert.fail('RegistrationService is not available in browser bundle');
-  }
-
+test('LoginController clears registration feedback when registration fields change', async () => {
   const { restore } = createWindowAndStorage();
-  const originalRequestChallenge = RegistrationService.requestChallenge;
-  RegistrationService.requestChallenge = async () => ({
-    challengeId: 'register-challenge-id',
-    challengePrompt: '1 + 1?',
-  });
 
   try {
     const state = createLoginControllerState();
 
     state.openRegisterMode();
-    await state.loadRegisterChallenge();
-
-    assert.equal(state.registerChallengeId.value, 'register-challenge-id');
-    assert.equal(state.registerChallengePrompt.value, '1 + 1?');
 
     state.registerRequestError.value = 'Passwords do not match';
     state.registerRequestSuccess.value = true;
-    state.registerChallengeAnswer.value = '2';
     state.registerEmail.value = 'updated@example.com';
     state.resetRegisterChallenge();
 
-    assert.equal(state.registerChallengeId.value, '');
-    assert.equal(state.registerChallengePrompt.value, '');
-    assert.equal(state.registerChallengeAnswer.value, '');
     assert.equal(state.registerRequestError.value, '');
     assert.equal(state.registerRequestSuccess.value, false);
   } finally {
-    RegistrationService.requestChallenge = originalRequestChallenge;
     restore();
   }
 });
@@ -1061,6 +1001,124 @@ test('LoginController exposes Google auth controls when app info reports client 
     globalThis.fetch = originalFetch;
     restore();
     fetch.restore();
+  }
+});
+
+test('LoginController executes reCAPTCHA before password reset request', async () => {
+  const { restore, setHref } = createWindowAndStorage();
+  const executeCalls: Array<{ siteKey: string; action: string }> = [];
+  ((globalThis as unknown as { window: unknown }).window as {
+    grecaptcha: {
+      ready: (callback: () => void) => void;
+      execute: (
+        siteKey: string,
+        options: { action: string },
+      ) => Promise<string>;
+    };
+  }).grecaptcha = {
+    ready: (callback: () => void) => callback(),
+    execute: async (siteKey, options) => {
+      executeCalls.push({ siteKey, action: options.action });
+      return 'reset-recaptcha-token';
+    },
+  };
+  const fetch = setupFetchMock(async (state) => {
+    if (state.url === '/api/app-info') {
+      return createMockResponse(200, {
+        version: 'test',
+        google_auth_enabled: false,
+        recaptcha_enabled: true,
+        recaptcha_site_key: 'site-key',
+      });
+    }
+    return createMockResponse(200, { ok: true });
+  });
+
+  try {
+    setHref('/login');
+    const state = createLoginControllerState();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    state.openForgotMode();
+    state.forgotEmail.value = 'alice@example.com';
+    await state.requestResetLink();
+
+    assert.deepEqual(executeCalls, [
+      { siteKey: 'site-key', action: 'password_reset_request' },
+    ]);
+    const request = fetch.state.find(
+      (entry) => entry.url === '/api/password-reset/request',
+    );
+    assert.ok(request);
+    const payload = JSON.parse(request.body ?? '{}') as Record<string, string>;
+    assert.equal(payload.email, 'alice@example.com');
+    assert.equal(payload.recaptcha_token, 'reset-recaptcha-token');
+    assert.equal(state.forgotRequestSuccess.value, true);
+  } finally {
+    fetch.restore();
+    restore();
+  }
+});
+
+test('LoginController executes reCAPTCHA before password registration', async () => {
+  const { restore, setHref, getHref } = createWindowAndStorage();
+  const executeCalls: Array<{ siteKey: string; action: string }> = [];
+  ((globalThis as unknown as { window: unknown }).window as {
+    grecaptcha: {
+      ready: (callback: () => void) => void;
+      execute: (
+        siteKey: string,
+        options: { action: string },
+      ) => Promise<string>;
+    };
+  }).grecaptcha = {
+    ready: (callback: () => void) => callback(),
+    execute: async (siteKey, options) => {
+      executeCalls.push({ siteKey, action: options.action });
+      return 'register-recaptcha-token';
+    },
+  };
+  const fetch = setupFetchMock(async (state) => {
+    if (state.url === '/api/app-info') {
+      return createMockResponse(200, {
+        version: 'test',
+        google_auth_enabled: false,
+        recaptcha_enabled: true,
+        recaptcha_site_key: 'site-key',
+      });
+    }
+    return createMockResponse(200, {
+      ok: true,
+      token: 'registered-token',
+      token_type: 'Bearer',
+      expires_in_seconds: 900,
+    });
+  });
+
+  try {
+    setHref('/register');
+    const state = createLoginControllerState();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    state.registerEmail.value = 'new@example.com';
+    state.registerNickname.value = 'New User';
+    state.registerPassword.value = 'long-enough-password';
+    state.registerConfirmPassword.value = 'long-enough-password';
+    await state.register();
+
+    assert.deepEqual(executeCalls, [
+      { siteKey: 'site-key', action: 'register' },
+    ]);
+    const request = fetch.state.find((entry) => entry.url === '/api/register');
+    assert.ok(request);
+    const payload = JSON.parse(request.body ?? '{}') as Record<string, string>;
+    assert.equal(payload.email, 'new@example.com');
+    assert.equal(payload.nickname, 'New User');
+    assert.equal(payload.recaptcha_token, 'register-recaptcha-token');
+    assert.equal(getHref(), '/overview');
+  } finally {
+    fetch.restore();
+    restore();
   }
 });
 
@@ -1449,36 +1507,21 @@ test('AppController updates the path when switching top-level views', () => {
   }
 });
 
-test('LoginController resets loaded password reset captcha when email changes', async () => {
-  const originalRequestChallenge = PasswordResetService.requestChallenge;
-  PasswordResetService.requestChallenge = async () => ({
-    challengeId: 'reset-challenge-id',
-    challengePrompt: '2 + 2?',
-  });
-
+test('LoginController clears password reset feedback when email changes', async () => {
   const { restore } = createWindowAndStorage();
   try {
     const state = createLoginControllerState();
 
     state.openForgotMode();
-    await state.loadResetChallenge();
-
-    assert.equal(state.forgotChallengeId.value, 'reset-challenge-id');
-    assert.equal(state.forgotChallengePrompt.value, '2 + 2?');
 
     state.forgotRequestError.value = 'Invalid captcha';
     state.forgotRequestSuccess.value = true;
-    state.forgotChallengeAnswer.value = '4';
     state.forgotEmail.value = 'updated@example.com';
     state.resetForgotChallenge();
 
-    assert.equal(state.forgotChallengeId.value, '');
-    assert.equal(state.forgotChallengePrompt.value, '');
-    assert.equal(state.forgotChallengeAnswer.value, '');
     assert.equal(state.forgotRequestError.value, '');
     assert.equal(state.forgotRequestSuccess.value, false);
   } finally {
-    PasswordResetService.requestChallenge = originalRequestChallenge;
     restore();
   }
 });

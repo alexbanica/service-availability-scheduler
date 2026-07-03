@@ -7,7 +7,7 @@
 @ownerId = replace-with-owner-uuid
 @resetToken = replace-with-reset-token
 @activationToken = replace-with-activation-token
-@captchaId = replace-with-captcha-id
+@recaptchaToken = replace-with-recaptcha-v3-token
 
 ### Login
 # @name login
@@ -19,7 +19,7 @@ Content-Type: application/json
   "password": "replace-with-password"
 }
 
-### Password reset captcha
+### Password reset captcha legacy endpoint
 POST {{host}}/api/password-reset/captcha
 
 ### Request password reset
@@ -28,8 +28,7 @@ Content-Type: application/json
 
 {
   "email": "admin@example.com",
-  "challenge_id": "{{captchaId}}",
-  "challenge_answer": "123"
+  "recaptcha_token": "{{recaptchaToken}}"
 }
 
 ### Validate password reset token
@@ -50,7 +49,7 @@ Content-Type: application/json
   "confirm_password": "new-password"
 }
 
-### Registration captcha
+### Registration captcha legacy endpoint
 POST {{host}}/api/register/captcha
 
 ### Register account
@@ -62,8 +61,7 @@ Content-Type: application/json
   "nickname": "new-user",
   "password": "new-password",
   "confirm_password": "new-password",
-  "challenge_id": "{{captchaId}}",
-  "challenge_answer": "123"
+  "recaptcha_token": "{{recaptchaToken}}"
 }
 
 ### Register invited account
@@ -75,8 +73,7 @@ Content-Type: application/json
   "nickname": "invited-user",
   "password": "new-password",
   "confirm_password": "new-password",
-  "challenge_id": "{{captchaId}}",
-  "challenge_answer": "123",
+  "recaptcha_token": "{{recaptchaToken}}",
   "invitation_code": "{{workspaceInvitationCode}}"
 }
 

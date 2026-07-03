@@ -36,10 +36,15 @@ export class PageController {
       const googleAuthClientId = (
         process.env.GOOGLE_AUTH_CLIENT_ID || ''
       ).trim();
+      const recaptchaSiteKey = (
+        process.env.GOOGLE_RECAPTCHA_SITE_KEY || ''
+      ).trim();
       res.json({
         version: process.env.APP_VERSION || 'development',
         google_auth_enabled: Boolean(googleAuthClientId),
         google_auth_client_id: googleAuthClientId || undefined,
+        recaptcha_enabled: Boolean(recaptchaSiteKey),
+        recaptcha_site_key: recaptchaSiteKey || undefined,
       });
     });
 

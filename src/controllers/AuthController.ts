@@ -4,6 +4,7 @@ import { UserService } from '../services/UserService';
 import { JwtAuthService } from '../services/JwtAuthService';
 import { PasswordService } from '../services/PasswordService';
 import { CaptchaService } from '../services/CaptchaService';
+import type { RecaptchaAction } from '../services/CaptchaService';
 import { PasswordResetTokenService } from '../services/PasswordResetTokenService';
 import { AccountActivationTokenService } from '../services/AccountActivationTokenService';
 import { WorkspaceService } from '../services/WorkspaceService';
@@ -71,6 +72,35 @@ export class AuthController {
 
   private googleAuthClientId(): string {
     return (process.env.GOOGLE_AUTH_CLIENT_ID || '').trim();
+  }
+
+  private async verifyCaptcha(
+    req: Request,
+    res: Response,
+    expectedAction: RecaptchaAction,
+  ): Promise<boolean> {
+    const recaptchaToken = String(
+      req.body.recaptcha_token || req.body.recaptchaToken || '',
+    ).trim();
+    if (!recaptchaToken) {
+      res.status(400).json({ error: 'Captcha required' });
+      return false;
+    }
+
+    const result = await this.captchaService.verifyRecaptchaToken(
+      recaptchaToken,
+      expectedAction,
+    );
+    if (result.status === 'unavailable') {
+      res.status(503).json({ error: 'Captcha service unavailable' });
+      return false;
+    }
+    if (result.status !== 'valid') {
+      res.status(400).json({ error: 'Invalid captcha' });
+      return false;
+    }
+
+    return true;
   }
 
   private readCookie(req: Request, name: string): string {
@@ -519,12 +549,7 @@ export class AuthController {
       '/api/password-reset/captcha',
       this.ipRateLimit(this.captchaIpRateLimiter, 'password-reset-captcha-ip'),
       async (_req: Request, res: Response) => {
-        const challenge = await this.captchaService.createChallenge();
-        res.json({
-          ok: true,
-          challenge_id: challenge.challengeId,
-          challenge_prompt: challenge.prompt,
-        });
+        res.status(410).json({ error: 'Captcha challenge endpoint removed' });
       },
     );
 
@@ -547,23 +572,12 @@ export class AuthController {
           return;
         }
 
-        const challengeId = String(
-          req.body.challenge_id || req.body.challengeId || '',
-        );
-        const challengeAnswer = String(
-          req.body.challenge_answer || req.body.challengeAnswer || '',
-        );
-        if (!challengeId || !challengeAnswer) {
-          res.status(400).json({ error: 'Captcha required' });
-          return;
-        }
-
-        const validCaptcha = await this.captchaService.validateChallenge(
-          challengeId,
-          challengeAnswer,
+        const validCaptcha = await this.verifyCaptcha(
+          req,
+          res,
+          'password_reset_request',
         );
         if (!validCaptcha) {
-          res.status(400).json({ error: 'Invalid captcha' });
           return;
         }
 
@@ -680,12 +694,7 @@ export class AuthController {
       '/api/register/captcha',
       this.ipRateLimit(this.captchaIpRateLimiter, 'register-captcha-ip'),
       async (_req: Request, res: Response) => {
-        const challenge = await this.captchaService.createChallenge();
-        res.json({
-          ok: true,
-          challenge_id: challenge.challengeId,
-          challenge_prompt: challenge.prompt,
-        });
+        res.status(410).json({ error: 'Captcha challenge endpoint removed' });
       },
     );
 
@@ -700,12 +709,6 @@ export class AuthController {
         const nickname = String(req.body.nickname || '').trim();
         const password = String(req.body.password || '');
         const confirmPassword = String(req.body.confirm_password || '');
-        const challengeId = String(
-          req.body.challenge_id || req.body.challengeId || '',
-        );
-        const challengeAnswer = String(
-          req.body.challenge_answer || req.body.challengeAnswer || '',
-        );
         const invitationCode = String(
           req.body.invitation_code || req.body.invitationCode || '',
         );
@@ -737,17 +740,8 @@ export class AuthController {
           return;
         }
 
-        if (!challengeId || !challengeAnswer) {
-          res.status(400).json({ error: 'Captcha required' });
-          return;
-        }
-
-        const validCaptcha = await this.captchaService.validateChallenge(
-          challengeId,
-          challengeAnswer,
-        );
+        const validCaptcha = await this.verifyCaptcha(req, res, 'register');
         if (!validCaptcha) {
-          res.status(400).json({ error: 'Invalid captcha' });
           return;
         }
 
