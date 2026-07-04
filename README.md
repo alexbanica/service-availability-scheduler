@@ -83,7 +83,9 @@ Copy the repository template source files into OneSignal manually:
 - `templates/workspace-invitation.html`
 
 Each file lists the subject, preheader, required `custom_data` keys, HTML body,
-and plain-text fallback. The app does not create or update OneSignal templates.
+and plain-text fallback. Template placeholders must use OneSignal Liquid syntax
+such as `{{ message.custom_data.reset_url }}`. The app does not create or
+update OneSignal templates.
 Email jobs retry up to three total attempts. Failed attempts are logged with
 email kind, template ID, user ID when available, recipient, attempt number,
 payload key names, and non-secret failure details. Raw reset, activation, and

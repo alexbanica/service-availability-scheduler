@@ -132,6 +132,10 @@ export class AuthController {
       .toLowerCase();
   }
 
+  private isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
   private isAuthoritativeGoogleEmail(payload: GoogleIdTokenPayload): boolean {
     const email = this.normalizeEmail(payload.email);
     if (!payload.email_verified || !email) {
@@ -720,6 +724,11 @@ export class AuthController {
           return;
         }
 
+        if (!this.isValidEmail(email)) {
+          res.status(400).json({ error: 'Invalid email' });
+          return;
+        }
+
         if (!nickname) {
           res.status(400).json({ error: 'Nickname required' });
           return;
@@ -732,6 +741,11 @@ export class AuthController {
 
         if (!this.passwordService.validatePassword(password)) {
           res.status(400).json({ error: 'Password is too short' });
+          return;
+        }
+
+        if (!confirmPassword) {
+          res.status(400).json({ error: 'Password confirmation required' });
           return;
         }
 

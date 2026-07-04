@@ -16,7 +16,10 @@ function readTemplate(fileName: string): string {
 }
 
 function placeholderRegex(placeholder: string): RegExp {
-  return new RegExp(`\\{\\{\\s*${placeholder}\\s*\\}\\}`, 'g');
+  return new RegExp(
+    `\\{\\{\\s*message\\.custom_data\\.${placeholder}\\s*\\}\\}`,
+    'g',
+  );
 }
 
 function assertTemplateContainsPlaceholders(

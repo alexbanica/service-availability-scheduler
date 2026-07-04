@@ -1016,6 +1016,27 @@ test('POST /api/register validates required fields and captcha', async () => {
     'Email required',
   );
 
+  const invalidEmail = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'not-an-email',
+        nickname: 'Alice',
+        password: 'long-enough-password',
+        confirm_password: 'long-enough-password',
+        recaptcha_token: 'register-token',
+      },
+    }),
+  );
+  assert.equal(invalidEmail.statusCode, 400);
+  assert.equal(
+    (invalidEmail.body as { error?: string }).error,
+    'Invalid email',
+  );
+
   const missingNickname = await runHandlers(
     route,
     createRequest({
@@ -1055,6 +1076,26 @@ test('POST /api/register validates required fields and captcha', async () => {
   assert.equal(
     (shortPassword.body as { error?: string }).error,
     'Password is too short',
+  );
+
+  const missingConfirmation = await runHandlers(
+    route,
+    createRequest({
+      app,
+      method: 'POST',
+      path: '/api/register',
+      body: {
+        email: 'alice@example.com',
+        nickname: 'Alice',
+        password: 'long-enough-password',
+        recaptcha_token: 'register-token',
+      },
+    }),
+  );
+  assert.equal(missingConfirmation.statusCode, 400);
+  assert.equal(
+    (missingConfirmation.body as { error?: string }).error,
+    'Password confirmation required',
   );
 
   const mismatchedPassword = await runHandlers(

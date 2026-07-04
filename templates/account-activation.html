@@ -17,12 +17,12 @@ Preheader: Confirm your account to finish setup.
           </tr>
           <tr>
             <td style="padding:32px;">
-              <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#1e1b4b;">Hello {{nickname}},</p>
-              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#312e81;">Your account for <strong>{{recipient_email}}</strong> needs activation before protected actions are available.</p>
+              <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#1e1b4b;">Hello {{message.custom_data.nickname}},</p>
+              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#312e81;">Your account for <strong>{{message.custom_data.recipient_email}}</strong> needs activation before protected actions are available.</p>
               <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 24px;">
                 <tr>
                   <td style="border-radius:6px;background:#10b981;">
-                    <a href="{{activation_url}}" style="display:inline-block;padding:13px 20px;font-size:15px;line-height:1.2;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">Activate account</a>
+                    <a href="{{message.custom_data.activation_url}}" style="display:inline-block;padding:13px 20px;font-size:15px;line-height:1.2;font-weight:700;color:#ffffff;text-decoration:none;border-radius:6px;">Activate account</a>
                   </td>
                 </tr>
               </table>
@@ -31,7 +31,7 @@ Preheader: Confirm your account to finish setup.
               </div>
               <p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#475569;">If the button does not work, copy and paste this URL into your browser:</p>
               <p style="margin:0;font-size:13px;line-height:1.5;word-break:break-all;color:#3730a3;">
-                <a href="{{activation_url}}" style="color:#3730a3;text-decoration:underline;">{{activation_url}}</a>
+                <a href="{{message.custom_data.activation_url}}" style="color:#3730a3;text-decoration:underline;">{{message.custom_data.activation_url}}</a>
               </p>
             </td>
           </tr>

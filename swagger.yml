@@ -1014,8 +1014,10 @@ components:
         email:
           type: string
           format: email
+          description: Must be a syntactically valid email address after trimming and lowercasing.
         nickname:
           type: string
+          description: Required after trimming.
         password:
           type: string
           format: password
@@ -1024,6 +1026,7 @@ components:
           type: string
           format: password
           minLength: 8
+          description: Required and must exactly match password.
         recaptcha_token:
           type: string
           description: Google reCAPTCHA v3 token executed with action register.
