@@ -8,6 +8,7 @@ import type { RecaptchaAction } from '../services/CaptchaService';
 import { PasswordResetTokenService } from '../services/PasswordResetTokenService';
 import { AccountActivationTokenService } from '../services/AccountActivationTokenService';
 import { WorkspaceService } from '../services/WorkspaceService';
+import { TransactionalEmailService } from '../services/TransactionalEmailService';
 import { RateLimiter } from '../helpers/RateLimiter';
 import { assignJwtAuthService, requireAuth } from './AuthMiddleware';
 import {
@@ -30,6 +31,14 @@ type AuthenticatedRequest = Request & {
   };
 };
 
+type AuthenticatedUserResult = {
+  userId: string;
+  email: string;
+  nickname: string;
+  activated: boolean;
+  activationToken?: string;
+};
+
 export class AuthController {
   private readonly captchaIpRateLimiter = new RateLimiter(60 * 1000, 20);
   private readonly authIpRateLimiter = new RateLimiter(60 * 1000, 30);
@@ -48,6 +57,7 @@ export class AuthController {
     private readonly db?: Pool,
     private readonly workspaceService?: WorkspaceService,
     private readonly googleVerifier?: GoogleAuthVerifierInterface,
+    private readonly transactionalEmailService?: TransactionalEmailService,
   ) {
     this.activationLogger = activationLogger ?? this.resetLogger;
   }
@@ -120,6 +130,10 @@ export class AuthController {
     return String(email || '')
       .trim()
       .toLowerCase();
+  }
+
+  private isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
   private isAuthoritativeGoogleEmail(payload: GoogleIdTokenPayload): boolean {
@@ -236,12 +250,7 @@ export class AuthController {
     nickname: string,
     authoritative: boolean,
     invitationCode: string,
-  ): Promise<{
-    userId: string;
-    email: string;
-    nickname: string;
-    activated: boolean;
-  }> {
+  ): Promise<AuthenticatedUserResult> {
     if (!this.db) {
       return this.handleGoogleAuthWithoutTransaction(
         googleSubject,
@@ -279,12 +288,7 @@ export class AuthController {
     nickname: string,
     authoritative: boolean,
     invitationCode: string,
-  ): Promise<{
-    userId: string;
-    email: string;
-    nickname: string;
-    activated: boolean;
-  }> {
+  ): Promise<AuthenticatedUserResult> {
     return this.resolveGoogleUser(
       googleSubject,
       email,
@@ -301,12 +305,7 @@ export class AuthController {
     authoritative: boolean,
     invitationCode: string,
     connection?: MysqlConnection,
-  ): Promise<{
-    userId: string;
-    email: string;
-    nickname: string;
-    activated: boolean;
-  }> {
+  ): Promise<AuthenticatedUserResult> {
     const linkedUser = await this.userService.findByGoogleSubject(
       googleSubject,
       connection,
@@ -348,21 +347,17 @@ export class AuthController {
       googleSubject,
     );
 
+    let activationToken: string | undefined;
     if (authoritative) {
       await this.userService.grantPlatformAdminRole(user.userId, connection);
     } else {
-      const accountActivationTokenService =
-        this.accountActivationTokenService;
+      const accountActivationTokenService = this.accountActivationTokenService;
       if (!accountActivationTokenService) {
         throw new Error('Account activation token service unavailable');
       }
-      const activationToken =
-        await accountActivationTokenService.createTokenForUser(
-          user.userId,
-          connection,
-        );
-      this.activationLogger.info(
-        `Activation requested for ${user.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
+      activationToken = await accountActivationTokenService.createTokenForUser(
+        user.userId,
+        connection,
       );
     }
 
@@ -380,6 +375,7 @@ export class AuthController {
       email: user.email,
       nickname: user.nickname,
       activated: authoritative,
+      activationToken,
     };
   }
 
@@ -529,6 +525,14 @@ export class AuthController {
                 invitationCode,
               );
 
+          if (authenticatedUser.activationToken) {
+            await this.transactionalEmailService?.queueAccountActivationEmail({
+              token: authenticatedUser.activationToken,
+              recipientEmail: authenticatedUser.email,
+              userId: authenticatedUser.userId,
+              nickname: authenticatedUser.nickname,
+            });
+          }
           await this.sendAuthenticatedResponse(res, authenticatedUser);
         } catch (error) {
           const message = (error as Error).message;
@@ -591,9 +595,11 @@ export class AuthController {
           user.userId,
         );
 
-        this.resetLogger.info(
-          `Password reset requested for ${user.email}, use this TODO link: /reset-password/${token} - TODO replace with email delivery`,
-        );
+        await this.transactionalEmailService?.queuePasswordResetEmail({
+          token,
+          recipientEmail: user.email,
+          userId: user.userId,
+        });
 
         res.json({ ok: true });
       },
@@ -718,6 +724,11 @@ export class AuthController {
           return;
         }
 
+        if (!this.isValidEmail(email)) {
+          res.status(400).json({ error: 'Invalid email' });
+          return;
+        }
+
         if (!nickname) {
           res.status(400).json({ error: 'Nickname required' });
           return;
@@ -730,6 +741,11 @@ export class AuthController {
 
         if (!this.passwordService.validatePassword(password)) {
           res.status(400).json({ error: 'Password is too short' });
+          return;
+        }
+
+        if (!confirmPassword) {
+          res.status(400).json({ error: 'Password confirmation required' });
           return;
         }
 
@@ -782,9 +798,12 @@ export class AuthController {
           );
           const activationToken =
             await accountActivationTokenService.createTokenForUser(user.userId);
-          this.activationLogger.info(
-            `Activation requested for ${user.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
-          );
+          await this.transactionalEmailService?.queueAccountActivationEmail({
+            token: activationToken,
+            recipientEmail: user.email,
+            userId: user.userId,
+            nickname: user.nickname,
+          });
           await this.sendAuthenticatedResponse(res, {
             userId: user.userId,
             email: user.email,
@@ -843,9 +862,12 @@ export class AuthController {
           connection.release();
         }
 
-        this.activationLogger.info(
-          `Activation requested for ${createdUser.email}, use this TODO link: /activate-account/${activationToken} - TODO replace with email delivery`,
-        );
+        await this.transactionalEmailService?.queueAccountActivationEmail({
+          token: activationToken,
+          recipientEmail: createdUser.email,
+          userId: createdUser.userId,
+          nickname: createdUser.nickname,
+        });
         await this.sendAuthenticatedResponse(res, {
           userId: createdUser.userId,
           email: createdUser.email,

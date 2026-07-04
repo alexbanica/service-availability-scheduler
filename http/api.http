@@ -8,6 +8,7 @@
 @resetToken = replace-with-reset-token
 @activationToken = replace-with-activation-token
 @recaptchaToken = replace-with-recaptcha-v3-token
+@emailJobId = replace-with-email-job-uuid
 
 ### Login
 # @name login
@@ -32,6 +33,7 @@ Content-Type: application/json
 }
 
 ### Validate password reset token
+# Reset tokens come from delivered OneSignal email, or local disabled-mode logs, not API responses.
 POST {{host}}/api/password-reset/validate
 Content-Type: application/json
 
@@ -92,6 +94,7 @@ Cookie: g_csrf_token={{googleCsrfToken}}
 }
 
 ### Validate account activation token
+# Activation tokens come from delivered OneSignal email, or local disabled-mode logs, not API responses.
 POST {{host}}/api/account-activation/validate
 Content-Type: application/json
 
@@ -271,6 +274,7 @@ Content-Type: application/json
 }
 
 ### Validate workspace invitation link
+# Invitation codes come from delivered OneSignal email, or local disabled-mode logs, not API responses.
 GET {{host}}/api/workspace-invitations/{{workspaceInvitationCode}}/validate
 
 ### Accept existing-user workspace invitation
@@ -289,6 +293,16 @@ Content-Type: application/json
 ### Remove pending workspace invitation
 DELETE {{host}}/api/workspaces/{{workspaceId}}/invitations/{{workspaceInvitationId}}
 Authorization: Bearer {{token}}
+
+### Requeue failed transactional email jobs
+POST {{host}}/api/email-jobs/failed/retry
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email_kind": "password_reset",
+  "job_ids": ["{{emailJobId}}"]
+}
 
 ### List workspace users for administration
 GET {{host}}/api/workspaces/{{workspaceId}}/users

@@ -87,6 +87,7 @@ export type WorkspaceInvitationRow = {
 export type WorkspaceInvitationIssueResult = WorkspaceInvitation & {
   invitationCode: string;
   invitationCodeHash: string;
+  workspaceName: string;
 };
 
 export class WorkspaceService {
@@ -654,6 +655,10 @@ export class WorkspaceService {
     }
 
     await this.assertWorkspaceResourceAdmin(workspaceId, userId);
+    const workspace = await this.workspaceRepository.findById(workspaceId);
+    if (!workspace) {
+      throw new Error('Workspace not found');
+    }
 
     const invitee = await this.userRepository.findByEmail(trimmedEmail);
 
@@ -701,6 +706,7 @@ export class WorkspaceService {
         ...invitation,
         invitationCode,
         invitationCodeHash,
+        workspaceName: workspace.name,
       };
     } catch (error) {
       const err = error as { code?: string };

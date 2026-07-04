@@ -1,11 +1,12 @@
 # Service Availability Scheduler
 
-Minimal Node.js app to claim services per environment with password-based login and
-timed reservations.
+Minimal Node.js app to claim services per environment with password-based or
+Google login, workspace administration, and timed reservations.
 
-Authentication uses email + password + bearer JWT tokens. Clients call
-`POST /api/login` to receive a signed token, then send that token with protected
-API calls using the `Authorization: Bearer <token>` header.
+Authentication uses application bearer JWT tokens. Password login calls
+`POST /api/login`; Google login calls `POST /api/google-auth` when configured.
+Clients send the returned token with protected API calls using the
+`Authorization: Bearer <token>` header.
 
 ## Setup
 
@@ -53,6 +54,54 @@ Open `http://localhost:3000`.
 | `GOOGLE_RECAPTCHA_SITE_KEY` | No | Disabled | Public Google reCAPTCHA v3 site key used by the login/register page. |
 | `GOOGLE_RECAPTCHA_SECRET_KEY` | No | Disabled | Private Google reCAPTCHA v3 secret key used only by the server for siteverify validation. Keep it out of source control. |
 | `GOOGLE_RECAPTCHA_MIN_SCORE` | No | `0.5` | Minimum accepted reCAPTCHA v3 score for password reset requests and password registration. |
+| `ONESIGNAL_APP_ID` | No | Disabled | OneSignal app ID used for transactional email delivery. Omit or leave blank for local development-disabled mode. |
+| `ONESIGNAL_REST_API_KEY` | When enabled | None | OneSignal REST API key used only by the server. Keep it out of source control. |
+| `APP_PUBLIC_BASE_URL` | When enabled | `http://localhost:<PORT>` when disabled | Public app origin/base URL used to build email links, for example `https://app.example.com`. Trailing slashes are ignored. Do not include query strings or fragments. |
+| `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID` | When enabled | None | OneSignal template ID for password reset email. |
+| `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID` | When enabled | None | OneSignal template ID for account activation email. |
+| `ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID` | When enabled | None | OneSignal template ID for workspace invitation email. |
+| `ONESIGNAL_EMAIL_FROM_NAME` | No | OneSignal default | Optional sender display-name override. |
+| `ONESIGNAL_EMAIL_FROM_ADDRESS` | No | OneSignal default | Optional sender address override. |
+| `ONESIGNAL_EMAIL_REPLY_TO_ADDRESS` | No | OneSignal default | Optional reply-to address override. |
+
+### OneSignal transactional email setup
+
+Password reset, account activation, and workspace invitation links are queued as
+durable email jobs and sent asynchronously through OneSignal templates. Startup
+fails when `ONESIGNAL_APP_ID` is configured but any required OneSignal setting
+is missing.
+
+When `ONESIGNAL_APP_ID` is omitted or blank, OneSignal delivery is disabled for
+local development. In that mode the app does not create email jobs or call
+OneSignal. Instead, it logs the generated transactional email request, including
+raw reset, activation, or invitation URLs, so local testers can copy the link.
+Do not use disabled mode for production.
+
+Copy the repository template source files into OneSignal manually:
+
+- `templates/password-reset.html`
+- `templates/account-activation.html`
+- `templates/workspace-invitation.html`
+
+Each file lists the subject, preheader, required `custom_data` keys, HTML body,
+and plain-text fallback. Template placeholders must use OneSignal Liquid syntax
+such as `{{ message.custom_data.reset_url }}`. The app does not create or
+update OneSignal templates.
+Email jobs retry up to three total attempts. Failed attempts are logged with
+email kind, template ID, user ID when available, recipient, attempt number,
+payload key names, and non-secret failure details. Raw reset, activation, and
+invitation URLs are not logged when OneSignal is enabled.
+
+Platform admins can requeue permanently failed jobs without sending email
+synchronously:
+
+```http
+POST /api/email-jobs/failed/retry
+Authorization: Bearer <platform-admin-token>
+Content-Type: application/json
+
+{ "email_kind": "password_reset", "job_ids": ["<email-job-id>"] }
+```
 
 ### Google Cloud OAuth client setup
 
@@ -123,6 +172,7 @@ Edit `config/app.yml` for app timing behavior.
 | `auto_refresh_seconds` | `60` | seconds | Browser service-availability auto-refresh interval returned by `/api/services`. Values below `1` second are clamped by the browser scheduler. |
 | `jwt_expires_in_seconds` | `3600` | seconds | JWT access token lifetime in seconds. |
 | `password_reset_token_expires_in_seconds` | `3600` | seconds | Password reset token lifetime in seconds. |
+| `workspace_invitation_expires_in_seconds` | `86400` | seconds | Workspace invitation lifetime in seconds. |
 | `run_migrations_on_startup` | `true` | boolean | Controls whether startup runs pending SQL migrations from `config/migrations`. |
 
 `JWT_EXPIRES_IN_SECONDS` (environment variable) takes precedence over
@@ -132,12 +182,39 @@ Edit `config/app.yml` for app timing behavior.
 precedence over `password_reset_token_expires_in_seconds` in
 `config/app.yml`.
 
+`WORKSPACE_INVITATION_EXPIRES_IN_SECONDS` (environment variable) takes
+precedence over `workspace_invitation_expires_in_seconds` in `config/app.yml`.
+
 `RUN_MIGRATIONS_ON_STARTUP` (environment variable) takes precedence over
 `run_migrations_on_startup` in `config/app.yml`.
 
 Workspace admins define workspace owners, environments, and services from the
 admin UI. Service creation selects existing workspace-scoped owners and
 environments; it does not create them inline.
+
+## Workspace Administration
+
+Workspace memberships are role-scoped per workspace:
+
+- `admin`: manage users, invitations, owners, environments, and services.
+- `manager`: manage non-user resources and pending invitations.
+- `member`: inspect workspace details and use reservation workflows after
+  activation.
+
+The Administration view is visible to authenticated users. Workspace Management
+and Service Management list the current user's workspaces for inspection, while
+mutation controls are shown only when the selected workspace role permits them.
+User Management remains limited to admin workspaces for accepted user removal
+and role changes.
+
+Invitations are email-address based, expire after the configured invitation
+lifetime, and always grant accepted invitees the `member` role. Invitation
+links use `/workspace-invitations/<code>` and preserve login or registration
+handoff context. Raw invitation codes are never returned by API responses.
+
+Resource administrators can remove pending invitations. Owner and environment
+deletion is an approved spec: deletion must be confirmed, must be scoped to the
+workspace, and must detach affected services without deleting those services.
 
 ## Authentication API Contract
 
@@ -148,25 +225,30 @@ environments; it does not create them inline.
   - `token_type: "Bearer"`
   - `expires_in_seconds`
   - `user.activated`.
-- `POST /api/google-auth`: accepts `{ "credential": "...", "g_csrf_token": "...", "invitation_code": "..." }` when `GOOGLE_AUTH_CLIENT_ID` is configured. The body CSRF token must match the `g_csrf_token` cookie set by Google Identity Services. It creates or links a local user, applies new-user invitation codes when the verified Google email matches, and returns the same application bearer token shape as password login.
+- `POST /api/google-auth`: accepts `{ "credential": "...", "g_csrf_token": "...", "invitation_code": "..." }` when `GOOGLE_AUTH_CLIENT_ID` is configured. The body CSRF token must match the `g_csrf_token` cookie set by Google Identity Services. It creates or links a local user, applies new-user invitation codes when the verified Google email matches, and returns the same application bearer token shape as password login. Google ID tokens are never used as application bearer tokens.
 - `POST /api/password-reset/captcha`: legacy compatibility endpoint returning
   `410` because local math CAPTCHA challenges are no longer created.
 - `POST /api/password-reset/request`: accepts `{ "email": "...", "recaptcha_token": "..." }`, verifies Google reCAPTCHA v3 action `password_reset_request`, and creates or replaces an
   active reset token for existing users. Response is generic and does not expose
-  whether an account exists.
+  whether an account exists. Known-account reset links are queued for
+  asynchronous OneSignal email delivery when enabled, or logged only in
+  development-disabled mode.
 - `POST /api/password-reset/validate`: validates `{ "token" }` and returns `ok: true` for active tokens.
 - `POST /api/password-reset`: accepts `{ "token": "...", "password": "...", "confirm_password": "..." }`, requires matching password and confirmation, sets the user password, and returns generic success. Responses are generic and do not return a token.
 - `POST /api/register/captcha`: legacy compatibility endpoint returning `410`
   because local math CAPTCHA challenges are no longer created.
 - `POST /api/register`: accepts registration values, validates required fields
-  and `recaptcha_token` with Google reCAPTCHA v3 action `register`, creates a
-  non-activated user, creates a one-time activation token, and returns the
-  authenticated bearer token payload with `activated: false`.
-  The activation link is currently logged on the server with a TODO for email delivery.
+  before CAPTCHA or persistence work, validates `recaptcha_token` with Google
+  reCAPTCHA v3 action `register`, creates a non-activated user, creates a
+  one-time activation token, and returns the authenticated bearer token payload
+  with `activated: false`.
+  The activation link is queued for asynchronous OneSignal email delivery when
+  enabled, or logged only in development-disabled mode.
 - `POST /api/account-activation/validate`: validates `{ "token": "..." }` and returns
   `ok: true` for a valid activation token.
-- `POST /api/account-activation`: accepts `{ "token": "..." }`, activates the user,
-  grants `platform_admin`, and returns `{ ok: true }`.
+- `POST /api/account-activation`: accepts `{ "token": "..." }`, activates the
+  user, grants `platform_admin`, and returns the standard authenticated bearer
+  token payload for the activated user.
 - `POST /api/renew`: protected endpoint that issues a replacement token and
   returns the same response shape.
 - `POST /api/logout`: protected endpoint maintained for compatibility; server-side
@@ -193,9 +275,10 @@ the token and redirects to `/login`.
 Browser pages load Vue from the installed pinned `vue` package through the local
 `/vendor/vue/vue.global.prod.js` route rather than from an external CDN.
 
-Reset URLs are currently logged temporarily for existing users and include a TODO
-note to replace this with email delivery. Reset URLs are never returned in API
-responses.
+Reset, activation, and invitation URLs are queued for asynchronous OneSignal
+email delivery when OneSignal is enabled. Raw token and invitation URLs are
+never returned in API responses. They are logged only in local
+development-disabled mode when `ONESIGNAL_APP_ID` is omitted or blank.
 
 ### Migrations
 

@@ -19,7 +19,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Dependency direction is inward: controllers and infrastructure adapters may depend on service/domain contracts; entities, DTOs, and core services must stay independent of Express, MySQL, browser DOM, and filesystem/runtime details.
 - `src/service-availability-scheduler.ts` is the server entrypoint and composition root.
 - `src/controllers`: Express controllers and middleware for auth, pages, service availability, reservations, and workspace administration.
-- `src/services`: application use cases for config loading, service availability, user login, password hashing, CAPTCHA challenges, reset and activation tokens, workspace administration, and reservation lifecycle.
+- `src/services`: application use cases for config loading, service availability, user login, password hashing, Google reCAPTCHA verification, reset and activation tokens, workspace administration, and reservation lifecycle.
 - `src/repositories`: MySQL persistence adapters; `AbstractMysqlRepository` centralizes shared MySQL behavior.
 - `src/entities`: domain entities such as users, reservations, workspaces, owners, environments, and service definitions.
 - `src/dtos`: application and API data transfer objects.
@@ -35,24 +35,33 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   conflict cases, separate from the single-admin invariant.
 
 ## Authentication And Account State
-- Authentication uses password-based JWT bearer tokens stored by the browser
+- Authentication uses password-based and Google Identity Services login flows
+  that both issue the same application JWT bearer tokens stored by the browser
   through the existing auth token storage helpers.
+- `GOOGLE_AUTH_CLIENT_ID` enables Google login and registration. Google ID
+  tokens are verified server-side, linked by Google subject, and must never be
+  accepted as bearer tokens for protected application APIs.
 - Login responses, registration responses, account activation responses,
   `/api/me`, and token renewal must keep user identity fields aligned,
   including activation state.
 - Passwords require a minimum of 8 characters. Do not add extra password
   complexity unless an approved spec explicitly requires it.
-- Website registration accepts email, nickname, password, password confirmation,
-  and a captcha challenge answer. Email is normalized by trimming and
-  lowercasing; nickname is trimmed; password confirmation is required and must
-  match.
-- Captcha challenges are one-time, expiring challenges. Browser flows that edit
-  captcha-protected non-answer fields after loading a captcha should clear the
-  loaded challenge and require a fresh captcha.
+- Website password registration accepts email, nickname, password, password
+  confirmation, optional invitation context, and a Google reCAPTCHA v3 token.
+  Email is normalized by trimming and lowercasing; nickname is trimmed;
+  password confirmation is required and must match.
+- Registration request validation runs before reCAPTCHA and persistence work.
+  Browser registration validation must not execute reCAPTCHA when required
+  field validation fails.
+- Password reset requests and password registration use Google reCAPTCHA v3
+  tokens. The legacy local math CAPTCHA endpoints must not create new math
+  challenges and normal browser flows must not depend on them.
 - Registration creates a non-activated user, creates a single active activation
-  token, logs the activation URL server-side with a TODO for future email
-  delivery, and returns the normal authenticated session payload without
-  returning the activation token or URL.
+  token, queues an asynchronous OneSignal account-activation email job when
+  `ONESIGNAL_APP_ID` is configured, or logs the generated email request only in
+  development-disabled mode when `ONESIGNAL_APP_ID` is absent, and returns the
+  normal authenticated session payload without returning the activation token or
+  URL.
 - Activation tokens are stored hashed. Issuing a new activation token for a user
   invalidates prior active activation tokens for that user.
 - Activation links use `/activate-account/<token>`. Successful activation marks
@@ -61,8 +70,12 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Successful activation stores the returned bearer token in the browser and
   redirects to `/overview` after a 5-second countdown, with a visible manual
   dashboard button.
-- Reset and activation links are logged server-side until email delivery exists;
-  UI copy must not claim email delivery has happened.
+- Reset, activation, and workspace invitation links are delivered through
+  asynchronous OneSignal template email jobs when `ONESIGNAL_APP_ID` is
+  configured and must not be logged as fallback delivery in that mode. When
+  `ONESIGNAL_APP_ID` is absent or blank, local development-disabled mode logs
+  generated transactional email requests with raw URLs instead of creating email
+  jobs or calling OneSignal.
 
 ## Authorization
 - Non-activated users are authenticated but must not access protected app data
@@ -104,9 +117,10 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   dashboard navigation also targets `/overview`.
 - `/login` serves the unauthenticated login page. `/register` serves the same
   page shell but initializes the registration mode.
-- The login page header keeps the theme toggle as its header control. Login
-  mode places reset-password and create-account actions below the primary login
-  action.
+- The login page header keeps the theme toggle as its header control. Default
+  login mode presents authentication choices first: email sign-in, Google
+  sign-in when enabled, and account creation. The email/password form opens only
+  after choosing email sign-in and includes reset-password and back actions.
 - Non-activated users may navigate the authenticated shell, but the browser must
   avoid protected data fetches, auto-refresh scheduling, event subscription, and
   protected mutations until activation.
@@ -135,7 +149,21 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Required runtime environment: `DATABASE_URL`.
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
 - Optional invitation runtime environment: `WORKSPACE_INVITATION_EXPIRES_IN_SECONDS`.
+- Optional Google auth env: `GOOGLE_AUTH_CLIENT_ID`.
+- Optional Google reCAPTCHA env: `GOOGLE_RECAPTCHA_SITE_KEY`,
+  `GOOGLE_RECAPTCHA_SECRET_KEY`, and `GOOGLE_RECAPTCHA_MIN_SCORE`.
 - Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
+- Optional OneSignal email switch: `ONESIGNAL_APP_ID`. When missing or blank,
+  OneSignal delivery is disabled for local development and generated raw email
+  URLs are logged.
+- Required OneSignal email env when `ONESIGNAL_APP_ID` is configured:
+  `ONESIGNAL_REST_API_KEY`, `APP_PUBLIC_BASE_URL`,
+  `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID`,
+  `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID`, and
+  `ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID`.
+- Optional OneSignal sender env: `ONESIGNAL_EMAIL_FROM_NAME`,
+  `ONESIGNAL_EMAIL_FROM_ADDRESS`, and
+  `ONESIGNAL_EMAIL_REPLY_TO_ADDRESS`.
 - Test-only environment: `TEST_DATABASE_URL` and `TEST_DATABASE_ALLOW_TRUNCATE`.
 - Runtime timing keys live in `config/app.yml`:
   - `expiry_warning_minutes`
@@ -160,7 +188,7 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - `specs/` is not a long-term archive for completed implementation history.
   Keep it focused on active or intentionally retained artifacts.
 - Preserve `specs/SPEC-workspace-owner-environment-deletion.md`; it is an
-  active proposed spec and must not be removed during cleanup.
+  active approved spec and must not be removed during cleanup.
 - When using `$super-agent`, completed-work spec and plan artifacts may be
   created under `specs/`, but subsequent cleanup may remove older completed
   artifacts once durable guidance has been moved into `AGENTS.md` or the

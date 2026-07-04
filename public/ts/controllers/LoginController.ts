@@ -178,9 +178,44 @@ export class LoginController {
           }
         };
 
+        const isValidEmail = (value: string): boolean =>
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+        const validateRegisterRequest = (): string => {
+          const trimmedEmail = registerEmail.value.trim();
+          const trimmedNickname = registerNickname.value.trim();
+          if (!trimmedEmail) {
+            return 'Email required';
+          }
+          if (!isValidEmail(trimmedEmail)) {
+            return 'Invalid email';
+          }
+          if (!trimmedNickname) {
+            return 'Nickname required';
+          }
+          if (!registerPassword.value) {
+            return 'Password required';
+          }
+          if (registerPassword.value.length < 8) {
+            return 'Password is too short';
+          }
+          if (!registerConfirmPassword.value) {
+            return 'Password confirmation required';
+          }
+          if (registerPassword.value !== registerConfirmPassword.value) {
+            return 'Password confirmation does not match';
+          }
+          return '';
+        };
+
         const register = async () => {
           registerRequestError.value = '';
           registerRequestSuccess.value = false;
+          const validationError = validateRegisterRequest();
+          if (validationError) {
+            registerRequestError.value = validationError;
+            return;
+          }
           registerRequestSubmitting.value = true;
           try {
             const recaptchaToken = await executeRecaptcha('register');

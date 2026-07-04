@@ -8,6 +8,28 @@ export type AppConfig = {
   passwordResetTokenExpiresInSeconds: number;
   workspaceInvitationExpiresInSeconds: number;
   runMigrationsOnStartup: boolean;
+  oneSignal: OneSignalConfig;
+  oneSignalAppId: string;
+  oneSignalRestApiKey: string;
+  appPublicBaseUrl: string;
+  oneSignalTemplatePasswordResetId: string;
+  oneSignalTemplateAccountActivationId: string;
+  oneSignalTemplateWorkspaceInvitationId: string;
+};
+
+export type OneSignalConfig = {
+  enabled: boolean;
+  appId: string;
+  restApiKey: string;
+  publicAppBaseUrl: string;
+  templateIds: {
+    passwordReset: string;
+    accountActivation: string;
+    workspaceInvitation: string;
+  };
+  emailFromName?: string;
+  emailFromAddress?: string;
+  emailReplyToAddress?: string;
 };
 
 export class ConfigLoaderService {
@@ -22,6 +44,7 @@ export class ConfigLoaderService {
       this.resolveWorkspaceInvitationExpiresInSeconds(appConfig);
     const runMigrationsOnStartup =
       this.resolveRunMigrationsOnStartup(appConfig);
+    const oneSignal = this.resolveOneSignalConfig();
 
     return {
       expiryWarningMinutes,
@@ -30,7 +53,105 @@ export class ConfigLoaderService {
       passwordResetTokenExpiresInSeconds,
       workspaceInvitationExpiresInSeconds,
       runMigrationsOnStartup,
+      oneSignal,
+      oneSignalAppId: oneSignal.appId,
+      oneSignalRestApiKey: oneSignal.restApiKey,
+      appPublicBaseUrl: oneSignal.publicAppBaseUrl,
+      oneSignalTemplatePasswordResetId: oneSignal.templateIds.passwordReset,
+      oneSignalTemplateAccountActivationId:
+        oneSignal.templateIds.accountActivation,
+      oneSignalTemplateWorkspaceInvitationId:
+        oneSignal.templateIds.workspaceInvitation,
     };
+  }
+
+  private resolveOneSignalConfig(): OneSignalConfig {
+    const appId = process.env.ONESIGNAL_APP_ID?.trim() || '';
+    if (!appId) {
+      return {
+        enabled: false,
+        appId: '',
+        restApiKey: '',
+        publicAppBaseUrl: this.resolveDisabledPublicAppBaseUrl(),
+        templateIds: {
+          passwordReset: '',
+          accountActivation: '',
+          workspaceInvitation: '',
+        },
+        emailFromName: undefined,
+        emailFromAddress: undefined,
+        emailReplyToAddress: undefined,
+      };
+    }
+
+    const restApiKey = this.requiredEnv('ONESIGNAL_REST_API_KEY');
+    const publicAppBaseUrl = this.resolvePublicAppBaseUrl(
+      this.requiredEnv('APP_PUBLIC_BASE_URL'),
+    );
+    const passwordReset = this.requiredEnv(
+      'ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID',
+    );
+    const accountActivation = this.requiredEnv(
+      'ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID',
+    );
+    const workspaceInvitation = this.requiredEnv(
+      'ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID',
+    );
+
+    const optional = (name: string): string | undefined => {
+      const value = process.env[name]?.trim();
+      return value || undefined;
+    };
+
+    return {
+      enabled: true,
+      appId,
+      restApiKey,
+      publicAppBaseUrl,
+      templateIds: {
+        passwordReset,
+        accountActivation,
+        workspaceInvitation,
+      },
+      emailFromName: optional('ONESIGNAL_EMAIL_FROM_NAME'),
+      emailFromAddress: optional('ONESIGNAL_EMAIL_FROM_ADDRESS'),
+      emailReplyToAddress: optional('ONESIGNAL_EMAIL_REPLY_TO_ADDRESS'),
+    };
+  }
+
+  private requiredEnv(name: string): string {
+    const value = process.env[name]?.trim();
+    if (!value) {
+      throw new Error(`${name} is required for OneSignal email delivery`);
+    }
+    return value;
+  }
+
+  private resolveDisabledPublicAppBaseUrl(): string {
+    const configuredValue = process.env.APP_PUBLIC_BASE_URL?.trim();
+    if (configuredValue) {
+      return this.resolvePublicAppBaseUrl(configuredValue);
+    }
+    const port = process.env.PORT?.trim() || '3000';
+    return `http://localhost:${port}`;
+  }
+
+  private resolvePublicAppBaseUrl(rawValue: string): string {
+    let parsed: URL;
+    try {
+      parsed = new URL(rawValue);
+    } catch {
+      throw new Error('APP_PUBLIC_BASE_URL must be a valid absolute URL');
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('APP_PUBLIC_BASE_URL must use http or https');
+    }
+    if (parsed.search || parsed.hash) {
+      throw new Error(
+        'APP_PUBLIC_BASE_URL must not include query strings or fragments',
+      );
+    }
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
   }
 
   private resolveRunMigrationsOnStartup(

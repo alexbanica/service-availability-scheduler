@@ -13,6 +13,7 @@ tags:
   - name: Metadata
   - name: Services
   - name: Reservations
+  - name: Email jobs
   - name: Workspaces
   - name: Workspace services
   - name: Workspace resources
@@ -92,7 +93,7 @@ paths:
       tags: [Account]
       security: []
       summary: Request a password-reset token after reCAPTCHA verification.
-      description: Verifies a Google reCAPTCHA v3 token for action password_reset_request. Always returns ok for known and unknown emails after valid verification; reset links are logged server-side until email delivery exists.
+      description: Verifies a Google reCAPTCHA v3 token for action password_reset_request. Always returns ok for known and unknown emails after valid verification; known-account reset links are queued for asynchronous OneSignal email delivery when enabled, logged only in development-disabled mode, and never returned.
       requestBody:
         required: true
         content:
@@ -170,7 +171,7 @@ paths:
       tags: [Account]
       security: []
       summary: Register a non-activated user and receive a bearer token.
-      description: Verifies a Google reCAPTCHA v3 token for action register. Activation links are logged server-side until email delivery exists. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
+      description: Verifies a Google reCAPTCHA v3 token for action register. Activation links are queued for asynchronous OneSignal email delivery when enabled, logged only in development-disabled mode, and never returned. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
       requestBody:
         required: true
         content:
@@ -237,6 +238,30 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
+          $ref: '#/components/responses/Error'
+  /api/email-jobs/failed/retry:
+    post:
+      tags: [Email jobs]
+      summary: Requeue permanently failed transactional email jobs.
+      description: Requires an authenticated, activated platform_admin user. Requeues matching permanently failed OneSignal email jobs for asynchronous retry and never sends email synchronously or returns raw payload links.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryFailedEmailJobsRequest'
+      responses:
+        '200':
+          description: Failed email jobs were requeued for asynchronous retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetryFailedEmailJobsResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
           $ref: '#/components/responses/Error'
   /api/logout:
     post:
@@ -690,7 +715,7 @@ paths:
     post:
       tags: [Workspace resources]
       summary: Create a workspace invitation link by email.
-      description: Workspace admins and managers may invite existing or unregistered emails. The raw invitation link is logged server-side and is never returned in the response.
+      description: Workspace admins and managers may invite existing or unregistered emails. The raw invitation link is queued for asynchronous OneSignal email delivery when enabled, logged only in development-disabled mode, and never returned.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
@@ -989,8 +1014,10 @@ components:
         email:
           type: string
           format: email
+          description: Must be a syntactically valid email address after trimming and lowercasing.
         nickname:
           type: string
+          description: Required after trimming.
         password:
           type: string
           format: password
@@ -999,6 +1026,7 @@ components:
           type: string
           format: password
           minLength: 8
+          description: Required and must exactly match password.
         recaptcha_token:
           type: string
           description: Google reCAPTCHA v3 token executed with action register.
@@ -1417,6 +1445,30 @@ components:
         email:
           type: string
           format: email
+    EmailKind:
+      type: string
+      enum: [password_reset, account_activation, workspace_invitation]
+    RetryFailedEmailJobsRequest:
+      type: object
+      description: If omitted, all permanently failed email jobs are requeued. If both filters are supplied, only jobs matching both are retried.
+      properties:
+        email_kind:
+          $ref: '#/components/schemas/EmailKind'
+        job_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    RetryFailedEmailJobsResponse:
+      type: object
+      required: [ok, retried]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        retried:
+          type: integer
+          minimum: 0
     InvitationCreated:
       type: object
       required:

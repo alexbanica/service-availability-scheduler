@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { WorkspaceService } from '../services/WorkspaceService';
+import { TransactionalEmailService } from '../services/TransactionalEmailService';
 import { requireActivated, requireAuth } from './AuthMiddleware';
 
 const getAuthenticatedUserId = (req: Request, res: Response): string | null => {
@@ -13,7 +14,10 @@ const getAuthenticatedUserId = (req: Request, res: Response): string | null => {
 };
 
 export class WorkspaceController {
-  constructor(private readonly workspaceService: WorkspaceService) {}
+  constructor(
+    private readonly workspaceService: WorkspaceService,
+    private readonly transactionalEmailService?: TransactionalEmailService,
+  ) {}
 
   register(app: Express): void {
     app.get(
@@ -662,7 +666,12 @@ export class WorkspaceController {
             userId,
             inviteeEmail,
           );
-          this.logWorkspaceInvitationInvitationLink(invitation);
+          await this.transactionalEmailService?.queueWorkspaceInvitationEmail({
+            code: invitation.invitationCode,
+            recipientEmail: invitation.invitedEmail ?? '',
+            userId: invitation.invitedUserId,
+            workspaceName: invitation.workspaceName,
+          });
           res.status(201).json({
             invitation_id: invitation.invitationId,
             workspace_id: invitation.workspaceId,
@@ -817,15 +826,5 @@ export class WorkspaceController {
       return;
     }
     res.status(400).json({ error: message });
-  }
-
-  private logWorkspaceInvitationInvitationLink(invitation: {
-    invitedEmail: string | null;
-    invitationCode: string;
-  }): void {
-    const invitedEmail = invitation.invitedEmail ?? '';
-    console.info(
-      `Workspace invitation requested for ${invitedEmail}, use this TODO link: /workspace-invitations/${invitation.invitationCode} - TODO replace with email delivery`,
-    );
   }
 }

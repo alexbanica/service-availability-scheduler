@@ -19,12 +19,18 @@ import { WorkspaceUserRepository } from './repositories/WorkspaceUserRepository'
 import { WorkspaceInvitationRepository } from './repositories/WorkspaceInvitationRepository';
 import { UserRoleRepository } from './repositories/UserRoleRepository';
 import { AccountActivationTokenRepository } from './repositories/AccountActivationTokenRepository';
+import { EmailJobRepository } from './repositories/EmailJobRepository';
 import { AccountActivationTokenService } from './services/AccountActivationTokenService';
+import { EmailTemplateService } from './services/EmailTemplateService';
+import { EmailWorkerService } from './services/EmailWorkerService';
+import { OneSignalEmailDeliveryService } from './services/OneSignalEmailDeliveryService';
+import { TransactionalEmailService } from './services/TransactionalEmailService';
 import { AuthController } from './controllers/AuthController';
 import { ServiceController } from './controllers/ServiceController';
 import { ReservationController } from './controllers/ReservationController';
 import { PageController } from './controllers/PageController';
 import { WorkspaceController } from './controllers/WorkspaceController';
+import { EmailJobController } from './controllers/EmailJobController';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -116,6 +122,7 @@ async function start() {
   const accountActivationTokenRepository = new AccountActivationTokenRepository(
     db,
   );
+  const emailJobRepository = new EmailJobRepository(db);
 
   const userService = new UserService(userRepository, userRoleRepository);
   const reservationService = new ReservationService(
@@ -151,6 +158,20 @@ async function start() {
     userRoleRepository,
     config.workspaceInvitationExpiresInSeconds,
   );
+  const emailTemplateService = new EmailTemplateService(config.oneSignal);
+  const transactionalEmailService = new TransactionalEmailService(
+    emailJobRepository,
+    emailTemplateService,
+    config.passwordResetTokenExpiresInSeconds,
+    config.workspaceInvitationExpiresInSeconds,
+  );
+  if (config.oneSignal.enabled) {
+    const emailWorkerService = new EmailWorkerService(
+      emailJobRepository,
+      new OneSignalEmailDeliveryService(config.oneSignal),
+    );
+    emailWorkerService.start();
+  }
 
   setInterval(() => {
     reservationService.cleanupExpired(new Date()).catch((err) => {
@@ -170,8 +191,13 @@ async function start() {
     console,
     db,
     workspaceService,
+    undefined,
+    transactionalEmailService,
   ).register(app);
-  new WorkspaceController(workspaceService).register(app);
+  new WorkspaceController(workspaceService, transactionalEmailService).register(
+    app,
+  );
+  new EmailJobController(emailJobRepository, userRoleRepository).register(app);
   new ServiceController(reservationService).register(app);
   new ReservationController(reservationService).register(app);
 
