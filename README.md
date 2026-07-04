@@ -1,11 +1,12 @@
 # Service Availability Scheduler
 
-Minimal Node.js app to claim services per environment with password-based login and
-timed reservations.
+Minimal Node.js app to claim services per environment with password-based or
+Google login, workspace administration, and timed reservations.
 
-Authentication uses email + password + bearer JWT tokens. Clients call
-`POST /api/login` to receive a signed token, then send that token with protected
-API calls using the `Authorization: Bearer <token>` header.
+Authentication uses application bearer JWT tokens. Password login calls
+`POST /api/login`; Google login calls `POST /api/google-auth` when configured.
+Clients send the returned token with protected API calls using the
+`Authorization: Bearer <token>` header.
 
 ## Setup
 
@@ -171,6 +172,7 @@ Edit `config/app.yml` for app timing behavior.
 | `auto_refresh_seconds` | `60` | seconds | Browser service-availability auto-refresh interval returned by `/api/services`. Values below `1` second are clamped by the browser scheduler. |
 | `jwt_expires_in_seconds` | `3600` | seconds | JWT access token lifetime in seconds. |
 | `password_reset_token_expires_in_seconds` | `3600` | seconds | Password reset token lifetime in seconds. |
+| `workspace_invitation_expires_in_seconds` | `86400` | seconds | Workspace invitation lifetime in seconds. |
 | `run_migrations_on_startup` | `true` | boolean | Controls whether startup runs pending SQL migrations from `config/migrations`. |
 
 `JWT_EXPIRES_IN_SECONDS` (environment variable) takes precedence over
@@ -180,12 +182,39 @@ Edit `config/app.yml` for app timing behavior.
 precedence over `password_reset_token_expires_in_seconds` in
 `config/app.yml`.
 
+`WORKSPACE_INVITATION_EXPIRES_IN_SECONDS` (environment variable) takes
+precedence over `workspace_invitation_expires_in_seconds` in `config/app.yml`.
+
 `RUN_MIGRATIONS_ON_STARTUP` (environment variable) takes precedence over
 `run_migrations_on_startup` in `config/app.yml`.
 
 Workspace admins define workspace owners, environments, and services from the
 admin UI. Service creation selects existing workspace-scoped owners and
 environments; it does not create them inline.
+
+## Workspace Administration
+
+Workspace memberships are role-scoped per workspace:
+
+- `admin`: manage users, invitations, owners, environments, and services.
+- `manager`: manage non-user resources and pending invitations.
+- `member`: inspect workspace details and use reservation workflows after
+  activation.
+
+The Administration view is visible to authenticated users. Workspace Management
+and Service Management list the current user's workspaces for inspection, while
+mutation controls are shown only when the selected workspace role permits them.
+User Management remains limited to admin workspaces for accepted user removal
+and role changes.
+
+Invitations are email-address based, expire after the configured invitation
+lifetime, and always grant accepted invitees the `member` role. Invitation
+links use `/workspace-invitations/<code>` and preserve login or registration
+handoff context. Raw invitation codes are never returned by API responses.
+
+Resource administrators can remove pending invitations. Owner and environment
+deletion is an approved spec: deletion must be confirmed, must be scoped to the
+workspace, and must detach affected services without deleting those services.
 
 ## Authentication API Contract
 
@@ -196,7 +225,7 @@ environments; it does not create them inline.
   - `token_type: "Bearer"`
   - `expires_in_seconds`
   - `user.activated`.
-- `POST /api/google-auth`: accepts `{ "credential": "...", "g_csrf_token": "...", "invitation_code": "..." }` when `GOOGLE_AUTH_CLIENT_ID` is configured. The body CSRF token must match the `g_csrf_token` cookie set by Google Identity Services. It creates or links a local user, applies new-user invitation codes when the verified Google email matches, and returns the same application bearer token shape as password login.
+- `POST /api/google-auth`: accepts `{ "credential": "...", "g_csrf_token": "...", "invitation_code": "..." }` when `GOOGLE_AUTH_CLIENT_ID` is configured. The body CSRF token must match the `g_csrf_token` cookie set by Google Identity Services. It creates or links a local user, applies new-user invitation codes when the verified Google email matches, and returns the same application bearer token shape as password login. Google ID tokens are never used as application bearer tokens.
 - `POST /api/password-reset/captcha`: legacy compatibility endpoint returning
   `410` because local math CAPTCHA challenges are no longer created.
 - `POST /api/password-reset/request`: accepts `{ "email": "...", "recaptcha_token": "..." }`, verifies Google reCAPTCHA v3 action `password_reset_request`, and creates or replaces an
@@ -209,15 +238,17 @@ environments; it does not create them inline.
 - `POST /api/register/captcha`: legacy compatibility endpoint returning `410`
   because local math CAPTCHA challenges are no longer created.
 - `POST /api/register`: accepts registration values, validates required fields
-  and `recaptcha_token` with Google reCAPTCHA v3 action `register`, creates a
-  non-activated user, creates a one-time activation token, and returns the
-  authenticated bearer token payload with `activated: false`.
+  before CAPTCHA or persistence work, validates `recaptcha_token` with Google
+  reCAPTCHA v3 action `register`, creates a non-activated user, creates a
+  one-time activation token, and returns the authenticated bearer token payload
+  with `activated: false`.
   The activation link is queued for asynchronous OneSignal email delivery when
   enabled, or logged only in development-disabled mode.
 - `POST /api/account-activation/validate`: validates `{ "token": "..." }` and returns
   `ok: true` for a valid activation token.
-- `POST /api/account-activation`: accepts `{ "token": "..." }`, activates the user,
-  grants `platform_admin`, and returns `{ ok: true }`.
+- `POST /api/account-activation`: accepts `{ "token": "..." }`, activates the
+  user, grants `platform_admin`, and returns the standard authenticated bearer
+  token payload for the activated user.
 - `POST /api/renew`: protected endpoint that issues a replacement token and
   returns the same response shape.
 - `POST /api/logout`: protected endpoint maintained for compatibility; server-side
