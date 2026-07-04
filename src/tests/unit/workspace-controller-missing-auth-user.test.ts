@@ -218,6 +218,24 @@ class WorkspaceInviteServiceStub extends FakeWorkspaceService {
   }
 }
 
+class TransactionalEmailServiceStub {
+  public workspaceInvitationQueue: Array<{
+    code: string;
+    recipientEmail: string;
+    userId: string | null;
+    workspaceName: string;
+  }> = [];
+
+  async queueWorkspaceInvitationEmail(input: {
+    code: string;
+    recipientEmail: string;
+    userId: string | null;
+    workspaceName: string;
+  }): Promise<void> {
+    this.workspaceInvitationQueue.push(input);
+  }
+}
+
 test('GET /api/workspaces returns 401 when request-local identity is missing', async () => {
   const app = express();
   const controller = new WorkspaceController(
@@ -412,7 +430,11 @@ test('workspace routes return 401 when request-local identity is missing', async
 test('POST /api/workspaces/:workspaceId/invitations does not log raw invitation links', async () => {
   const app = express();
   const workspaceService = new WorkspaceInviteServiceStub();
-  const controller = new WorkspaceController(workspaceService as never);
+  const transactionalEmailService = new TransactionalEmailServiceStub();
+  const controller = new WorkspaceController(
+    workspaceService as never,
+    transactionalEmailService as never,
+  );
   (
     app as unknown as { locals: { jwtAuthService: FakeJwtAuthService } }
   ).locals = { jwtAuthService: new FakeJwtAuthService() };
@@ -481,6 +503,13 @@ test('POST /api/workspaces/:workspaceId/invitations does not log raw invitation 
       infoMessages.some((entry) => entry.includes('TODO')),
       false,
     );
+    assert.equal(transactionalEmailService.workspaceInvitationQueue.length, 1);
+    assert.deepEqual(transactionalEmailService.workspaceInvitationQueue[0], {
+      code: 'invite-code-abc',
+      recipientEmail: 'new-user@example.com',
+      userId: null,
+      workspaceName: 'Operations',
+    });
   } finally {
     console.info = originalConsoleInfo;
   }

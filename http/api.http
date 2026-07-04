@@ -33,7 +33,7 @@ Content-Type: application/json
 }
 
 ### Validate password reset token
-# Reset tokens come from delivered OneSignal email, not API responses or logs.
+# Reset tokens come from delivered OneSignal email, or local disabled-mode logs, not API responses.
 POST {{host}}/api/password-reset/validate
 Content-Type: application/json
 
@@ -94,7 +94,7 @@ Cookie: g_csrf_token={{googleCsrfToken}}
 }
 
 ### Validate account activation token
-# Activation tokens come from delivered OneSignal email, not API responses or logs.
+# Activation tokens come from delivered OneSignal email, or local disabled-mode logs, not API responses.
 POST {{host}}/api/account-activation/validate
 Content-Type: application/json
 
@@ -274,7 +274,7 @@ Content-Type: application/json
 }
 
 ### Validate workspace invitation link
-# Invitation codes come from delivered OneSignal email, not API responses or logs.
+# Invitation codes come from delivered OneSignal email, or local disabled-mode logs, not API responses.
 GET {{host}}/api/workspace-invitations/{{workspaceInvitationCode}}/validate
 
 ### Accept existing-user workspace invitation

@@ -16,6 +16,10 @@ export type EmailTemplateCatalog = {
 export class EmailTemplateService {
   constructor(private readonly oneSignalConfig: OneSignalConfig) {}
 
+  isOneSignalEnabled(): boolean {
+    return this.oneSignalConfig.enabled;
+  }
+
   catalog(): EmailTemplateCatalog {
     return {
       passwordReset: {

@@ -93,7 +93,7 @@ paths:
       tags: [Account]
       security: []
       summary: Request a password-reset token after reCAPTCHA verification.
-      description: Verifies a Google reCAPTCHA v3 token for action password_reset_request. Always returns ok for known and unknown emails after valid verification; known-account reset links are queued for asynchronous OneSignal email delivery and are not returned or logged.
+      description: Verifies a Google reCAPTCHA v3 token for action password_reset_request. Always returns ok for known and unknown emails after valid verification; known-account reset links are queued for asynchronous OneSignal email delivery when enabled, logged only in development-disabled mode, and never returned.
       requestBody:
         required: true
         content:
@@ -171,7 +171,7 @@ paths:
       tags: [Account]
       security: []
       summary: Register a non-activated user and receive a bearer token.
-      description: Verifies a Google reCAPTCHA v3 token for action register. Activation links are queued for asynchronous OneSignal email delivery and are not returned or logged. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
+      description: Verifies a Google reCAPTCHA v3 token for action register. Activation links are queued for asynchronous OneSignal email delivery when enabled, logged only in development-disabled mode, and never returned. When invitation_code is supplied, the registered email must match the invitation email and member workspace access is created in the registration transaction.
       requestBody:
         required: true
         content:
@@ -715,7 +715,7 @@ paths:
     post:
       tags: [Workspace resources]
       summary: Create a workspace invitation link by email.
-      description: Workspace admins and managers may invite existing or unregistered emails. The raw invitation link is queued for asynchronous OneSignal email delivery and is never returned or logged.
+      description: Workspace admins and managers may invite existing or unregistered emails. The raw invitation link is queued for asynchronous OneSignal email delivery when enabled, logged only in development-disabled mode, and never returned.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:

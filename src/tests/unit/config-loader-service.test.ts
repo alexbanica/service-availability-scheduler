@@ -605,23 +605,105 @@ test('non-boolean RUN_MIGRATIONS_ON_STARTUP is rejected', () => {
   }
 });
 
-test('missing ONESIGNAL_APP_ID is rejected as required startup configuration', () => {
+test('missing ONESIGNAL_APP_ID loads configuration in development-disabled mode', () => {
   const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
   try {
-    withEnvMap(
+    const config = withEnvMap(
       {
-        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
-        APP_PUBLIC_BASE_URL: 'https://example.com',
-        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
-        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
-        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+        ONESIGNAL_APP_ID: undefined,
+        ONESIGNAL_REST_API_KEY: undefined,
+        APP_PUBLIC_BASE_URL: undefined,
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: undefined,
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: undefined,
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: undefined,
       },
-      () => {
-        assert.throws(() => {
-          new ConfigLoaderService().loadConfig(configPath);
-        }, /ONESIGNAL_APP_ID/);
-      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
     );
+    assert.equal(config.oneSignalAppId, '');
+    assert.equal(config.oneSignalRestApiKey, '');
+    assert.equal(config.appPublicBaseUrl, 'http://localhost:3000');
+    assert.equal(config.oneSignalTemplatePasswordResetId, '');
+    assert.equal(config.oneSignalTemplateAccountActivationId, '');
+    assert.equal(config.oneSignalTemplateWorkspaceInvitationId, '');
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('blank ONESIGNAL_APP_ID is treated as disabled development mode', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const config = withEnvMap(
+      {
+        ONESIGNAL_APP_ID: '   ',
+        ONESIGNAL_REST_API_KEY: undefined,
+        APP_PUBLIC_BASE_URL: undefined,
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: undefined,
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: undefined,
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: undefined,
+      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
+    );
+    assert.equal(config.oneSignalAppId, '');
+    assert.equal(config.appPublicBaseUrl, 'http://localhost:3000');
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('development-disabled mode uses APP_PUBLIC_BASE_URL when provided', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const config = withEnvMap(
+      {
+        ONESIGNAL_APP_ID: '',
+        APP_PUBLIC_BASE_URL: '  https://example.test/base  ',
+      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
+    );
+    assert.equal(config.appPublicBaseUrl, 'https://example.test/base');
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('development-disabled mode derives localhost base URL when APP_PUBLIC_BASE_URL is missing', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const defaultPortConfig = withEnvMap(
+      {
+        ONESIGNAL_APP_ID: '',
+        APP_PUBLIC_BASE_URL: undefined,
+        PORT: undefined,
+      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
+    );
+    assert.equal(defaultPortConfig.appPublicBaseUrl, 'http://localhost:3000');
+
+    const customPortConfig = withEnvMap(
+      {
+        ONESIGNAL_APP_ID: '',
+        APP_PUBLIC_BASE_URL: undefined,
+        PORT: '8080',
+      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
+    );
+    assert.equal(customPortConfig.appPublicBaseUrl, 'http://localhost:8080');
   } finally {
     cleanupConfig(configPath);
   }
@@ -755,6 +837,58 @@ test('APP_PUBLIC_BASE_URL is trimmed and normalized to no trailing slash', () =>
         ) as AppConfigWithOneSignal,
     );
     assert.equal(config.appPublicBaseUrl, 'https://example.com');
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('APP_PUBLIC_BASE_URL preserves base path without trailing slash', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    const config = withEnvMap(
+      {
+        ONESIGNAL_APP_ID: 'onesignal-app-id',
+        ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+        APP_PUBLIC_BASE_URL: 'https://example.com/app/',
+        ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+        ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+        ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+      },
+      () =>
+        new ConfigLoaderService().loadConfig(
+          configPath,
+        ) as AppConfigWithOneSignal,
+    );
+    assert.equal(config.appPublicBaseUrl, 'https://example.com/app');
+  } finally {
+    cleanupConfig(configPath);
+  }
+});
+
+test('APP_PUBLIC_BASE_URL rejects query strings and fragments', () => {
+  const configPath = writeTempAppConfig('expiry_warning_minutes: 5\n');
+  try {
+    for (const value of [
+      'https://example.com?next=/reset',
+      'https://example.com/#app',
+    ]) {
+      withEnvMap(
+        {
+          ONESIGNAL_APP_ID: 'onesignal-app-id',
+          ONESIGNAL_REST_API_KEY: 'onesignal-rest-key',
+          APP_PUBLIC_BASE_URL: value,
+          ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID: 'template-reset',
+          ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID: 'template-activation',
+          ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID: 'template-invitation',
+        },
+        () => {
+          assert.throws(
+            () => new ConfigLoaderService().loadConfig(configPath),
+            /APP_PUBLIC_BASE_URL must not include query strings or fragments/,
+          );
+        },
+      );
+    }
   } finally {
     cleanupConfig(configPath);
   }

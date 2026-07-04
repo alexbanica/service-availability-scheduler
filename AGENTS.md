@@ -50,9 +50,11 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   captcha-protected non-answer fields after loading a captcha should clear the
   loaded challenge and require a fresh captcha.
 - Registration creates a non-activated user, creates a single active activation
-  token, queues an asynchronous OneSignal account-activation email job, and
-  returns the normal authenticated session payload without returning the
-  activation token or URL.
+  token, queues an asynchronous OneSignal account-activation email job when
+  `ONESIGNAL_APP_ID` is configured, or logs the generated email request only in
+  development-disabled mode when `ONESIGNAL_APP_ID` is absent, and returns the
+  normal authenticated session payload without returning the activation token or
+  URL.
 - Activation tokens are stored hashed. Issuing a new activation token for a user
   invalidates prior active activation tokens for that user.
 - Activation links use `/activate-account/<token>`. Successful activation marks
@@ -62,8 +64,11 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   redirects to `/overview` after a 5-second countdown, with a visible manual
   dashboard button.
 - Reset, activation, and workspace invitation links are delivered through
-  asynchronous OneSignal template email jobs and must not be logged as fallback
-  delivery.
+  asynchronous OneSignal template email jobs when `ONESIGNAL_APP_ID` is
+  configured and must not be logged as fallback delivery in that mode. When
+  `ONESIGNAL_APP_ID` is absent or blank, local development-disabled mode logs
+  generated transactional email requests with raw URLs instead of creating email
+  jobs or calling OneSignal.
 
 ## Authorization
 - Non-activated users are authenticated but must not access protected app data
@@ -137,7 +142,10 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Optional runtime environment: `SESSION_SECRET`, `PORT`, `APP_VERSION`, `JWT_EXPIRES_IN_SECONDS`, and `PASSWORD_RESET_TOKEN_EXPIRES_IN_SECONDS`.
 - Optional invitation runtime environment: `WORKSPACE_INVITATION_EXPIRES_IN_SECONDS`.
 - Optional migration env: `RUN_MIGRATIONS_ON_STARTUP` defaults to `true` and can disable startup migrations when true/false is provided.
-- Required OneSignal email env: `ONESIGNAL_APP_ID`,
+- Optional OneSignal email switch: `ONESIGNAL_APP_ID`. When missing or blank,
+  OneSignal delivery is disabled for local development and generated raw email
+  URLs are logged.
+- Required OneSignal email env when `ONESIGNAL_APP_ID` is configured:
   `ONESIGNAL_REST_API_KEY`, `APP_PUBLIC_BASE_URL`,
   `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID`,
   `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID`, and

@@ -112,6 +112,24 @@ class ResetLoggerStub {
   }
 }
 
+class TransactionalEmailServiceStub {
+  public accountActivationQueue: Array<{
+    token: string;
+    recipientEmail: string;
+    userId: string;
+    nickname: string;
+  }> = [];
+
+  async queueAccountActivationEmail(input: {
+    token: string;
+    recipientEmail: string;
+    userId: string;
+    nickname: string;
+  }): Promise<void> {
+    this.accountActivationQueue.push(input);
+  }
+}
+
 class FakeGoogleVerifier {
   public verifyCalls = 0;
   public result: GooglePayload | null = null;
@@ -479,6 +497,7 @@ function createController(
   accountActivationTokenService = new FakeAccountActivationTokenService(),
   workspaceService = new FakeWorkspaceService(),
   resetLogger = new ResetLoggerStub(),
+  transactionalEmailService?: TransactionalEmailServiceStub,
 ): AuthController {
   return new (AuthController as unknown as {
     new (...args: unknown[]): AuthController;
@@ -494,6 +513,7 @@ function createController(
     new FakeMySqlPool() as unknown,
     workspaceService as unknown,
     googleVerifier as unknown,
+    transactionalEmailService as unknown,
   );
 }
 
@@ -745,6 +765,7 @@ test('POST /api/google-auth creates non-authoritative new users as inactive with
   });
 
   const resetLogger = new ResetLoggerStub();
+  const transactionalEmailService = new TransactionalEmailServiceStub();
   const tokenService = new FakeAccountActivationTokenService();
   tokenService.createTokenForUserResult = 'activate-token-1';
   const userService = new FakeUserService();
@@ -754,6 +775,7 @@ test('POST /api/google-auth creates non-authoritative new users as inactive with
     tokenService,
     new FakeWorkspaceService(),
     resetLogger,
+    transactionalEmailService,
   );
   controller.register(app);
 
@@ -783,6 +805,13 @@ test('POST /api/google-auth creates non-authoritative new users as inactive with
       ),
       false,
     );
+    assert.equal(transactionalEmailService.accountActivationQueue.length, 1);
+    assert.deepEqual(transactionalEmailService.accountActivationQueue[0], {
+      token: 'activate-token-1',
+      recipientEmail: 'pending@example.com',
+      userId: 'user-1',
+      nickname: 'Pending User',
+    });
     assert.equal(verifier.verifyCalls, 1);
   });
 });

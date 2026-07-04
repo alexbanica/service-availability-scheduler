@@ -5,7 +5,9 @@ Status: Approved
 ## Purpose
 
 Send the application's transactional emails asynchronously through OneSignal
-using manually managed OneSignal templates and durable retry tracking.
+using manually managed OneSignal templates and durable retry tracking, while
+allowing local development to disable OneSignal by omitting `ONESIGNAL_APP_ID`
+and log the generated email request instead.
 
 ## Problem
 
@@ -46,6 +48,9 @@ template without exposing credentials or raw secrets in normal API responses.
   values such as links, nicknames, workspace names, and expiry text.
 - Add server configuration for OneSignal app ID, REST API key, public app base
   URL, and template IDs.
+- Add an explicit development-disabled mode: when `ONESIGNAL_APP_ID` is missing
+  or blank, the app must not call OneSignal and must log the generated
+  transactional email request instead.
 - Keep raw password reset tokens, activation tokens, and workspace invitation
   codes out of API responses.
 - Update durable repository guidance and operational documentation so future
@@ -66,7 +71,7 @@ template without exposing credentials or raw secrets in normal API responses.
 - Changing token generation, hashing, expiry, validation, or consumption
   semantics.
 - Returning raw links, raw tokens, or raw invitation codes from API endpoints.
-- Logging raw reset, activation, or invitation links as fallback delivery.
+- Production fallback delivery when OneSignal is partially configured or fails.
 
 ## Definitions
 
@@ -78,6 +83,11 @@ template without exposing credentials or raw secrets in normal API responses.
 - OneSignal email delivery: A server-side request to OneSignal's email message
   API using the configured OneSignal app ID, REST API key, recipient email, and
   template ID.
+- Development-disabled email delivery: A local-development mode selected by a
+  missing or blank `ONESIGNAL_APP_ID` where the application does not create
+  email jobs, does not call OneSignal, and logs the generated transactional
+  email request, including the generated URL payload needed for manual local
+  testing.
 - Public app base URL: The externally reachable base URL used to create absolute
   links in email payloads, for example
   `https://service-availability.example.com`.
@@ -94,18 +104,27 @@ template without exposing credentials or raw secrets in normal API responses.
 ## Inputs And Constraints
 
 - OneSignal email delivery uses environment-based configuration:
-  - `ONESIGNAL_APP_ID`: required.
-  - `ONESIGNAL_REST_API_KEY`: required.
-  - `APP_PUBLIC_BASE_URL`: required.
-  - `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID`: required.
-  - `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID`: required.
-  - `ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID`: required.
+  - `ONESIGNAL_APP_ID`: optional switch. When missing or blank, OneSignal
+    delivery is disabled and development-disabled logging is used.
+  - `ONESIGNAL_REST_API_KEY`: required only when `ONESIGNAL_APP_ID` is present.
+  - `APP_PUBLIC_BASE_URL`: required only when `ONESIGNAL_APP_ID` is present;
+    when OneSignal is disabled and this value is absent, generated links use
+    `http://localhost:<PORT>` with `PORT` defaulting to `3000`.
+  - `ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID`: required only when
+    `ONESIGNAL_APP_ID` is present.
+  - `ONESIGNAL_TEMPLATE_ACCOUNT_ACTIVATION_ID`: required only when
+    `ONESIGNAL_APP_ID` is present.
+  - `ONESIGNAL_TEMPLATE_WORKSPACE_INVITATION_ID`: required only when
+    `ONESIGNAL_APP_ID` is present.
   - `ONESIGNAL_EMAIL_FROM_NAME`: optional sender display-name override.
   - `ONESIGNAL_EMAIL_FROM_ADDRESS`: optional sender address override.
   - `ONESIGNAL_EMAIL_REPLY_TO_ADDRESS`: optional reply-to override.
-- OneSignal email delivery is required for this feature. Missing or partial
-  required OneSignal configuration fails startup with deterministic
-  configuration errors.
+- When `ONESIGNAL_APP_ID` is present, OneSignal email delivery is required for
+  this feature. Missing or partial required OneSignal configuration fails
+  startup with deterministic configuration errors.
+- When `ONESIGNAL_APP_ID` is missing or blank, startup succeeds in
+  development-disabled mode even if the REST API key, template IDs, or
+  `APP_PUBLIC_BASE_URL` are also missing.
 - `APP_PUBLIC_BASE_URL` is trimmed and stored without a trailing slash.
 - OneSignal credentials are secrets and must never be logged, returned in API
   responses, committed, or exposed to browser JavaScript.
@@ -125,6 +144,8 @@ template without exposing credentials or raw secrets in normal API responses.
 - Each job is attempted at most 3 times total: the first send attempt plus up to
   2 retry attempts.
 - Email sending is asynchronous relative to the user-facing HTTP request.
+- Development-disabled logging is a local testing convenience and is not a
+  durable delivery mechanism.
 
 ## Template Files
 
@@ -230,20 +251,37 @@ template without exposing credentials or raw secrets in normal API responses.
 
 ### Delivery Configuration
 
-- Startup fails if any required OneSignal delivery setting is missing or
-  malformed.
+- Startup succeeds in development-disabled mode when `ONESIGNAL_APP_ID` is
+  missing or blank.
+- In development-disabled mode:
+  - OneSignal API calls are never attempted.
+  - Email jobs are not created for reset, activation, or invitation email
+    requests.
+  - The app logs the generated email kind, recipient email, optional user ID,
+    payload key list, and generated payload values, including reset,
+    activation, or invitation URLs.
+  - The log clearly states that OneSignal email delivery is disabled because
+    `ONESIGNAL_APP_ID` is not configured.
+  - The user-facing HTTP response shape and status remain unchanged.
+  - Unknown-email password reset requests still do not create tokens and still
+    do not log any reset email request.
+- Startup fails if `ONESIGNAL_APP_ID` is present but any other required
+  OneSignal delivery setting is missing or malformed.
 - Runtime app-info and browser APIs do not expose OneSignal configuration or
   enabled state.
-- There is no server-log fallback for raw links.
-- Operators who need a failed link must use the app's token/invitation data
-  repair process outside this feature scope; the application does not print raw
-  link secrets as fallback delivery.
+- Outside development-disabled mode, there is no server-log fallback for raw
+  links.
+- Operators who need a failed link outside development-disabled mode must use
+  the app's token/invitation data repair process outside this feature scope; the
+  application does not print raw link secrets as fallback delivery.
 
 ### Email Job Creation
 
 - After the relevant domain transaction succeeds, the app creates an email job
   with email kind, recipient email, optional user ID, template ID, payload,
   stable idempotency key, status, attempt count, and timestamps.
+- In development-disabled mode, after the relevant domain transaction succeeds,
+  the app logs the generated email request instead of creating an email job.
 - Job creation happens after token or invitation creation so the queued payload
   can include the generated absolute URL.
 - If email job creation fails after the domain action succeeded, the user-facing
@@ -253,6 +291,9 @@ template without exposing credentials or raw secrets in normal API responses.
 - Email job payload storage may contain the generated absolute URL because the
   worker must send it to OneSignal, but logs must not print raw URLs containing
   reset tokens, activation tokens, or invitation codes.
+- Development-disabled logs are the only exception where generated URL payloads
+  may be printed, because they replace provider delivery for local testing when
+  `ONESIGNAL_APP_ID` is not configured.
 
 ### Asynchronous Worker
 
@@ -417,7 +458,10 @@ template without exposing credentials or raw secrets in normal API responses.
 ## Regression Impact
 
 - Authentication and invitation flows gain required OneSignal configuration at
-  startup.
+  startup only when `ONESIGNAL_APP_ID` is configured.
+- Local development can run without OneSignal configuration by omitting
+  `ONESIGNAL_APP_ID`, but reset, activation, and invitation links will appear in
+  server logs.
 - Token and invitation flows gain a required database-backed email job write
   after successful domain creation.
 - Password reset must preserve enumeration resistance.
@@ -431,6 +475,11 @@ template without exposing credentials or raw secrets in normal API responses.
 ## Validation Plan
 
 - Unit-test configuration parsing for complete and missing OneSignal settings.
+- Unit-test configuration parsing for development-disabled mode when
+  `ONESIGNAL_APP_ID` is absent, including no requirement for REST API key,
+  template IDs, or `APP_PUBLIC_BASE_URL`.
+- Unit-test that development-disabled mode derives a localhost public base URL
+  from `PORT` or `3000` when `APP_PUBLIC_BASE_URL` is absent.
 - Unit-test template metadata files for required names, subjects, and
   placeholders.
 - Unit-test email job repository creation, claiming, success marking, retry
@@ -441,6 +490,8 @@ template without exposing credentials or raw secrets in normal API responses.
 - Unit-test password reset, account activation, non-authoritative Google
   registration, and workspace invitation flows for:
   - email job queued after successful domain action
+  - development-disabled logging happens after successful domain action without
+    creating email jobs
   - no email job for unknown reset email
   - unchanged API response shapes
   - no raw link fallback logs
@@ -460,15 +511,18 @@ template without exposing credentials or raw secrets in normal API responses.
 
 - Update `AGENTS.md` authentication/account-state and configuration sections to
   say reset, activation, and invitation links are queued for asynchronous
-  OneSignal template email delivery and are no longer logged as fallback.
+  OneSignal template email delivery when `ONESIGNAL_APP_ID` is configured, and
+  logged only in development-disabled mode when `ONESIGNAL_APP_ID` is absent.
 - Update `swagger.yml` descriptions that currently say reset, activation, or
   invitation links are logged until email delivery exists, and document the
   failed-email retrigger endpoint.
 - Update `http/api.http` comments only if needed to reflect that raw tokens are
   obtained from delivered email, not API responses or server logs. Add a request
   example for the failed-email retrigger endpoint.
-- Add or update README/operator setup documentation for required OneSignal
-  environment variables, manual template-copy process, and email job monitoring.
+- Add or update README/operator setup documentation for optional
+  `ONESIGNAL_APP_ID` dev-disable behavior, required OneSignal environment
+  variables when enabled, manual template-copy process, and email job
+  monitoring.
 - Do not document OneSignal secrets in examples with real values.
 
 ## External References

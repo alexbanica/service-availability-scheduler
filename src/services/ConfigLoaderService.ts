@@ -18,6 +18,7 @@ export type AppConfig = {
 };
 
 export type OneSignalConfig = {
+  enabled: boolean;
   appId: string;
   restApiKey: string;
   publicAppBaseUrl: string;
@@ -65,9 +66,28 @@ export class ConfigLoaderService {
   }
 
   private resolveOneSignalConfig(): OneSignalConfig {
-    const appId = this.requiredEnv('ONESIGNAL_APP_ID');
+    const appId = process.env.ONESIGNAL_APP_ID?.trim() || '';
+    if (!appId) {
+      return {
+        enabled: false,
+        appId: '',
+        restApiKey: '',
+        publicAppBaseUrl: this.resolveDisabledPublicAppBaseUrl(),
+        templateIds: {
+          passwordReset: '',
+          accountActivation: '',
+          workspaceInvitation: '',
+        },
+        emailFromName: undefined,
+        emailFromAddress: undefined,
+        emailReplyToAddress: undefined,
+      };
+    }
+
     const restApiKey = this.requiredEnv('ONESIGNAL_REST_API_KEY');
-    const publicAppBaseUrl = this.resolvePublicAppBaseUrl();
+    const publicAppBaseUrl = this.resolvePublicAppBaseUrl(
+      this.requiredEnv('APP_PUBLIC_BASE_URL'),
+    );
     const passwordReset = this.requiredEnv(
       'ONESIGNAL_TEMPLATE_PASSWORD_RESET_ID',
     );
@@ -84,6 +104,7 @@ export class ConfigLoaderService {
     };
 
     return {
+      enabled: true,
       appId,
       restApiKey,
       publicAppBaseUrl,
@@ -106,8 +127,16 @@ export class ConfigLoaderService {
     return value;
   }
 
-  private resolvePublicAppBaseUrl(): string {
-    const rawValue = this.requiredEnv('APP_PUBLIC_BASE_URL');
+  private resolveDisabledPublicAppBaseUrl(): string {
+    const configuredValue = process.env.APP_PUBLIC_BASE_URL?.trim();
+    if (configuredValue) {
+      return this.resolvePublicAppBaseUrl(configuredValue);
+    }
+    const port = process.env.PORT?.trim() || '3000';
+    return `http://localhost:${port}`;
+  }
+
+  private resolvePublicAppBaseUrl(rawValue: string): string {
     let parsed: URL;
     try {
       parsed = new URL(rawValue);
@@ -117,7 +146,12 @@ export class ConfigLoaderService {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('APP_PUBLIC_BASE_URL must use http or https');
     }
-    return rawValue.replace(/\/+$/, '');
+    if (parsed.search || parsed.hash) {
+      throw new Error(
+        'APP_PUBLIC_BASE_URL must not include query strings or fragments',
+      );
+    }
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
   }
 
   private resolveRunMigrationsOnStartup(

@@ -3,6 +3,7 @@ import { EmailJobRepository } from '../repositories/EmailJobRepository';
 import { EmailTemplateService } from './EmailTemplateService';
 
 type EmailLogger = {
+  info: (message: string, ...params: unknown[]) => void;
   error: (message: string, ...params: unknown[]) => void;
 };
 
@@ -72,6 +73,20 @@ export class TransactionalEmailService {
     },
   ): Promise<void> {
     const metadata = this.templateService.metadataFor(emailKind);
+    if (!this.templateService.isOneSignalEnabled()) {
+      this.logger.info(
+        'OneSignal email delivery disabled because ONESIGNAL_APP_ID is not configured; generated transactional email request',
+        {
+          emailKind,
+          recipientEmail,
+          userId: input.userId,
+          payloadKeys: Object.keys(input.payload).sort(),
+          payload: input.payload,
+        },
+      );
+      return;
+    }
+
     try {
       await this.emailJobRepository.create({
         emailKind,

@@ -6,6 +6,7 @@ import type { OneSignalConfig } from '../../services/ConfigLoaderService';
 import { OneSignalEmailDeliveryService } from '../../services/OneSignalEmailDeliveryService';
 
 const config: OneSignalConfig = {
+  enabled: true,
   appId: 'app-id',
   restApiKey: 'rest-key',
   publicAppBaseUrl: 'https://app.example.com',

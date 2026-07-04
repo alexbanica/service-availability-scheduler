@@ -148,6 +148,54 @@ class ResetLoggerStub {
   }
 }
 
+class TransactionalEmailServiceStub {
+  public passwordResetQueue: Array<{
+    token: string;
+    recipientEmail: string;
+    userId: string;
+  }> = [];
+
+  public accountActivationQueue: Array<{
+    token: string;
+    recipientEmail: string;
+    userId: string;
+    nickname: string;
+  }> = [];
+
+  public workspaceInvitationQueue: Array<{
+    code: string;
+    recipientEmail: string;
+    userId: string | null;
+    workspaceName: string;
+  }> = [];
+
+  async queuePasswordResetEmail(input: {
+    token: string;
+    recipientEmail: string;
+    userId: string;
+  }): Promise<void> {
+    this.passwordResetQueue.push(input);
+  }
+
+  async queueAccountActivationEmail(input: {
+    token: string;
+    recipientEmail: string;
+    userId: string;
+    nickname: string;
+  }): Promise<void> {
+    this.accountActivationQueue.push(input);
+  }
+
+  async queueWorkspaceInvitationEmail(input: {
+    code: string;
+    recipientEmail: string;
+    userId: string | null;
+    workspaceName: string;
+  }): Promise<void> {
+    this.workspaceInvitationQueue.push(input);
+  }
+}
+
 type HttpResponse = {
   statusCode: number;
   body: unknown;
@@ -513,6 +561,7 @@ function createLoginController(
   passwordResetTokenService?: PasswordResetTokenServiceStub,
   captchaService?: CaptchaServiceStub,
   resetLogger?: ResetLoggerStub,
+  transactionalEmailService?: TransactionalEmailServiceStub,
 ): AuthController {
   const userService = new FakeUserService(user);
   const fakePasswordService = new PasswordServiceStub(acceptedPassword);
@@ -526,6 +575,11 @@ function createLoginController(
     passwordResetTokenService as unknown,
     resetLogger as unknown,
     undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    transactionalEmailService as unknown,
   );
 }
 
@@ -537,6 +591,7 @@ function createRegistrationController(
   resetLogger?: ResetLoggerStub,
   passwordResetTokenService?: PasswordResetTokenServiceStub,
   workspaceService?: WorkspaceServiceStub,
+  transactionalEmailService?: TransactionalEmailServiceStub,
 ): AuthController {
   const userService = new FakeUserService(user);
   const fakePasswordService = new PasswordServiceStub(acceptedPassword);
@@ -550,8 +605,11 @@ function createRegistrationController(
     passwordResetTokenService as unknown,
     resetLogger as unknown,
     tokenService as unknown,
-    undefined as unknown,
+    undefined,
+    undefined,
     workspaceService as unknown,
+    undefined,
+    transactionalEmailService as unknown,
   );
 }
 
@@ -1087,25 +1145,21 @@ test('POST /api/register creates user, token, and returns authenticated non-acti
     createResult: 'activation-token-abc',
   });
   const logger = new ResetLoggerStub();
+  const transactionalEmailService = new TransactionalEmailServiceStub();
   const captchaService = new CaptchaServiceStub(
     () => ({ challengeId: 'register-challenge-id', prompt: '1 + 1?' }),
     true,
   );
 
-  const userService = new FakeUserService(null);
-  const passwordService = new PasswordServiceStub('correct-password');
-  const jwtService = new FakeJwtAuthService(3600);
-
-  const controller = new (AuthController as unknown as {
-    new (...args: unknown[]): AuthController;
-  })(
-    userService as unknown,
-    jwtService as unknown,
-    passwordService as unknown,
-    captchaService as unknown,
-    undefined as unknown,
-    logger as unknown,
-    tokenService as unknown,
+  const controller = createRegistrationController(
+    null,
+    'correct-password',
+    captchaService,
+    tokenService,
+    logger,
+    undefined,
+    undefined,
+    transactionalEmailService,
   );
   controller.register(app);
 
@@ -1146,10 +1200,13 @@ test('POST /api/register creates user, token, and returns authenticated non-acti
   });
   assert.equal(tokenService.createCount, 1);
   assert.equal(tokenService.updatedToken, 'user-1');
-  assert.equal(userService.activatedUserIds.length, 0);
-  assert.equal(userService.creationCalls, 1);
-  assert.equal(userService.createdUsers[0]?.email, 'new@example.com');
-  assert.equal(userService.createdUsers[0]?.nickname, 'New User');
+  assert.equal(transactionalEmailService.accountActivationQueue.length, 1);
+  assert.deepEqual(transactionalEmailService.accountActivationQueue[0], {
+    token: 'activation-token-abc',
+    recipientEmail: 'new@example.com',
+    userId: 'user-1',
+    nickname: 'New User',
+  });
   assert.equal(
     logger.messages.some((message) =>
       message.message.includes('/activate-account/'),
@@ -1848,12 +1905,14 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
     true,
   );
   const knownLogger = new ResetLoggerStub();
+  const knownTransactionalEmailService = new TransactionalEmailServiceStub();
   const knownController = createLoginController(
     createUser('alice@example.com', true),
     'correct-password',
     knownTokenService,
     knownCaptchaService,
     knownLogger,
+    knownTransactionalEmailService,
   );
   knownController.register(app);
 
@@ -1889,6 +1948,12 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
   );
   assert.equal(knownTokenService.createCount, 1);
   assert.equal(knownTokenService.updatedToken, 'user-1');
+  assert.equal(knownTransactionalEmailService.passwordResetQueue.length, 1);
+  assert.deepEqual(knownTransactionalEmailService.passwordResetQueue[0], {
+    token: 'known-token',
+    recipientEmail: 'alice@example.com',
+    userId: 'user-1',
+  });
   assert.equal(
     knownLogger.messages.some((message) =>
       message.message.includes('/reset-password/'),
@@ -1906,12 +1971,14 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
     true,
   );
   const unknownLogger = new ResetLoggerStub();
+  const unknownTransactionalEmailService = new TransactionalEmailServiceStub();
   const unknownController = createLoginController(
     null,
     'correct-password',
     unknownTokenService,
     unknownCaptchaService,
     unknownLogger,
+    unknownTransactionalEmailService,
   );
   unknownController.register(appUnknown);
   const unknownResponse = await runHandlers(
@@ -1930,6 +1997,7 @@ test('POST /api/password-reset/request succeeds for known and unknown users with
   assert.equal(unknownResponse.statusCode, 200);
   assert.equal((unknownResponse.body as { ok?: boolean }).ok, true);
   assert.equal(unknownTokenService.createCount, 0);
+  assert.equal(unknownTransactionalEmailService.passwordResetQueue.length, 0);
   assert.equal(unknownLogger.messages.length, 0);
 });
 

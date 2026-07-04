@@ -165,11 +165,13 @@ async function start() {
     config.passwordResetTokenExpiresInSeconds,
     config.workspaceInvitationExpiresInSeconds,
   );
-  const emailWorkerService = new EmailWorkerService(
-    emailJobRepository,
-    new OneSignalEmailDeliveryService(config.oneSignal),
-  );
-  emailWorkerService.start();
+  if (config.oneSignal.enabled) {
+    const emailWorkerService = new EmailWorkerService(
+      emailJobRepository,
+      new OneSignalEmailDeliveryService(config.oneSignal),
+    );
+    emailWorkerService.start();
+  }
 
   setInterval(() => {
     reservationService.cleanupExpired(new Date()).catch((err) => {
