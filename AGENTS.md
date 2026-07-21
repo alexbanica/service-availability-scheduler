@@ -83,7 +83,19 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   environments, invitations, workspace users, or events.
 - Non-activated users may use only auth/session endpoints required to stay
   logged in or log out, `/api/me`, activation-token validation/activation,
-  `/api/app-info`, static assets, and page routes needed to display the app.
+  `DELETE /api/users/me`, `/api/app-info`, static assets, and page routes needed
+  to display the app.
+- Self-service account deletion targets only the authenticated current user and
+  requires a request body containing exactly `confirmation_email`, normalized by
+  trimming and lowercasing, matching the current database email.
+- Account deletion must reject atomically with the documented exact `409` error
+  while any workspace owned by the user has another member. Sole-member owned
+  workspaces and their local data may be deleted; shared workspaces not owned by
+  the user must remain intact.
+- Successful account deletion removes attributable local account data and makes
+  all previously issued tokens for the deleted user fail authentication
+  immediately. It does not claim to remove delivered email or data retained by
+  Google, OneSignal, mail providers, browsers, backups, or infrastructure logs.
 - Browser controls for activation or role restrictions are advisory UX only.
   Server-side authorization remains the source of enforcement and must return
   deterministic `403` responses after authentication succeeds.
@@ -129,6 +141,9 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   overlap persistent bottom banners.
 - Browser delete and remove controls must follow the approval requirement before
   calling the destructive mutation.
+- Account deletion uses a dedicated typed-email confirmation flow. Success
+  clears bearer-token and user-scoped browser state, stops protected background
+  work, and redirects to `/login`; failure preserves the session and dialog.
 
 ## API Contract Documentation
 - The repository is both an API project and a frontend app; API contracts are

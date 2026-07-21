@@ -62,6 +62,7 @@ const { AuthService } = requireFromRoot(
       activated?: boolean;
     } | null>;
     isAuthenticated: () => boolean;
+    deleteAccount?: (confirmationEmail: string) => Promise<void>;
   };
 };
 
@@ -103,6 +104,7 @@ const { EventsService } = requireFromRoot(
   EventsService: {
     prototype: {
       start: (onExpiring: unknown) => void;
+      stop?: () => void;
     };
   };
 };
@@ -129,6 +131,11 @@ type AppState = {
   selectedWorkspaceUsers?: { value: unknown[] };
   adminSection?: { value: 'workspace' | 'services' | 'users' };
   setAdminSection?: (section: 'workspace' | 'services' | 'users') => void;
+  isAccountDeletionModalOpen?: { value: boolean };
+  accountDeletionConfirmation?: { value: string };
+  accountDeletionError?: { value: string };
+  openAccountDeletionModal?: () => void;
+  deleteAccount?: () => Promise<void>;
 };
 
 function installLocalStorage(): () => void {
@@ -185,6 +192,7 @@ function createAppControllerWithFakeVue(): {
 } {
   let state: AppState = { user: { value: null } };
   let onMountedCallback: (() => Promise<void> | void) | null = null;
+  const watchers = new WeakMap<object, Array<(value: unknown) => void>>();
 
   const fakeVue = {
     createApp: (options: { setup: () => AppState }) => {
@@ -195,7 +203,21 @@ function createAppControllerWithFakeVue(): {
         },
       };
     },
-    ref: (value: unknown) => ({ value }),
+    ref: (initialValue: unknown) => {
+      let value = initialValue;
+      const source = {
+        get value() {
+          return value;
+        },
+        set value(nextValue: unknown) {
+          value = nextValue;
+          for (const callback of watchers.get(source) ?? []) {
+            callback(nextValue);
+          }
+        },
+      };
+      return source;
+    },
     computed: (fn: () => unknown) => ({
       get value() {
         return fn();
@@ -204,7 +226,15 @@ function createAppControllerWithFakeVue(): {
     onMounted: (callback: () => Promise<void> | void) => {
       onMountedCallback = callback;
     },
-    watch: () => undefined,
+    watch: (source: object, callback: (value: unknown) => void) => {
+      const callbacks = watchers.get(source) ?? [];
+      callbacks.push(callback);
+      watchers.set(source, callbacks);
+    },
+    nextTick: (callback?: () => void) => {
+      callback?.();
+      return Promise.resolve();
+    },
   };
 
   const controller = new AppController();
@@ -620,4 +650,143 @@ test('AppController exposes admin-only workspace user administration state', asy
   ApiService.get = originalApiGet;
   EventsService.prototype.start = originalEventsStart;
   restoreLocalStorage();
+});
+
+test('successful account deletion clears user state, stops background work, preserves theme, and redirects to login', async () => {
+  const restoreLocalStorage = installLocalStorage();
+  const browserStorage = (globalThis as unknown as { localStorage: Storage })
+    .localStorage;
+  const browserWindow = (
+    globalThis as unknown as {
+      window: Record<string, unknown>;
+    }
+  ).window;
+  const originalLoadUser = AuthService.loadUser;
+  const originalIsAuthenticated = AuthService.isAuthenticated;
+  const originalRenew = AuthService.renew;
+  const originalDeleteAccount = AuthService.deleteAccount;
+  const originalWorkspaceList = WorkspaceService.list;
+  const originalLoadServices = ReservationService.loadServices;
+  const originalApiGet = ApiService.get;
+  const originalEventsStart = EventsService.prototype.start;
+  const originalEventsStop = EventsService.prototype.stop;
+  const clearedTimeouts: unknown[] = [];
+  const clearedIntervals: unknown[] = [];
+  const timers: Array<{
+    id: number;
+    callback: () => unknown;
+    delay: number;
+  }> = [];
+  let nextTimerId = 1;
+  let eventsStopped = 0;
+  let href = '/overview';
+  let resolveRenewal!: (renewed: boolean) => void;
+
+  browserWindow.location = {
+    get href() {
+      return href;
+    },
+    set href(value: string) {
+      href = value;
+    },
+  };
+  browserWindow.setTimeout = (callback: () => unknown, delay: number = 0) => {
+    const id = nextTimerId++;
+    timers.push({ id, callback, delay });
+    return id;
+  };
+  browserWindow.clearTimeout = (timerId: unknown) => {
+    clearedTimeouts.push(timerId);
+  };
+  browserWindow.setInterval = () => nextTimerId++;
+  browserWindow.clearInterval = (timerId: unknown) => {
+    clearedIntervals.push(timerId);
+  };
+
+  browserStorage.setItem('auth_token', 'stored-token');
+  browserStorage.setItem('auth_token_expires_at_ms', '999999999');
+  browserStorage.setItem('ownerFilter', 'platform');
+  browserStorage.setItem('workspaceFilter', 'workspace-1');
+  browserStorage.setItem('serviceManagementWorkspace', 'workspace-1');
+  browserStorage.setItem('theme', 'dark');
+
+  AuthService.loadUser = async () => ({
+    id: 'user-1',
+    email: 'alice@example.com',
+    nickname: 'Alice',
+    activated: true,
+  });
+  AuthService.isAuthenticated = () => true;
+  AuthService.renew = () =>
+    new Promise<boolean>((resolve) => {
+      resolveRenewal = resolve;
+    });
+  AuthService.deleteAccount = async () => {
+    browserStorage.removeItem('auth_token');
+    browserStorage.removeItem('auth_token_expires_at_ms');
+  };
+  WorkspaceService.list = async () => [];
+  ReservationService.loadServices = async () => ({
+    expiryWarningMinutes: 5,
+    autoRefreshSeconds: 30,
+    services: [],
+  });
+  ApiService.get = async () => createMockResponse(200, { version: 'test' });
+  EventsService.prototype.start = () => {
+    return;
+  };
+  EventsService.prototype.stop = () => {
+    eventsStopped += 1;
+  };
+
+  try {
+    const { state, runMounted } = createAppControllerWithFakeVue();
+    await runMounted();
+    const renewalTimer = timers.find((timer) => timer.delay === 0);
+    assert.ok(renewalTimer, 'expected token renewal to be scheduled');
+    const inFlightRenewal = renewalTimer.callback() as Promise<void>;
+    assert.equal(typeof state.openAccountDeletionModal, 'function');
+    state.openAccountDeletionModal?.();
+    state.accountDeletionConfirmation!.value = 'alice@example.com';
+    await state.deleteAccount?.();
+    const timerCountAfterDeletion = timers.length;
+
+    browserStorage.setItem('auth_token', 'stale-renewed-token');
+    browserStorage.setItem('auth_token_expires_at_ms', '9999999999999');
+    resolveRenewal(true);
+    await inFlightRenewal;
+
+    assert.equal(state.user.value, null);
+    assert.equal(state.isAccountDeletionModalOpen?.value, false);
+    assert.equal(state.accountDeletionConfirmation?.value, '');
+    assert.equal(state.accountDeletionError?.value, '');
+    assert.equal(browserStorage.getItem('auth_token'), null);
+    assert.equal(browserStorage.getItem('auth_token_expires_at_ms'), null);
+    assert.equal(browserStorage.getItem('ownerFilter'), null);
+    assert.equal(browserStorage.getItem('workspaceFilter'), null);
+    assert.equal(browserStorage.getItem('serviceManagementWorkspace'), null);
+    assert.equal(browserStorage.getItem('theme'), 'dark');
+    assert.equal(eventsStopped, 1);
+    assert.equal(
+      timers.length,
+      timerCountAfterDeletion,
+      'stale renewal must not schedule protected work',
+    );
+    assert.ok(
+      clearedTimeouts.length + clearedIntervals.length > 0,
+      'expected account deletion to cancel renewal and refresh timers',
+    );
+    assert.equal(href, '/login');
+  } finally {
+    AuthService.loadUser = originalLoadUser;
+    AuthService.isAuthenticated = originalIsAuthenticated;
+    AuthService.renew = originalRenew;
+    AuthService.deleteAccount = originalDeleteAccount;
+    WorkspaceService.list = originalWorkspaceList;
+    ReservationService.loadServices = originalLoadServices;
+    ApiService.get = originalApiGet;
+    EventsService.prototype.start = originalEventsStart;
+    EventsService.prototype.stop = originalEventsStop;
+    restoreLocalStorage();
+  }
 });

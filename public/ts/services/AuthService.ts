@@ -31,6 +31,25 @@ export class AuthService {
     }
   }
 
+  static async deleteAccount(confirmationEmail: string): Promise<void> {
+    const response = await ApiService.delete('/api/users/me', {
+      confirmation_email: confirmationEmail.trim().toLowerCase(),
+    });
+    if (!response.ok) {
+      let message = 'Account deletion failed.';
+      try {
+        const data = (await response.json()) as { error?: string };
+        if (typeof data.error === 'string' && data.error) {
+          message = data.error;
+        }
+      } catch {
+        // Keep the deterministic fallback for an empty or malformed response.
+      }
+      throw new Error(message);
+    }
+    AuthTokenStorage.clearToken();
+  }
+
   static async renew(): Promise<boolean> {
     try {
       const response = await ApiService.post('/api/renew');

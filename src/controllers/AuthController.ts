@@ -1017,6 +1017,6 @@ export class AuthController {
       },
     );
 
-    assignJwtAuthService(app, this.jwtAuthService);
+    assignJwtAuthService(app, this.jwtAuthService, this.userService);
   }
 }

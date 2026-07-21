@@ -1,5 +1,6 @@
 @host = http://localhost:3000
 @token = replace-with-login-token
+@confirmationEmail = admin@example.com
 @workspaceId = replace-with-workspace-uuid
 @serviceId = replace-with-service-id
 @serviceKey = replace-with-service-key
@@ -113,6 +114,18 @@ Content-Type: application/json
 ### Current user
 GET {{host}}/api/me
 Authorization: Bearer {{token}}
+
+### Permanently delete the current account
+# Available before account activation. The confirmation email must match the
+# authenticated user's current database email after trimming and lowercasing.
+# Remove every other member from workspaces owned by this user before calling.
+DELETE {{host}}/api/users/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "confirmation_email": "{{confirmationEmail}}"
+}
 
 ### Renew bearer token
 POST {{host}}/api/renew

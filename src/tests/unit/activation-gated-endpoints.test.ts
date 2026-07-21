@@ -45,6 +45,31 @@ class FakeJwtAuthService {
   }
 }
 
+class FakeCurrentUserService {
+  async findById(userId: string) {
+    if (userId !== 'user-1') return null;
+    return {
+      userId,
+      email: 'alice@example.com',
+      nickname: 'Alice',
+      activated: false,
+    };
+  }
+}
+
+function assignAuthDependencies(
+  app: express.Express,
+  jwtService: FakeJwtAuthService,
+): void {
+  (
+    assignJwtAuthService as unknown as (
+      app: express.Express,
+      jwtService: unknown,
+      currentUserService: unknown,
+    ) => void
+  )(app, jwtService, new FakeCurrentUserService());
+}
+
 class FakeReservationService {
   async getServiceList() {
     return {
@@ -225,7 +250,7 @@ test('GET /api/services requires activated identity', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
-  assignJwtAuthService(app, jwtService as unknown as never);
+  assignAuthDependencies(app, jwtService);
 
   new ServiceController(new FakeReservationService() as never).register(app);
 
@@ -254,7 +279,7 @@ test('POST /api/claim requires activated identity', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
-  assignJwtAuthService(app, jwtService as unknown as never);
+  assignAuthDependencies(app, jwtService);
 
   new ReservationController(new FakeReservationService() as never).register(
     app,
@@ -288,7 +313,7 @@ test('POST /api/workspaces requires activated identity', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
-  assignJwtAuthService(app, jwtService as unknown as never);
+  assignAuthDependencies(app, jwtService);
 
   new WorkspaceController(new FakeWorkspaceService() as never).register(app);
 
@@ -320,7 +345,7 @@ test('GET /api/workspaces allows non-activated authenticated users to read membe
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
-  assignJwtAuthService(app, jwtService as unknown as never);
+  assignAuthDependencies(app, jwtService);
 
   new WorkspaceController(new FakeWorkspaceService() as never).register(app);
 
@@ -349,7 +374,7 @@ test('GET /api/workspace detail popup routes require activated identity', async 
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService();
-  assignJwtAuthService(app, jwtService as unknown as never);
+  assignAuthDependencies(app, jwtService);
 
   new WorkspaceController(new FakeWorkspaceService() as never).register(app);
 

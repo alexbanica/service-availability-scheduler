@@ -183,6 +183,25 @@ class FakeJwtAuthService {
   }
 }
 
+class FakeCurrentUserService {
+  async findById(userId: string): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  } | null> {
+    if (userId !== 'user-admin') {
+      return null;
+    }
+    return {
+      userId: 'user-admin',
+      email: 'admin@example.com',
+      nickname: 'Admin',
+      activated: true,
+    };
+  }
+}
+
 class WorkspaceInviteServiceStub extends FakeWorkspaceService {
   public inviteUserCalls: Array<{
     workspaceId: string;
@@ -436,8 +455,16 @@ test('POST /api/workspaces/:workspaceId/invitations does not log raw invitation 
     transactionalEmailService as never,
   );
   (
-    app as unknown as { locals: { jwtAuthService: FakeJwtAuthService } }
-  ).locals = { jwtAuthService: new FakeJwtAuthService() };
+    app as unknown as {
+      locals: {
+        jwtAuthService: FakeJwtAuthService;
+        currentUserService: FakeCurrentUserService;
+      };
+    }
+  ).locals = {
+    jwtAuthService: new FakeJwtAuthService(),
+    currentUserService: new FakeCurrentUserService(),
+  };
   controller.register(app);
 
   const originalConsoleInfo = console.info;

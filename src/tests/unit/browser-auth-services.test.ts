@@ -43,6 +43,10 @@ const { ApiService } = requireFromRoot(
       payload?: Record<string, unknown>,
     ) => Promise<Response>;
     get: (path: string) => Promise<Response>;
+    delete?: (
+      path: string,
+      payload?: Record<string, unknown>,
+    ) => Promise<Response>;
   };
 };
 
@@ -83,6 +87,7 @@ const { AuthService } = requireFromRoot(
     loadUser: () => Promise<AppUserStub | null>;
     renew: () => Promise<boolean>;
     logout: () => Promise<void>;
+    deleteAccount?: (confirmationEmail: string) => Promise<void>;
     redirectToLoginWhenUnauthenticated: () => boolean;
   };
 };
@@ -188,6 +193,7 @@ function createMockResponse<T>(status: number, body: T): Response {
 
 type FetchState = {
   url: string;
+  method?: string;
   headers: Record<string, string>;
   body?: string;
 };
@@ -211,6 +217,7 @@ function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
     })();
     const fetchState: FetchState = {
       url,
+      method: init?.method,
       headers,
       body: init?.body?.toString(),
     };
@@ -227,6 +234,12 @@ function setupFetchMock(resolver: (state: FetchState) => Promise<Response>): {
 }
 
 type Ref<T> = { value: T };
+
+type ModalKeydownEvent = {
+  key: string;
+  shiftKey: boolean;
+  preventDefault: () => void;
+};
 
 type LoginControllerState = {
   email: Ref<string>;
@@ -291,6 +304,15 @@ type AppControllerState = {
   openEnvironmentModal: (workspaceId: string) => void;
   openClaimModal: (serviceKey: string) => void;
   consumePendingWorkspaceInvitation: () => Promise<void>;
+  isAccountDeletionModalOpen?: Ref<boolean>;
+  accountDeletionConfirmation?: Ref<string>;
+  accountDeletionError?: Ref<string>;
+  accountDeletionPending?: Ref<boolean>;
+  canSubmitAccountDeletion?: Ref<boolean>;
+  openAccountDeletionModal?: () => void;
+  closeAccountDeletionModal?: () => void;
+  handleAccountDeletionModalKeydown?: (event: ModalKeydownEvent) => void;
+  deleteAccount?: () => Promise<void>;
 };
 
 type WorkspaceInvitationControllerState = {
@@ -408,6 +430,10 @@ function createAppControllerState(): AppControllerState {
         return fn();
       },
     }),
+    nextTick: (callback?: () => void) => {
+      callback?.();
+      return Promise.resolve();
+    },
     onMounted: () => {
       return;
     },
@@ -679,7 +705,9 @@ test('LoginService stores token returned by /api/login', async () => {
 
 test('LoginService stores token returned by /api/google-auth', async () => {
   if (!LoginService.loginWithGoogle) {
-    assert.fail('LoginService.loginWithGoogle is not available in browser bundle');
+    assert.fail(
+      'LoginService.loginWithGoogle is not available in browser bundle',
+    );
   }
   const loginWithGoogle = LoginService.loginWithGoogle;
 
@@ -725,7 +753,9 @@ test('LoginService stores token returned by /api/google-auth', async () => {
 
 test('LoginService.loginWithGoogle propagates backend error without storing a token', async () => {
   if (!LoginService.loginWithGoogle) {
-    assert.fail('LoginService.loginWithGoogle is not available in browser bundle');
+    assert.fail(
+      'LoginService.loginWithGoogle is not available in browser bundle',
+    );
   }
   const loginWithGoogle = LoginService.loginWithGoogle;
 
@@ -1007,15 +1037,17 @@ test('LoginController exposes Google auth controls when app info reports client 
 test('LoginController executes reCAPTCHA before password reset request', async () => {
   const { restore, setHref } = createWindowAndStorage();
   const executeCalls: Array<{ siteKey: string; action: string }> = [];
-  ((globalThis as unknown as { window: unknown }).window as {
-    grecaptcha: {
-      ready: (callback: () => void) => void;
-      execute: (
-        siteKey: string,
-        options: { action: string },
-      ) => Promise<string>;
-    };
-  }).grecaptcha = {
+  (
+    (globalThis as unknown as { window: unknown }).window as {
+      grecaptcha: {
+        ready: (callback: () => void) => void;
+        execute: (
+          siteKey: string,
+          options: { action: string },
+        ) => Promise<string>;
+      };
+    }
+  ).grecaptcha = {
     ready: (callback: () => void) => callback(),
     execute: async (siteKey, options) => {
       executeCalls.push({ siteKey, action: options.action });
@@ -1063,15 +1095,17 @@ test('LoginController executes reCAPTCHA before password reset request', async (
 test('LoginController executes reCAPTCHA before password registration', async () => {
   const { restore, setHref, getHref } = createWindowAndStorage();
   const executeCalls: Array<{ siteKey: string; action: string }> = [];
-  ((globalThis as unknown as { window: unknown }).window as {
-    grecaptcha: {
-      ready: (callback: () => void) => void;
-      execute: (
-        siteKey: string,
-        options: { action: string },
-      ) => Promise<string>;
-    };
-  }).grecaptcha = {
+  (
+    (globalThis as unknown as { window: unknown }).window as {
+      grecaptcha: {
+        ready: (callback: () => void) => void;
+        execute: (
+          siteKey: string,
+          options: { action: string },
+        ) => Promise<string>;
+      };
+    }
+  ).grecaptcha = {
     ready: (callback: () => void) => callback(),
     execute: async (siteKey, options) => {
       executeCalls.push({ siteKey, action: options.action });
@@ -1679,4 +1713,303 @@ test('AuthService.renew returns false on non-401 failures and keeps token', asyn
 
   fetch.restore();
   restore();
+});
+
+test('ApiService sends authenticated DELETE JSON payloads', async () => {
+  const { set, restore } = createWindowAndStorage();
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(createMockResponse(204, undefined)),
+  );
+
+  try {
+    set('auth_token', 'stored-token');
+    assert.equal(typeof ApiService.delete, 'function');
+    await ApiService.delete?.('/api/users/me', {
+      confirmation_email: 'alice@example.com',
+    });
+
+    assert.equal(fetch.state.length, 1);
+    assert.equal(fetch.state[0].url, '/api/users/me');
+    assert.equal(fetch.state[0].method, 'DELETE');
+    assert.equal(
+      getHeader(fetch.state[0], 'Authorization'),
+      'Bearer stored-token',
+    );
+    assert.equal(getHeader(fetch.state[0], 'Content-Type'), 'application/json');
+    assert.deepEqual(JSON.parse(fetch.state[0].body ?? '{}'), {
+      confirmation_email: 'alice@example.com',
+    });
+  } finally {
+    fetch.restore();
+    restore();
+  }
+});
+
+test('AuthService account deletion preserves session on failure and clears it only after success', async () => {
+  const { set, get, restore } = createWindowAndStorage();
+  const responses = [
+    createMockResponse(409, {
+      error:
+        'Account cannot be deleted because one or more workspaces you own still have other members. Remove those members before deleting your account.',
+    }),
+    createMockResponse(204, undefined),
+  ];
+  const fetch = setupFetchMock(() =>
+    Promise.resolve(responses.shift() ?? createMockResponse(500, {})),
+  );
+
+  try {
+    set('auth_token', 'stored-token');
+    set('auth_token_expires_at_ms', '999999999');
+    const deleteAccount = AuthService.deleteAccount;
+    if (!deleteAccount) {
+      assert.fail('AuthService.deleteAccount is not available');
+    }
+
+    await assert.rejects(
+      () => deleteAccount(' Alice@Example.com '),
+      /Account cannot be deleted because one or more workspaces you own still have other members/,
+    );
+    assert.equal(get('auth_token'), 'stored-token');
+    assert.equal(get('auth_token_expires_at_ms'), '999999999');
+
+    await deleteAccount(' Alice@Example.com ');
+    assert.equal(get('auth_token'), null);
+    assert.equal(get('auth_token_expires_at_ms'), null);
+    assert.deepEqual(JSON.parse(fetch.state[1]?.body ?? '{}'), {
+      confirmation_email: 'alice@example.com',
+    });
+  } finally {
+    fetch.restore();
+    restore();
+  }
+});
+
+test('AppController uses dedicated normalized account-deletion modal state and resets it on cancel', () => {
+  const { restore } = createWindowAndStorage();
+  try {
+    const state = createAppControllerState();
+    state.user.value = {
+      id: 'user-1',
+      email: 'Alice@Example.com',
+      nickname: 'Alice',
+      activated: false,
+    };
+
+    if (
+      !state.openAccountDeletionModal ||
+      !state.closeAccountDeletionModal ||
+      !state.isAccountDeletionModalOpen ||
+      !state.canSubmitAccountDeletion ||
+      !state.accountDeletionConfirmation ||
+      !state.accountDeletionError
+    ) {
+      assert.fail(
+        'AppController account-deletion modal state is not available',
+      );
+    }
+
+    state.openAccountDeletionModal();
+    assert.equal(state.isAccountDeletionModalOpen.value, true);
+    assert.equal(state.canSubmitAccountDeletion.value, false);
+
+    state.accountDeletionConfirmation.value = '  alice@example.COM  ';
+    assert.equal(state.canSubmitAccountDeletion.value, true);
+    state.accountDeletionError.value = 'old failure';
+
+    state.closeAccountDeletionModal();
+    assert.equal(state.isAccountDeletionModalOpen.value, false);
+    assert.equal(state.accountDeletionConfirmation.value, '');
+    assert.equal(state.accountDeletionError.value, '');
+  } finally {
+    restore();
+  }
+});
+
+test('account-deletion confirmation allows normalized email input without native email validation', () => {
+  const html = readFileSync(
+    path.join(process.cwd(), 'public/index.html'),
+    'utf8',
+  );
+  const confirmationInput = html.match(
+    /<input[^>]*id="account-deletion-confirmation-email"[^>]*>/,
+  )?.[0];
+
+  assert.ok(confirmationInput);
+  assert.match(confirmationInput, /type="text"/);
+  assert.match(confirmationInput, /inputmode="email"/);
+  assert.doesNotMatch(confirmationInput, /type="email"/);
+  assert.match(html, /@click\.self="closeAccountDeletionModal"/);
+  assert.match(html, /@keydown="handleAccountDeletionModalKeydown"/);
+});
+
+test('AppController contains account-deletion modal focus and restores the trigger on dismissal', () => {
+  const { restore } = createWindowAndStorage();
+  try {
+    const state = createAppControllerState();
+    state.user.value = {
+      id: 'user-1',
+      email: 'alice@example.com',
+      nickname: 'Alice',
+      activated: true,
+    };
+    if (
+      !state.openAccountDeletionModal ||
+      !state.handleAccountDeletionModalKeydown ||
+      !state.isAccountDeletionModalOpen
+    ) {
+      assert.fail(
+        'AppController account-deletion focus behavior is not available',
+      );
+    }
+
+    let activeElement: object | null = null;
+    const focused: string[] = [];
+    const element = (name: string) => ({
+      focus: () => {
+        focused.push(name);
+        activeElement = elements[name];
+      },
+    });
+    const elements: Record<string, { focus: () => void }> = {};
+    elements.trigger = element('trigger');
+    elements.input = element('input');
+    elements.close = element('close');
+    elements.cancel = element('cancel');
+    elements.submit = element('submit');
+    const modal = {
+      contains: (candidate: object | null) =>
+        Object.values(elements)
+          .slice(1)
+          .includes(candidate as { focus: () => void }),
+      querySelectorAll: () => [
+        elements.close,
+        elements.input,
+        elements.cancel,
+        elements.submit,
+      ],
+    };
+    Object.defineProperty(globalThis, 'document', {
+      value: {
+        get activeElement() {
+          return activeElement;
+        },
+        querySelector: (selector: string) => {
+          if (selector === '#account-deletion-trigger') return elements.trigger;
+          if (selector === '#account-deletion-confirmation-email') {
+            return elements.input;
+          }
+          if (selector === '#account-deletion-modal') return modal;
+          return null;
+        },
+      },
+      configurable: true,
+    });
+
+    state.openAccountDeletionModal();
+    assert.deepEqual(focused, ['input']);
+
+    activeElement = elements.submit;
+    let prevented = false;
+    state.handleAccountDeletionModalKeydown({
+      key: 'Tab',
+      shiftKey: false,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+    assert.equal(activeElement, elements.close);
+
+    activeElement = elements.close;
+    prevented = false;
+    state.handleAccountDeletionModalKeydown({
+      key: 'Tab',
+      shiftKey: true,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+    assert.equal(activeElement, elements.submit);
+
+    state.handleAccountDeletionModalKeydown({
+      key: 'Escape',
+      shiftKey: false,
+      preventDefault: () => undefined,
+    });
+    assert.equal(state.isAccountDeletionModalOpen.value, false);
+    assert.equal(activeElement, elements.trigger);
+  } finally {
+    restore();
+  }
+});
+
+test('AppController prevents duplicate deletion submits and persists the exact conflict without ending the session', async () => {
+  const { set, get, restore } = createWindowAndStorage();
+  const originalDeleteAccount = AuthService.deleteAccount;
+  const conflictMessage =
+    'Account cannot be deleted because one or more workspaces you own still have other members. Remove those members before deleting your account.';
+  let calls = 0;
+  let rejectRequest: ((reason: Error) => void) | undefined;
+  AuthService.deleteAccount = () => {
+    calls += 1;
+    return new Promise<void>((_resolve, reject) => {
+      rejectRequest = reject;
+    });
+  };
+
+  try {
+    set('auth_token', 'stored-token');
+    set('auth_token_expires_at_ms', '999999999');
+    const state = createAppControllerState();
+    state.user.value = {
+      id: 'user-1',
+      email: 'alice@example.com',
+      nickname: 'Alice',
+      activated: true,
+    };
+    if (
+      !state.openAccountDeletionModal ||
+      !state.closeAccountDeletionModal ||
+      !state.handleAccountDeletionModalKeydown ||
+      !state.deleteAccount ||
+      !state.isAccountDeletionModalOpen ||
+      !state.accountDeletionConfirmation ||
+      !state.accountDeletionError ||
+      !state.accountDeletionPending
+    ) {
+      assert.fail(
+        'AppController account-deletion submit state is not available',
+      );
+    }
+
+    state.openAccountDeletionModal();
+    state.accountDeletionConfirmation.value = 'alice@example.com';
+
+    const firstSubmit = state.deleteAccount();
+    const duplicateSubmit = state.deleteAccount();
+    assert.equal(calls, 1);
+    assert.equal(state.accountDeletionPending.value, true);
+    state.closeAccountDeletionModal();
+    assert.equal(state.isAccountDeletionModalOpen.value, true);
+    state.handleAccountDeletionModalKeydown({
+      key: 'Escape',
+      shiftKey: false,
+      preventDefault: () => assert.fail('pending Escape must not dismiss'),
+    });
+    assert.equal(state.isAccountDeletionModalOpen.value, true);
+
+    rejectRequest?.(new Error(conflictMessage));
+    await Promise.all([firstSubmit, duplicateSubmit]);
+
+    assert.equal(state.accountDeletionPending.value, false);
+    assert.equal(state.isAccountDeletionModalOpen.value, true);
+    assert.equal(state.accountDeletionError.value, conflictMessage);
+    assert.equal(get('auth_token'), 'stored-token');
+    assert.equal(get('auth_token_expires_at_ms'), '999999999');
+  } finally {
+    AuthService.deleteAccount = originalDeleteAccount;
+    restore();
+  }
 });

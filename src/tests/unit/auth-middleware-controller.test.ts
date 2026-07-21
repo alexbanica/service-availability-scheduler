@@ -5,7 +5,10 @@ import type { Request } from 'express';
 
 import { AuthController } from '../../controllers/AuthController';
 import * as AuthMiddleware from '../../controllers/AuthMiddleware';
-import { requireAuth } from '../../controllers/AuthMiddleware';
+import {
+  assignJwtAuthService,
+  requireAuth,
+} from '../../controllers/AuthMiddleware';
 import { User } from '../../entities/User';
 
 type HttpResponse = {
@@ -83,6 +86,17 @@ class PasswordServiceStub {
 }
 
 class FakeUserService {
+  deleted = false;
+
+  constructor(public activated = true) {}
+
+  async findById(userId: string): Promise<User | null> {
+    if (userId !== 'user-1' || this.deleted) return null;
+    return Object.assign(new User('user-1', 'alice@example.com', 'Alice'), {
+      activated: this.activated,
+    });
+  }
+
   async getNicknamesByIds(): Promise<Map<string, string>> {
     return new Map();
   }
@@ -109,15 +123,29 @@ class FakeUserService {
   }
 }
 
-function createAuthController(jwtService: FakeJwtAuthService): AuthController {
+function createAuthController(
+  jwtService: FakeJwtAuthService,
+  userService = new FakeUserService(),
+): AuthController {
   return new (AuthController as unknown as {
     new (...args: [unknown, unknown, unknown]): AuthController;
-  })(
-    new FakeUserService() as unknown,
-    jwtService,
-    new PasswordServiceStub() as unknown,
-  );
+  })(userService as unknown, jwtService, new PasswordServiceStub() as unknown);
 }
+
+test('authentication runtime registration requires a current-user dependency', () => {
+  const app = express();
+  assert.throws(
+    () =>
+      (
+        assignJwtAuthService as unknown as (
+          app: express.Express,
+          jwtService: unknown,
+          currentUserService?: unknown,
+        ) => void
+      )(app, new FakeJwtAuthService(3600)),
+    /user|dependency|required/i,
+  );
+});
 
 function getRouteHandlers(
   app: express.Express,
@@ -467,6 +495,48 @@ test('Protected renew endpoint rejects invalid token with 401', async () => {
   assert.equal(response.statusCode, 401);
 });
 
+test('a JWT for a deleted user is rejected by protected routes, /api/me, and /api/renew', async () => {
+  const app = express();
+  app.use(express.json());
+  const jwtService = new FakeJwtAuthService(3600);
+  const userService = new FakeUserService();
+  const controller = createAuthController(jwtService, userService);
+  controller.register(app);
+  app.get('/api/protected', requireAuth, (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  const token = await jwtService.issueToken({
+    userId: 'user-1',
+    email: 'alice@example.com',
+    nickname: 'Alice',
+    activated: true,
+  });
+  userService.deleted = true;
+
+  for (const [method, path] of [
+    ['get', '/api/protected'],
+    ['get', '/api/me'],
+    ['post', '/api/renew'],
+  ] as const) {
+    const response = await runHandlers(
+      getRouteHandlers(app, method, path),
+      createRequest({
+        app,
+        method: method === 'get' ? 'GET' : 'POST',
+        path,
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    );
+    assert.equal(response.statusCode, 401, `${method.toUpperCase()} ${path}`);
+    assert.equal(
+      (response.body as { error?: string }).error,
+      'Not authenticated',
+      `${method.toUpperCase()} ${path}`,
+    );
+  }
+});
+
 test('Activated users can access activation-gated routes', async () => {
   if (!requireActivated) {
     assert.fail('requireActivated middleware is not exported');
@@ -514,7 +584,10 @@ test('Non-activated users get 403 on activation-gated app routes', async () => {
   const app = express();
   app.use(express.json());
   const jwtService = new FakeJwtAuthService(3600);
-  const controller = createAuthController(jwtService);
+  const controller = createAuthController(
+    jwtService,
+    new FakeUserService(false),
+  );
   controller.register(app);
   app.get(
     '/api/activated-route',

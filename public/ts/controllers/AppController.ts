@@ -1,4 +1,5 @@
 import { AuthService } from '../services/AuthService.js';
+import { AuthTokenStorage } from '../services/AuthTokenStorage.js';
 import { ApiService } from '../services/ApiService.js';
 import { ReservationService } from '../services/ReservationService.js';
 import { EventsService } from '../services/EventsService.js';
@@ -18,6 +19,7 @@ import { Workspace, WorkspaceRole } from '../entities/Workspace.js';
 export class AppController {
   private refreshTimer: number | null = null;
   private tokenRenewalTimer: number | null = null;
+  private tokenRenewalGeneration = 0;
   private readonly eventsService = new EventsService();
   private readonly tokenRenewBeforeMs = 60_000;
   private readonly tokenRenewCheckMs = 30_000;
@@ -25,12 +27,13 @@ export class AppController {
   private readonly workspaceFilterStorageKey = 'workspaceFilter';
 
   bootstrap(Vue: any): void {
-    const { createApp, ref, computed, onMounted, watch } = Vue as {
+    const { createApp, ref, computed, nextTick, onMounted, watch } = Vue as {
       createApp: (options: Record<string, unknown>) => {
         mount: (selector: string) => void;
       };
       ref: <T>(value: T) => { value: T };
       computed: <T>(fn: () => T) => { value: T };
+      nextTick: (fn?: () => void) => Promise<void>;
       onMounted: (fn: () => void | Promise<void>) => void;
       watch: <T>(source: { value: T }, cb: (value: T) => void) => void;
     };
@@ -155,6 +158,21 @@ export class AppController {
         const selectedServiceWorkspaceId = ref<string | null>(null);
         const serviceManagementWorkspaceStorageKey =
           'serviceManagementWorkspace';
+        const isAccountDeletionModalOpen = ref(false);
+        const accountDeletionConfirmation = ref('');
+        const accountDeletionError = ref('');
+        const accountDeletionPending = ref(false);
+        let accountStateCleared = false;
+        const normalizeEmail = (email: string): string =>
+          email.trim().toLowerCase();
+        const canSubmitAccountDeletion = computed(() =>
+          Boolean(
+            user.value &&
+            !accountDeletionPending.value &&
+            normalizeEmail(accountDeletionConfirmation.value) ===
+              normalizeEmail(user.value.email),
+          ),
+        );
 
         type ServiceManagementForm = {
           environmentInput: string;
@@ -970,6 +988,162 @@ export class AppController {
         const logout = async () => {
           await AuthService.logout();
           localStorage.removeItem(this.ownerFilterStorageKey);
+        };
+
+        const resetAccountDeletionModal = () => {
+          isAccountDeletionModalOpen.value = false;
+          accountDeletionConfirmation.value = '';
+          accountDeletionError.value = '';
+          accountDeletionPending.value = false;
+        };
+
+        const focusElement = (selector: string) => {
+          if (typeof document.querySelector !== 'function') {
+            return;
+          }
+          document.querySelector<HTMLElement>(selector)?.focus();
+        };
+
+        const restoreAccountDeletionTriggerFocus = () => {
+          void nextTick(() => focusElement('#account-deletion-trigger'));
+        };
+
+        const openAccountDeletionModal = () => {
+          if (!user.value || accountDeletionPending.value) {
+            return;
+          }
+          accountDeletionConfirmation.value = '';
+          accountDeletionError.value = '';
+          isAccountDeletionModalOpen.value = true;
+          void nextTick(() =>
+            focusElement('#account-deletion-confirmation-email'),
+          );
+        };
+
+        const closeAccountDeletionModal = () => {
+          if (accountDeletionPending.value) {
+            return;
+          }
+          resetAccountDeletionModal();
+          restoreAccountDeletionTriggerFocus();
+        };
+
+        const handleAccountDeletionModalKeydown = (event: KeyboardEvent) => {
+          if (event.key === 'Escape') {
+            if (!accountDeletionPending.value) {
+              event.preventDefault();
+              closeAccountDeletionModal();
+            }
+            return;
+          }
+          if (
+            event.key !== 'Tab' ||
+            typeof document.querySelector !== 'function'
+          ) {
+            return;
+          }
+
+          const modal = document.querySelector<HTMLElement>(
+            '#account-deletion-modal',
+          );
+          if (!modal) {
+            return;
+          }
+          const focusable = Array.from(
+            modal.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+            ),
+          );
+          if (focusable.length === 0) {
+            event.preventDefault();
+            return;
+          }
+
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          const activeElement = document.activeElement;
+          if (
+            event.shiftKey &&
+            (activeElement === first || !modal.contains(activeElement))
+          ) {
+            event.preventDefault();
+            last.focus();
+          } else if (
+            !event.shiftKey &&
+            (activeElement === last || !modal.contains(activeElement))
+          ) {
+            event.preventDefault();
+            first.focus();
+          }
+        };
+
+        const clearAccountScopedBrowserState = () => {
+          accountStateCleared = true;
+          localStorage.removeItem(this.ownerFilterStorageKey);
+          localStorage.removeItem(this.workspaceFilterStorageKey);
+          localStorage.removeItem(serviceManagementWorkspaceStorageKey);
+          window.sessionStorage?.removeItem(
+            'workspace_invitation_pending_accept_code',
+          );
+          window.sessionStorage?.removeItem('workspace_invitation_login_code');
+          window.sessionStorage?.removeItem(
+            'workspace_invitation_joined_workspace_id',
+          );
+
+          ownerFilter.value = 'all';
+          workspaceFilter.value = 'all';
+          serviceNameFilter.value = '';
+          expandedOverrides.value = {};
+          services.value = [];
+          workspaces.value = [];
+          workspaceUsers.value = {};
+          workspaceEnvironments.value = {};
+          workspaceOwners.value = {};
+          workspaceServiceCatalog.value = {};
+          selectedServiceWorkspaceId.value = null;
+          selectedUserWorkspaceId.value = null;
+          claimModalOpen.value = false;
+          isCreateWorkspaceModalOpen.value = false;
+          isCreateServiceModalOpen.value = false;
+          isInviteModalOpen.value = false;
+          ownerModalWorkspaceId.value = null;
+          environmentModalWorkspaceId.value = null;
+          workspaceRowsModal.value = null;
+          pendingDeleteAction.value = null;
+          pendingUnclaimAction.value = null;
+          user.value = null;
+        };
+
+        const stopAuthenticatedBackgroundWork = () => {
+          if (this.refreshTimer !== null) {
+            window.clearTimeout(this.refreshTimer);
+            this.refreshTimer = null;
+          }
+          if (this.tokenRenewalTimer !== null) {
+            window.clearTimeout(this.tokenRenewalTimer);
+            this.tokenRenewalTimer = null;
+          }
+          this.tokenRenewalGeneration += 1;
+          AuthTokenStorage.clearToken();
+          this.eventsService.stop();
+        };
+
+        const deleteAccount = async () => {
+          if (!canSubmitAccountDeletion.value) {
+            return;
+          }
+          accountDeletionPending.value = true;
+          accountDeletionError.value = '';
+          try {
+            await AuthService.deleteAccount(accountDeletionConfirmation.value);
+            stopAuthenticatedBackgroundWork();
+            clearAccountScopedBrowserState();
+            resetAccountDeletionModal();
+            AuthService.redirectToLogin();
+          } catch (err) {
+            accountDeletionError.value = (err as Error).message;
+            accountDeletionPending.value = false;
+          }
         };
 
         const createWorkspace = async () => {
@@ -2226,10 +2400,18 @@ export class AppController {
         });
 
         watch(ownerFilter, (value) => {
+          if (accountStateCleared) {
+            localStorage.removeItem(this.ownerFilterStorageKey);
+            return;
+          }
           localStorage.setItem(this.ownerFilterStorageKey, value);
         });
 
         watch(workspaceFilter, (value) => {
+          if (accountStateCleared) {
+            localStorage.removeItem(this.workspaceFilterStorageKey);
+            return;
+          }
           localStorage.setItem(this.workspaceFilterStorageKey, value);
         });
 
@@ -2333,6 +2515,15 @@ export class AppController {
           release,
           extend,
           logout,
+          isAccountDeletionModalOpen,
+          accountDeletionConfirmation,
+          accountDeletionError,
+          accountDeletionPending,
+          canSubmitAccountDeletion,
+          openAccountDeletionModal,
+          closeAccountDeletionModal,
+          handleAccountDeletionModalKeydown,
+          deleteAccount,
           currentView,
           adminSection,
           setView,
@@ -2451,8 +2642,15 @@ export class AppController {
       window.clearTimeout(this.tokenRenewalTimer);
     }
 
+    const renewalGeneration = this.tokenRenewalGeneration;
     const scheduleNextCheck = (): void => {
+      if (renewalGeneration !== this.tokenRenewalGeneration) {
+        return;
+      }
       this.tokenRenewalTimer = window.setTimeout(() => {
+        if (renewalGeneration !== this.tokenRenewalGeneration) {
+          return;
+        }
         this.scheduleTokenRenewal();
       }, this.tokenRenewCheckMs);
     };
@@ -2468,6 +2666,10 @@ export class AppController {
 
     this.tokenRenewalTimer = window.setTimeout(async () => {
       const renewed = await AuthService.renew();
+      if (renewalGeneration !== this.tokenRenewalGeneration) {
+        AuthTokenStorage.clearToken();
+        return;
+      }
       if (!renewed) {
         if (AuthService.hasToken()) {
           scheduleNextCheck();
