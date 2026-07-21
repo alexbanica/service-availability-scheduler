@@ -89,6 +89,15 @@
               <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
               <span v-else class="theme-icon moon" aria-hidden="true"></span>
             </button>
+            <button
+              v-if="user"
+              id="account-deletion-trigger"
+              class="danger account-delete-trigger"
+              type="button"
+              @click="openAccountDeletionModal"
+            >
+              Delete account
+            </button>
             <button type="button" @click="logout">Log out</button>
           </div>
         </div>
@@ -1150,6 +1159,83 @@
         <div class="modal-actions">
           <button class="secondary" type="button" @click="closeWorkspaceRowsModal">Close</button>
         </div>
+      </div>
+    </div>
+    <div
+      v-if="isAccountDeletionModalOpen"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="account-deletion-title"
+      aria-describedby="account-deletion-description"
+      @click.self="closeAccountDeletionModal"
+      @keydown="handleAccountDeletionModalKeydown"
+    >
+      <div id="account-deletion-modal" class="modal-card account-deletion-modal">
+        <form class="modal-form" @submit.prevent="deleteAccount">
+          <div class="modal-header">
+            <h3 id="account-deletion-title">Delete account permanently</h3>
+            <button
+              class="modal-close"
+              type="button"
+              @click="closeAccountDeletionModal"
+              :disabled="accountDeletionPending"
+              aria-label="Close account deletion confirmation"
+            >
+              ×
+            </button>
+          </div>
+          <div class="modal-body">
+            <p id="account-deletion-description">
+              This permanently deletes your account, reservations, memberships,
+              invitations, and account-linked data. This action cannot be undone.
+            </p>
+            <p>
+              A workspace you own can be deleted only when you are its only
+              remaining member.
+            </p>
+            <p>
+              To confirm, enter <strong>{{ user?.email }}</strong>.
+            </p>
+            <label for="account-deletion-confirmation-email">
+              Account email
+            </label>
+            <input
+              id="account-deletion-confirmation-email"
+              v-model="accountDeletionConfirmation"
+              type="text"
+              inputmode="email"
+              autocomplete="email"
+              spellcheck="false"
+              :disabled="accountDeletionPending"
+              :aria-invalid="accountDeletionError ? 'true' : 'false'"
+            >
+            <div
+              class="error account-deletion-error"
+              role="alert"
+              aria-live="assertive"
+            >
+              {{ accountDeletionError }}
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button
+              class="secondary"
+              type="button"
+              @click="closeAccountDeletionModal"
+              :disabled="accountDeletionPending"
+            >
+              Cancel
+            </button>
+            <button
+              class="danger"
+              type="submit"
+              :disabled="!canSubmitAccountDeletion"
+            >
+              {{ accountDeletionPending ? 'Deleting account...' : 'Delete account permanently' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
     <div

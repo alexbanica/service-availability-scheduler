@@ -89,11 +89,50 @@ class FakeJwtAuthService {
   }
 }
 
+class FakeCurrentUserService {
+  async findById(userId: string): Promise<{
+    userId: string;
+    email: string;
+    nickname: string;
+    activated: boolean;
+  } | null> {
+    const users = {
+      'admin-user': {
+        userId: 'admin-user',
+        email: 'admin@example.com',
+        nickname: 'Admin',
+        activated: true,
+      },
+      'inactive-user': {
+        userId: 'inactive-user',
+        email: 'inactive@example.com',
+        nickname: 'Inactive',
+        activated: false,
+      },
+      'member-user': {
+        userId: 'member-user',
+        email: 'member@example.com',
+        nickname: 'Member',
+        activated: true,
+      },
+    };
+    return users[userId as keyof typeof users] ?? null;
+  }
+}
+
 test('failed-email retry endpoint requires platform admin and forwards filters', async () => {
   const app = express();
   (
-    app as unknown as { locals: { jwtAuthService: FakeJwtAuthService } }
-  ).locals = { jwtAuthService: new FakeJwtAuthService() };
+    app as unknown as {
+      locals: {
+        jwtAuthService: FakeJwtAuthService;
+        currentUserService: FakeCurrentUserService;
+      };
+    }
+  ).locals = {
+    jwtAuthService: new FakeJwtAuthService(),
+    currentUserService: new FakeCurrentUserService(),
+  };
   const calls: Array<unknown> = [];
   const repository = {
     retryFailedJobs: async (filter: unknown) => {
@@ -128,8 +167,16 @@ test('failed-email retry endpoint requires platform admin and forwards filters',
 test('failed-email retry endpoint rejects inactive and non-admin callers', async () => {
   const app = express();
   (
-    app as unknown as { locals: { jwtAuthService: FakeJwtAuthService } }
-  ).locals = { jwtAuthService: new FakeJwtAuthService() };
+    app as unknown as {
+      locals: {
+        jwtAuthService: FakeJwtAuthService;
+        currentUserService: FakeCurrentUserService;
+      };
+    }
+  ).locals = {
+    jwtAuthService: new FakeJwtAuthService(),
+    currentUserService: new FakeCurrentUserService(),
+  };
   const repository = {
     retryFailedJobs: async () => {
       throw new Error('retry should not run');

@@ -285,6 +285,46 @@ paths:
                 $ref: '#/components/schemas/User'
         '401':
           $ref: '#/components/responses/Error'
+  /api/users/me:
+    delete:
+      tags: [Account]
+      summary: Permanently delete the authenticated user's account.
+      description: Requires a valid application bearer token but does not require account activation. The normalized confirmation email must match the current database user's email. Deletion is rejected when a workspace owned by the user still has another member; those members must be removed first. A successful deletion removes the user's attributable local application data and invalidates all previously issued bearer tokens for that user. Data retained outside the application database, including delivered email, provider data, browser history, backups, and infrastructure logs, is not recalled or deleted by this operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteCurrentUserRequest'
+      responses:
+        '204':
+          description: Account and all in-scope local application data deleted. The response has no body.
+        '400':
+          description: The JSON body is absent or malformed, does not contain exactly confirmation_email, contains a non-string value, or does not match the current user's normalized email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: The bearer token is absent or invalid, or identifies a user that no longer exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: An owned workspace still has another member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Account cannot be deleted because one or more workspaces you own still have other members. Remove those members before deleting your account.
+        '500':
+          description: The atomic deletion failed; no partial deletion is treated as success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/renew:
     post:
       tags: [Auth]
@@ -947,6 +987,15 @@ components:
       properties:
         error:
           type: string
+    DeleteCurrentUserRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation_email]
+      properties:
+        confirmation_email:
+          type: string
+          description: Must match the current database user's email after trimming and lowercasing.
+          example: current-user@example.com
     LoginRequest:
       type: object
       required: [email, password]

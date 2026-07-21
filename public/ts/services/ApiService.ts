@@ -21,8 +21,11 @@ export class ApiService {
     return this.request('PATCH', path, payload);
   }
 
-  static async delete(path: string): Promise<Response> {
-    return this.request('DELETE', path);
+  static async delete(
+    path: string,
+    payload?: Record<string, unknown>,
+  ): Promise<Response> {
+    return this.request('DELETE', path, payload);
   }
 
   private static async request(
@@ -58,7 +61,9 @@ export class ApiService {
       method,
       headers,
       body:
-        method === 'POST' || method === 'PATCH'
+        method === 'POST' ||
+        method === 'PATCH' ||
+        (method === 'DELETE' && payload !== undefined)
           ? JSON.stringify(payload || {})
           : undefined,
     });

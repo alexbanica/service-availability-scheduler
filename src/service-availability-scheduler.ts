@@ -20,17 +20,20 @@ import { WorkspaceInvitationRepository } from './repositories/WorkspaceInvitatio
 import { UserRoleRepository } from './repositories/UserRoleRepository';
 import { AccountActivationTokenRepository } from './repositories/AccountActivationTokenRepository';
 import { EmailJobRepository } from './repositories/EmailJobRepository';
+import { AccountDeletionRepository } from './repositories/AccountDeletionRepository';
 import { AccountActivationTokenService } from './services/AccountActivationTokenService';
 import { EmailTemplateService } from './services/EmailTemplateService';
 import { EmailWorkerService } from './services/EmailWorkerService';
 import { OneSignalEmailDeliveryService } from './services/OneSignalEmailDeliveryService';
 import { TransactionalEmailService } from './services/TransactionalEmailService';
+import { AccountDeletionService } from './services/AccountDeletionService';
 import { AuthController } from './controllers/AuthController';
 import { ServiceController } from './controllers/ServiceController';
 import { ReservationController } from './controllers/ReservationController';
 import { PageController } from './controllers/PageController';
 import { WorkspaceController } from './controllers/WorkspaceController';
 import { EmailJobController } from './controllers/EmailJobController';
+import { AccountController } from './controllers/AccountController';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -123,6 +126,7 @@ async function start() {
     db,
   );
   const emailJobRepository = new EmailJobRepository(db);
+  const accountDeletionRepository = new AccountDeletionRepository(db);
 
   const userService = new UserService(userRepository, userRoleRepository);
   const reservationService = new ReservationService(
@@ -165,6 +169,11 @@ async function start() {
     config.passwordResetTokenExpiresInSeconds,
     config.workspaceInvitationExpiresInSeconds,
   );
+  const accountDeletionService = new AccountDeletionService(
+    accountDeletionRepository,
+    userService,
+    db,
+  );
   if (config.oneSignal.enabled) {
     const emailWorkerService = new EmailWorkerService(
       emailJobRepository,
@@ -194,6 +203,7 @@ async function start() {
     undefined,
     transactionalEmailService,
   ).register(app);
+  new AccountController(accountDeletionService).register(app);
   new WorkspaceController(workspaceService, transactionalEmailService).register(
     app,
   );

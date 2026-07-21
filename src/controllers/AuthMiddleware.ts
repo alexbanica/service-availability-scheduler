@@ -16,6 +16,10 @@ interface JwtAuthServiceLike {
   verifyToken(token: string): Promise<AuthenticatedUser>;
 }
 
+interface CurrentUserServiceLike {
+  findById(userId: string): Promise<AuthenticatedUser | null>;
+}
+
 function getJwtAuthService(req: Request): JwtAuthServiceLike {
   const appLocals = req.app?.locals as
     | { jwtAuthService?: JwtAuthService | undefined }
@@ -24,6 +28,16 @@ function getJwtAuthService(req: Request): JwtAuthServiceLike {
     throw new Error('JWT auth service unavailable');
   }
   return appLocals.jwtAuthService;
+}
+
+function getCurrentUserService(req: Request): CurrentUserServiceLike {
+  const appLocals = req.app?.locals as
+    | { currentUserService?: CurrentUserServiceLike | undefined }
+    | undefined;
+  if (!appLocals?.currentUserService) {
+    throw new Error('Current user service unavailable');
+  }
+  return appLocals.currentUserService;
 }
 
 function unauthorized(req: Request, res: Response): void {
@@ -66,11 +80,18 @@ export async function requireAuth(
   try {
     const jwtAuthService = getJwtAuthService(req);
     const identity = await jwtAuthService.verifyToken(token);
+    const currentUser = await getCurrentUserService(req).findById(
+      identity.userId,
+    );
+    if (!currentUser) {
+      unauthorized(req, res);
+      return;
+    }
     (req as AuthenticatedRequest).authenticatedUser = {
-      userId: identity.userId,
-      email: identity.email,
-      nickname: identity.nickname,
-      activated: identity.activated,
+      userId: currentUser.userId,
+      email: currentUser.email,
+      nickname: currentUser.nickname,
+      activated: currentUser.activated,
     };
     next();
   } catch {
@@ -100,7 +121,17 @@ export async function requireActivated(
 export function assignJwtAuthService(
   app: Express,
   jwtAuthService: JwtAuthService,
+  currentUserService: CurrentUserServiceLike,
 ): void {
+  if (
+    !currentUserService ||
+    typeof currentUserService.findById !== 'function'
+  ) {
+    throw new Error('Current user service dependency is required');
+  }
   (app.locals as { jwtAuthService?: JwtAuthService }).jwtAuthService =
     jwtAuthService;
+  (
+    app.locals as { currentUserService?: CurrentUserServiceLike }
+  ).currentUserService = currentUserService;
 }

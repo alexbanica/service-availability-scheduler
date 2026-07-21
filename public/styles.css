@@ -214,6 +214,10 @@ p {
   margin-left: 0;
 }
 
+.top-actions .account-delete-trigger {
+  white-space: nowrap;
+}
+
 .owner-filter {
   display: inline-flex;
   align-items: center;
@@ -1382,6 +1386,14 @@ input {
 }
 
 .admin-create-workspace-modal .error {
+  min-height: 1.1rem;
+}
+
+.account-deletion-modal .modal-body {
+  overflow-wrap: anywhere;
+}
+
+.account-deletion-error {
   min-height: 1.1rem;
 }
 

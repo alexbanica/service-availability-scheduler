@@ -216,6 +216,35 @@ Resource administrators can remove pending invitations. Owner and environment
 deletion is an approved spec: deletion must be confirmed, must be scoped to the
 workspace, and must detach affected services without deleting those services.
 
+## Self-Service Account Deletion
+
+Authenticated users, including users who have not activated their accounts, can
+choose `Delete account` from the signed-in header. The confirmation dialog
+describes the permanent deletion and requires the user to type the current
+account email. Comparison trims surrounding whitespace and ignores letter case;
+the destructive action remains disabled until the values match.
+
+Before deletion, users must remove every other member from each workspace they
+own. If an owned workspace still has another member, deletion is rejected and
+no data is changed. Ownership transfer and automatic successor promotion are
+not supported.
+
+Successful deletion permanently removes the local account and its password or
+Google-link identity, platform roles, password-reset and activation tokens,
+workspace memberships, reservations, attributable invitations and email jobs,
+and sole-member owned workspaces with their services, owners, environments, and
+related local records. Shared workspaces not owned by the user and their
+resources remain; only the deleting user's attributable records are removed
+from them. The app immediately clears the bearer token and user-scoped browser
+state, stops authenticated background activity, and redirects to `/login`.
+Previously issued tokens no longer authenticate because the local user no
+longer exists.
+
+Deletion affects application database data only. It cannot delete or recall the
+user's Google account, delivered or in-flight email, provider-retained data,
+browser history, backups, or infrastructure logs governed by external retention
+policies.
+
 ## Authentication API Contract
 
 - `POST /api/login`: accepts `{ "email": "user@example.com", "password": "secret" }`, returns:
@@ -256,6 +285,12 @@ workspace, and must detach affected services without deleting those services.
 - `GET /api/me`: protected endpoint returning authenticated user identity from the
   token context.
   `GET /api/me` and `/api/renew` include `activated` in the returned user object.
+- `DELETE /api/users/me`: protected endpoint available before activation. It
+  accepts exactly `{ "confirmation_email": "current-user@example.com" }` and
+  returns `204` after atomic permanent deletion. It returns `400` for an absent,
+  malformed, extra-field, non-string, or non-matching confirmation body; `401`
+  for an absent or invalid bearer token or a deleted user; `409` when an owned
+  workspace still has another member; and `500` when atomic deletion fails.
 - Protected API calls send `Authorization: Bearer <token>`.
 - Sensitive authentication, registration, CAPTCHA, reset, and activation
   endpoints are rate limited and return `429` with `{ "error": "Too many requests" }`
@@ -263,7 +298,8 @@ workspace, and must detach affected services without deleting those services.
 
 Activation policy:
 - Non-activated users may call: `/api/register/*`, `/api/account-activation/*`,
-  `/api/renew`, `/api/logout`, `/api/me`, `/api/app-info`, page routes, and static assets.
+  `/api/renew`, `/api/logout`, `/api/me`, `DELETE /api/users/me`, `/api/app-info`,
+  page routes, and static assets.
 - Protected service, reservation, workspace, owner, environment, invitation, and
   workspace-user APIs require activation and return `403` when a non-activated user
   calls them.
