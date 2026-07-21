@@ -79,26 +79,57 @@
           </nav>
 
           <div class="top-actions">
-            <button
-              class="theme-toggle"
-              type="button"
-              @click="toggleTheme"
-              :aria-label="themeLabel"
-              :title="themeLabel"
-            >
-              <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
-              <span v-else class="theme-icon moon" aria-hidden="true"></span>
-            </button>
-            <button
-              v-if="user"
-              id="account-deletion-trigger"
-              class="danger account-delete-trigger"
-              type="button"
-              @click="openAccountDeletionModal"
-            >
-              Delete account
-            </button>
-            <button type="button" @click="logout">Log out</button>
+            <div v-if="user" class="user-menu">
+              <button
+                id="user-menu-trigger"
+                class="user-menu-trigger"
+                type="button"
+                aria-label="Open account menu"
+                aria-haspopup="true"
+                aria-controls="user-menu-panel"
+                :aria-expanded="isUserMenuOpen ? 'true' : 'false'"
+                @click="toggleUserMenu"
+              >
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+              </button>
+              <div
+                v-if="isUserMenuOpen"
+                class="user-menu-dismiss-layer"
+                aria-hidden="true"
+                @click="closeUserMenu"
+              ></div>
+              <div
+                v-if="isUserMenuOpen"
+                id="user-menu-panel"
+                class="user-menu-panel"
+                aria-label="Account actions"
+                @keydown="handleUserMenuKeydown"
+              >
+                <button
+                  id="user-menu-theme-action"
+                  class="user-menu-item"
+                  type="button"
+                  @click="toggleTheme"
+                >
+                  <span v-if="theme === 'dark'" class="theme-icon sun" aria-hidden="true"></span>
+                  <span v-else class="theme-icon moon" aria-hidden="true"></span>
+                  {{ themeLabel }}
+                </button>
+                <button
+                  id="account-deletion-trigger"
+                  class="user-menu-item danger account-delete-trigger"
+                  type="button"
+                  @click="openAccountDeletionFromUserMenu"
+                >
+                  Delete account
+                </button>
+                <button class="user-menu-item" type="button" @click="logout">
+                  Log out
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </header>

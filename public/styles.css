@@ -197,6 +197,80 @@ p {
   align-items: center;
 }
 
+.user-menu {
+  position: relative;
+  z-index: 30;
+}
+
+button.user-menu-trigger {
+  width: var(--button-min-height);
+  min-width: var(--button-min-height);
+  padding: 0.65rem;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.24rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+button.user-menu-trigger:hover {
+  filter: none;
+  background: var(--card);
+}
+
+.user-menu-trigger > span {
+  display: block;
+  width: 1.25rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.user-menu-dismiss-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 1;
+  display: grid;
+  gap: 0.35rem;
+  min-width: 13.5rem;
+  padding: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  box-shadow: 0 16px 34px rgba(17, 24, 39, 0.18);
+}
+
+button.user-menu-item {
+  width: 100%;
+  margin: 0;
+  justify-content: flex-start;
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+  text-align: left;
+}
+
+button.user-menu-item:hover {
+  filter: none;
+  background: var(--surface);
+}
+
+button.user-menu-item.danger {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  box-shadow: none;
+}
+
 .filters-row {
   display: flex;
   flex-wrap: wrap;
@@ -214,7 +288,7 @@ p {
   margin-left: 0;
 }
 
-.top-actions .account-delete-trigger {
+.user-menu-panel .account-delete-trigger {
   white-space: nowrap;
 }
 

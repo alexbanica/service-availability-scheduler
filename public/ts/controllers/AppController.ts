@@ -83,6 +83,7 @@ export class AppController {
         const canUseReadOnlyData = computed(() => Boolean(user.value));
         const appVersion = ref('');
         const theme = ref(ThemeHelper.getInitialTheme() as Theme);
+        const isUserMenuOpen = ref(false);
         const claimModalOpen = ref(false);
         const claimType = ref<'self' | 'team'>('self');
         const teamName = ref('');
@@ -1004,8 +1005,30 @@ export class AppController {
           document.querySelector<HTMLElement>(selector)?.focus();
         };
 
+        const closeUserMenu = (restoreFocus = false) => {
+          isUserMenuOpen.value = false;
+          if (restoreFocus) {
+            void nextTick(() => focusElement('#user-menu-trigger'));
+          }
+        };
+
+        const toggleUserMenu = () => {
+          isUserMenuOpen.value = !isUserMenuOpen.value;
+          if (isUserMenuOpen.value) {
+            void nextTick(() => focusElement('#user-menu-theme-action'));
+          }
+        };
+
+        const handleUserMenuKeydown = (event: KeyboardEvent) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          event.preventDefault();
+          closeUserMenu(true);
+        };
+
         const restoreAccountDeletionTriggerFocus = () => {
-          void nextTick(() => focusElement('#account-deletion-trigger'));
+          void nextTick(() => focusElement('#user-menu-trigger'));
         };
 
         const openAccountDeletionModal = () => {
@@ -1018,6 +1041,11 @@ export class AppController {
           void nextTick(() =>
             focusElement('#account-deletion-confirmation-email'),
           );
+        };
+
+        const openAccountDeletionFromUserMenu = () => {
+          closeUserMenu();
+          openAccountDeletionModal();
         };
 
         const closeAccountDeletionModal = () => {
@@ -2499,6 +2527,10 @@ export class AppController {
           theme,
           themeLabel,
           toggleTheme,
+          isUserMenuOpen,
+          toggleUserMenu,
+          closeUserMenu,
+          handleUserMenuKeydown,
           formatTime: TimeHelper.formatTime,
           formatClaimedBy,
           claimModalOpen,
@@ -2521,6 +2553,7 @@ export class AppController {
           accountDeletionPending,
           canSubmitAccountDeletion,
           openAccountDeletionModal,
+          openAccountDeletionFromUserMenu,
           closeAccountDeletionModal,
           handleAccountDeletionModalKeydown,
           deleteAccount,

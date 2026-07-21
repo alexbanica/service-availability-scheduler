@@ -304,6 +304,10 @@ type AppControllerState = {
   openEnvironmentModal: (workspaceId: string) => void;
   openClaimModal: (serviceKey: string) => void;
   consumePendingWorkspaceInvitation: () => Promise<void>;
+  isUserMenuOpen?: Ref<boolean>;
+  toggleUserMenu?: () => void;
+  closeUserMenu?: (restoreFocus?: boolean) => void;
+  openAccountDeletionFromUserMenu?: () => void;
   isAccountDeletionModalOpen?: Ref<boolean>;
   accountDeletionConfirmation?: Ref<string>;
   accountDeletionError?: Ref<string>;
@@ -1843,6 +1847,53 @@ test('account-deletion confirmation allows normalized email input without native
   assert.match(html, /@keydown="handleAccountDeletionModalKeydown"/);
 });
 
+test('authenticated header actions are grouped under the burger menu', () => {
+  const html = readFileSync(
+    path.join(process.cwd(), 'public/index.html'),
+    'utf8',
+  );
+  const headerActions = html.slice(
+    html.indexOf('<div class="top-actions">'),
+    html.indexOf('</header>'),
+  );
+
+  assert.match(headerActions, /id="user-menu-trigger"/);
+  assert.match(headerActions, /:aria-expanded="isUserMenuOpen/);
+  assert.match(headerActions, /id="user-menu-theme-action"/);
+  assert.match(headerActions, /\{\{ themeLabel \}\}/);
+  assert.match(headerActions, /@click="openAccountDeletionFromUserMenu"/);
+  assert.match(headerActions, /@click="logout"/);
+});
+
+test('burger account-deletion action closes the menu before opening confirmation', () => {
+  const { restore } = createWindowAndStorage();
+  try {
+    const state = createAppControllerState();
+    state.user.value = {
+      id: 'user-1',
+      email: 'alice@example.com',
+      nickname: 'Alice',
+      activated: true,
+    };
+    if (
+      !state.isUserMenuOpen ||
+      !state.toggleUserMenu ||
+      !state.openAccountDeletionFromUserMenu ||
+      !state.isAccountDeletionModalOpen
+    ) {
+      assert.fail('AppController burger-menu state is not available');
+    }
+
+    state.toggleUserMenu();
+    assert.equal(state.isUserMenuOpen.value, true);
+    state.openAccountDeletionFromUserMenu();
+    assert.equal(state.isUserMenuOpen.value, false);
+    assert.equal(state.isAccountDeletionModalOpen.value, true);
+  } finally {
+    restore();
+  }
+});
+
 test('AppController contains account-deletion modal focus and restores the trigger on dismissal', () => {
   const { restore } = createWindowAndStorage();
   try {
@@ -1895,7 +1946,7 @@ test('AppController contains account-deletion modal focus and restores the trigg
           return activeElement;
         },
         querySelector: (selector: string) => {
-          if (selector === '#account-deletion-trigger') return elements.trigger;
+          if (selector === '#user-menu-trigger') return elements.trigger;
           if (selector === '#account-deletion-confirmation-email') {
             return elements.input;
           }
