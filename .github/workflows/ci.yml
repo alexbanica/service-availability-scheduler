@@ -1,0 +1,49 @@
+name: validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Capture tracked baseline
+        run: |
+          git diff --binary -- . > /tmp/ci-baseline.diff
+      - name: Lint
+        run: npm run lint
+      - name: Fail on lint mutations
+        run: |
+          git diff --binary -- . > /tmp/ci-after-lint.diff
+          if ! diff -u /tmp/ci-baseline.diff /tmp/ci-after-lint.diff > /tmp/ci-lint.diff; then
+            echo "lint changed tracked files"
+            cat /tmp/ci-lint.diff
+            exit 1
+          fi
+      - name: Test
+        run: npm test

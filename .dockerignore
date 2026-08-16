@@ -1,0 +1,9 @@
+.git
+node_modules
+dist
+public/js
+docker/.env
+docker/secrets
+.env
+.codex
+specs

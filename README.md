@@ -188,6 +188,69 @@ precedence over `workspace_invitation_expires_in_seconds` in `config/app.yml`.
 `RUN_MIGRATIONS_ON_STARTUP` (environment variable) takes precedence over
 `run_migrations_on_startup` in `config/app.yml`.
 
+## CI/CD and release publishing
+
+This repository now validates pull requests and `main` branch pushes with a
+GitHub Actions workflow and publishes container images on tag pushes only.
+
+- **Validation workflow (`.github/workflows/ci.yml`)**
+  - Triggers: `pull_request` to `main` (opened, reopened, ready for review,
+    synchronize) and `push` on `main`.
+  - Uses the checked-in repository commands only:
+    - `npm ci`
+    - `npm run lint`
+    - `npm test`
+  - Lint is mutation-aware: the workflow records a tracked-file baseline before lint
+    and fails if tracked files change after lint.
+  - `npm test` runs the project suite without dedicated CI database credentials;
+    database integration tests remain skipped unless existing `TEST_DATABASE_URL`
+    and `TEST_DATABASE_ALLOW_TRUNCATE=1` are provided.
+
+- **Release workflow (`.github/workflows/release.yml`)**
+  - Triggers only on Git tag pushes (`push` + `tags: - '*'`).
+  - Tag input handling is owned by `docker/build.sh --emit-github-matrix`:
+    - exact lower-case safe tag pattern only (`^[a-z0-9_][a-z0-9_.-]*$`)
+    - full image tag length limit of 128 characters
+    - immutable tag mapping only: `<tag>-node24-alpine`
+    - no moving `latest` tag publication from CI
+  - Two-job design:
+    - `prepare-release`: checks out the tag target commit and emits release matrix to
+      `GITHUB_OUTPUT` in GitHub matrix format without build or registry credentials.
+    - `publish`: depends on preparation, checks out the same tag target, logs in to
+      Forgejo, and runs one `docker/build-push-action` using the emitted matrix.
+  - Publication matrix is the single source of truth for image name, context,
+    dockerfile, platform, `APP_VERSION`, and cache scope.
+  - Registry target is:
+    `forgejo.alexlab.nl/alexlab/service-availability-scheduler:<tag>-node24-alpine`
+  - Build platform is `linux/arm64` only, with `cache-from`/`cache-to` scoped as:
+    `type=gha,scope=<image>-linux-arm64` and
+    `type=gha,mode=max,scope=<image>-linux-arm64` (normalizing `/` to `-` from
+    the platform string; effectively
+    `service-availability-scheduler-linux-arm64` for this workflow).
+  - The publish step records pushed digest output in the workflow summary, and the
+    workflow performs `docker logout forgejo.alexlab.nl` unconditionally at the end.
+  - Workflow permissions remain `contents: read`; secrets are not available to the
+    validation workflow.
+  - Required secrets for release publication:
+    - `FORGEJO_REGISTRY_USERNAME`
+    - `FORGEJO_REGISTRY_TOKEN`
+
+- **Required live operator precondition**
+  - Forgejo `alexlab` organization/package ownership must be private and private
+    resource access must be enforced before release delivery is considered final.
+  - Anonymous pulls for the published image must be denied (operator-owned validation
+    path), otherwise the release is not production-validated.
+
+- **Local build compatibility**
+  - `docker/build.sh --release <tag>` remains available and defaults to the checked-in
+    local `.env` registry.
+  - Local behavior still includes the release tag and moving `latest` tags unless
+    `--no-latest` is passed.
+  - CI does not use the local moving tag path and relies on the metadata mode handoff.
+
+No `swagger.yml` or `http/*.http` changes are required for this automation-only
+delivery because no API contract or request/response surface changed.
+
 Workspace admins define workspace owners, environments, and services from the
 admin UI. Service creation selects existing workspace-scoped owners and
 environments; it does not create them inline.
