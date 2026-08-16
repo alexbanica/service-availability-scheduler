@@ -1,40 +1,28 @@
-FROM alpine:3.15 AS downloader
-ARG GITHUB_REPO
-ARG RELEASE_TAG
-
-# Install required tools
-RUN apk add --no-cache curl unzip
-
-# Download and extract
-RUN --mount=type=secret,id=GITHUB_AUTH \
-    set -eux; \
-    auth="$(cat /run/secrets/GITHUB_AUTH)"; \
-    curl -o src.zip -fL \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -H "Accept: application/vnd.github+json" \
-            #-H "Authorization: Bearer $auth" \
-            "${GITHUB_REPO}/zipball/${RELEASE_TAG}"; \
-    \
-    unzip src.zip -d /tmp && \
-    mv /tmp/alexbanica-* /tmp/src && \
-    rm src.zip
-
-FROM node:BASE_BUILD_IMAGE_VERSION AS builder
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
 WORKDIR /app
-COPY --from=downloader /tmp/src ./
+COPY package.json package-lock.json ./
+COPY . .
 
-RUN npm ci --omit=dev
-RUN npm run build
+RUN npm ci --ignore-scripts
+RUN npx tsc -p tsconfig.json
+RUN npx tsc -p tsconfig.client.json
 
-FROM node:BASE_IMAGE_VERSION AS runtime
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS production-dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runtime
 ARG APP_VERSION
-
 WORKDIR /app
-COPY --from=builder /app/package*.json ./
+
+COPY --from=production-dependencies /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public/js ./public/js
 
 EXPOSE 3000
 
