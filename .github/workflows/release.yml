@@ -36,7 +36,7 @@ jobs:
   publish:
     name: Publish ${{ matrix.image_name }}
     needs: prepare-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
     strategy:
@@ -47,34 +47,36 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - name: Log in to Forgejo
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: forgejo.alexlab.nl
           username: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
           password: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
-      - name: Build and push ARM64 image
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ matrix.image }}
-          build-args: |
-            APP_VERSION=${{ matrix.app_version }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
-      - name: Record published digest
+      - name: Build and push native ARM64 image
+        env:
+          APP_VERSION: ${{ matrix.app_version }}
+          BUILD_CONTEXT: ${{ matrix.context }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          IMAGE: ${{ matrix.image }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
+          test "$(uname -m)" = "aarch64"
+          test "$PLATFORM" = "linux/arm64"
+          docker build \
+            --platform "$PLATFORM" \
+            --file "$DOCKERFILE" \
+            --build-arg "APP_VERSION=$APP_VERSION" \
+            --tag "$IMAGE" \
+            "$BUILD_CONTEXT"
+          docker push "$IMAGE"
+          PUBLISHED_DIGEST="$(docker image inspect \
+            --format '{{ index .RepoDigests 0 }}' \
+            "$IMAGE")"
+          test -n "$PUBLISHED_DIGEST"
           printf 'Image: %s\nDigest: %s\n' \
-            '${{ matrix.image }}' \
-            '${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+            "$IMAGE" \
+            "$PUBLISHED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
       - name: Log out of Forgejo
         if: always()
         run: docker logout forgejo.alexlab.nl

@@ -217,17 +217,16 @@ GitHub Actions workflow and publishes container images on tag pushes only.
     - `prepare-release`: checks out the tag target commit and emits release matrix to
       `GITHUB_OUTPUT` in GitHub matrix format without build or registry credentials.
     - `publish`: depends on preparation, checks out the same tag target, logs in to
-      Forgejo, and runs one `docker/build-push-action` using the emitted matrix.
+      Forgejo on a native `ubuntu-24.04-arm` GitHub-hosted runner, and runs one
+      ordinary `docker build` followed by one `docker push` using the emitted matrix.
   - Publication matrix is the single source of truth for image name, context,
-    dockerfile, platform, `APP_VERSION`, and cache scope.
+    dockerfile, platform, and `APP_VERSION`.
   - Registry target is:
     `forgejo.alexlab.nl/alexlab/service-availability-scheduler:<tag>-node24-alpine`
-  - Build platform is `linux/arm64` only, with `cache-from`/`cache-to` scoped as:
-    `type=gha,scope=<image>-linux-arm64` and
-    `type=gha,mode=max,scope=<image>-linux-arm64` (normalizing `/` to `-` from
-    the platform string; effectively
-    `service-availability-scheduler-linux-arm64` for this workflow).
-  - The publish step records pushed digest output in the workflow summary, and the
+  - Build platform is `linux/arm64` only. The publish job verifies both the native
+    runner architecture and emitted platform before building. It does not install
+    QEMU, create a Buildx builder, or pull the Buildx BuildKit helper image.
+  - The publish step records the pushed digest in the workflow summary, and the
     workflow performs `docker logout forgejo.alexlab.nl` unconditionally at the end.
   - Workflow permissions remain `contents: read`; secrets are not available to the
     validation workflow.

@@ -14,6 +14,7 @@ type Job = {
   needs?: string | string[];
   permissions?: Record<string, unknown>;
   outputs?: Record<string, string>;
+  'runs-on'?: string;
   strategy?: { matrix?: unknown };
   steps?: Step[];
 };
@@ -112,11 +113,12 @@ test('preparation validates the tag through metadata mode before publication sec
   );
 });
 
-test('publication consumes only preparation matrix and publishes one ARM64 image per row', () => {
+test('publication consumes only preparation matrix on a native ARM64 runner', () => {
   const workflow = loadWorkflow();
   const publication = workflow.jobs?.publish;
   assert.ok(publication);
   assert.equal(publication.needs, 'prepare-release');
+  assert.equal(publication['runs-on'], 'ubuntu-24.04-arm');
   assert.deepEqual(publication.permissions, { contents: 'read' });
   assert.equal(
     publication.strategy?.matrix,
@@ -131,37 +133,29 @@ test('publication consumes only preparation matrix and publishes one ARM64 image
   assert.equal(checkout.with?.ref, '${{ github.sha }}');
   assert.equal(checkout.with?.['persist-credentials'], false);
 
-  const buildSteps = (publication.steps ?? []).filter(
-    (candidate) =>
-      candidate.uses?.startsWith('docker/build-push-action@') === true,
+  const build = step(
+    publication,
+    (candidate) => candidate.run?.includes('docker build') === true,
   );
-  assert.equal(buildSteps.length, 1);
-  const build = buildSteps[0];
-  assert.ok(build);
-  assert.equal(build.with?.push, true);
-  assert.equal(build.with?.platforms, '${{ matrix.platform }}');
-  assert.equal(build.with?.tags, '${{ matrix.image }}');
-  assert.equal(build.with?.context, '${{ matrix.context }}');
-  assert.equal(build.with?.file, '${{ matrix.dockerfile }}');
-  assert.match(
-    String(build.with?.['build-args']),
-    /APP_VERSION=\$\{\{\s*matrix\.app_version\s*\}\}/,
-  );
-  assert.match(String(build.with?.['cache-from']), /type=gha/);
-  assert.match(String(build.with?.['cache-to']), /type=gha/);
-  assert.match(String(build.with?.['cache-to']), /mode=max/);
-  assert.match(
-    String(build.with?.['cache-from']),
-    /scope=\$\{\{\s*matrix\.cache_scope/,
-  );
-  assert.match(
-    String(build.with?.['cache-to']),
-    /scope=\$\{\{\s*matrix\.cache_scope/,
-  );
-  assert.equal(build.with?.['sbom'], undefined);
+  assert.equal(build.env?.APP_VERSION, '${{ matrix.app_version }}');
+  assert.equal(build.env?.BUILD_CONTEXT, '${{ matrix.context }}');
+  assert.equal(build.env?.DOCKERFILE, '${{ matrix.dockerfile }}');
+  assert.equal(build.env?.IMAGE, '${{ matrix.image }}');
+  assert.equal(build.env?.PLATFORM, '${{ matrix.platform }}');
+  assert.match(build.run ?? '', /test "\$\(uname -m\)" = "aarch64"/);
+  assert.match(build.run ?? '', /test "\$PLATFORM" = "linux\/arm64"/);
+  assert.match(build.run ?? '', /docker build\s+\\/);
+  assert.match(build.run ?? '', /--platform "\$PLATFORM"/);
+  assert.match(build.run ?? '', /--file "\$DOCKERFILE"/);
+  assert.match(build.run ?? '', /--build-arg "APP_VERSION=\$APP_VERSION"/);
+  assert.match(build.run ?? '', /--tag "\$IMAGE"/);
+  assert.match(build.run ?? '', /"\$BUILD_CONTEXT"/);
+  assert.match(build.run ?? '', /docker push "\$IMAGE"/);
+  assert.equal((build.run ?? '').match(/docker build\b/g)?.length, 1);
+  assert.equal((build.run ?? '').match(/docker push\b/g)?.length, 1);
 });
 
-test('publication uses the pinned ARM64 release actions and exact Forgejo secrets', () => {
+test('publication uses pinned Forgejo login without QEMU or Buildx actions', () => {
   const workflow = loadWorkflow();
   const publication = workflow.jobs?.publish;
   assert.ok(publication);
@@ -174,21 +168,12 @@ test('publication uses the pinned ARM64 release actions and exact Forgejo secret
         candidate.uses?.split('@')[1],
       ]),
   );
-  assert.equal(
-    actionVersions.get('docker/setup-qemu-action'),
-    '96fe6ef7f33517b61c61be40b68a1882f3264fb8',
-  );
-  assert.equal(
-    actionVersions.get('docker/setup-buildx-action'),
-    'bb05f3f5519dd87d3ba754cc423b652a5edd6d2c',
-  );
+  assert.equal(actionVersions.has('docker/setup-qemu-action'), false);
+  assert.equal(actionVersions.has('docker/setup-buildx-action'), false);
+  assert.equal(actionVersions.has('docker/build-push-action'), false);
   assert.equal(
     actionVersions.get('docker/login-action'),
     'dbcb813823bdd20940b903addbd779551569679f',
-  );
-  assert.equal(
-    actionVersions.get('docker/build-push-action'),
-    '53b7df96c91f9c12dcc8a07bcb9ccacbed38856a',
   );
 
   const login = uses(publication, 'docker/login-action');
@@ -207,15 +192,16 @@ test('publication uses the pinned ARM64 release actions and exact Forgejo secret
   );
 });
 
-test('publication reports digest and always logs out without insecure registry options', () => {
+test('publication reports pushed digest and always logs out securely', () => {
   const workflow = loadWorkflow();
   const publication = workflow.jobs?.publish;
   assert.ok(publication);
   const digest = step(
     publication,
-    (candidate) => candidate.run?.includes('digest') === true,
+    (candidate) => candidate.run?.includes('RepoDigests') === true,
   );
-  assert.match(digest.run ?? '', /steps\.[A-Za-z0-9_-]+\.outputs\.digest/);
+  assert.match(digest.run ?? '', /docker image inspect/);
+  assert.match(digest.run ?? '', /GITHUB_STEP_SUMMARY/);
   const logout = step(
     publication,
     (candidate) => candidate.run?.includes('docker logout') === true,
@@ -226,10 +212,14 @@ test('publication reports digest and always logs out without insecure registry o
   const serialized = JSON.stringify(workflow).toLowerCase();
   for (const forbidden of [
     'docker/build.sh --release',
+    'docker buildx',
+    'docker/build-push-action',
+    'docker/setup-buildx-action',
+    'docker/setup-qemu-action',
     'latest-node24-alpine',
     'insecure',
     'tlsverify=false',
-    'docker push',
+    'type=gha',
   ]) {
     assert.equal(
       serialized.includes(forbidden),

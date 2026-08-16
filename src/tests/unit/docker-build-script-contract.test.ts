@@ -32,11 +32,14 @@ function runBuild(
   );
   fs.chmodSync(fakeDockerPath, 0o755);
 
+  const childEnv = { ...process.env };
+  delete childEnv.GITHUB_OUTPUT;
+
   const result = spawnSync('bash', [scriptPath, ...args], {
     cwd: repositoryRoot,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...childEnv,
       PATH: `${binDir}:${process.env.PATH ?? ''}`,
       DOCKER_LOG: dockerLogPath,
       ...extraEnv,
