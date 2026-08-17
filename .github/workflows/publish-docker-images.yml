@@ -31,8 +31,7 @@ jobs:
           ./docker/build.sh --emit-github-matrix \
             --release "$RELEASE_TAG" \
             --registry forgejo.alexlab.nl/alexlab \
-            --platform linux/arm64 \
-            --no-latest
+            --platform linux/arm64
 
   publish:
     name: Build and push Docker image (${{ matrix.image_name }})
@@ -60,6 +59,7 @@ jobs:
           BUILD_CONTEXT: ${{ matrix.context }}
           DOCKERFILE: ${{ matrix.dockerfile }}
           IMAGE: ${{ matrix.image }}
+          LATEST_IMAGE: ${{ matrix.latest_image }}
           PLATFORM: ${{ matrix.platform }}
         run: |
           test "$(uname -m)" = "aarch64"
@@ -69,14 +69,17 @@ jobs:
             --file "$DOCKERFILE" \
             --build-arg "APP_VERSION=$APP_VERSION" \
             --tag "$IMAGE" \
+            --tag "$LATEST_IMAGE" \
             "$BUILD_CONTEXT"
           docker push "$IMAGE"
+          docker push "$LATEST_IMAGE"
           PUBLISHED_DIGEST="$(docker image inspect \
             --format '{{ index .RepoDigests 0 }}' \
             "$IMAGE")"
           test -n "$PUBLISHED_DIGEST"
-          printf 'Image: %s\nDigest: %s\n' \
+          printf 'Image: %s\nLatest: %s\nDigest: %s\n' \
             "$IMAGE" \
+            "$LATEST_IMAGE" \
             "$PUBLISHED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
       - name: Log out of Forgejo container registry
         if: always()

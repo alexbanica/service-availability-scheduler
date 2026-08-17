@@ -127,7 +127,7 @@ test('normal mode rejects absent or option-token values before invoking docker',
   }
 });
 
-test('metadata mode emits one complete matrix line and never invokes docker', () => {
+test('metadata mode emits versioned and latest image tags without invoking docker', () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'github-output-'));
   const outputPath = path.join(outputDir, 'output');
   fs.writeFileSync(outputPath, '');
@@ -140,7 +140,6 @@ test('metadata mode emits one complete matrix line and never invokes docker', ()
       'forgejo.alexlab.nl/alexlab',
       '--platform',
       'linux/arm64',
-      '--no-latest',
     ],
     { GITHUB_OUTPUT: outputPath },
   );
@@ -157,6 +156,8 @@ test('metadata mode emits one complete matrix line and never invokes docker', ()
     image_name: 'service-availability-scheduler',
     image:
       'forgejo.alexlab.nl/alexlab/service-availability-scheduler:v1.2.3-node24-alpine',
+    latest_image:
+      'forgejo.alexlab.nl/alexlab/service-availability-scheduler:latest-node24-alpine',
     context: repositoryRoot,
     dockerfile: 'docker/Dockerfile',
     platform: 'linux/arm64',
@@ -193,7 +194,6 @@ test('metadata mode rejects unsafe or incomplete inputs before docker or output 
         'forgejo.alexlab.nl/alexlab',
         '--platform',
         'linux/arm64',
-        '--no-latest',
         ...args,
       ],
       { GITHUB_OUTPUT: outputPath },
@@ -211,7 +211,6 @@ test('metadata mode rejects unsafe or incomplete inputs before docker or output 
     'forgejo.alexlab.nl/alexlab',
     '--platform',
     'linux/arm64',
-    '--no-latest',
   ]);
   assert.notEqual(missingOutput.status, 0);
   assert.deepEqual(missingOutput.dockerLog, []);
@@ -226,7 +225,6 @@ test('value-taking options reject missing values and option tokens without docke
     'forgejo.alexlab.nl/alexlab',
     '--platform',
     'linux/arm64',
-    '--no-latest',
   ];
 
   for (const option of ['--release', '--registry', '--platform']) {
@@ -275,7 +273,6 @@ test('metadata mode rejects directory or missing GITHUB_OUTPUT destinations befo
     'forgejo.alexlab.nl/alexlab',
     '--platform',
     'linux/arm64',
-    '--no-latest',
   ];
   const outputDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'github-output-destination-'),
@@ -298,6 +295,7 @@ test('metadata mode rejects directory or missing GITHUB_OUTPUT destinations befo
 test('unknown and incompatible options fail instead of being silently ignored', () => {
   for (const args of [
     ['--release', 'release-1', '--unknown'],
+    ['--emit-github-matrix', '--release', 'release-1', '--no-latest'],
     ['--emit-github-matrix', '--release', 'release-1', '--push'],
     ['--emit-github-matrix', '--release', 'release-1'],
   ]) {

@@ -216,6 +216,10 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 - Service implementations match interface names without suffix.
 
 ## Validation
+- GitHub Actions workflows are configuration, not application behavior: do not
+  create, update, require, or retain unit tests that parse or execute workflow
+  YAML. Validate changed workflows with direct syntax and static inspection
+  appropriate to the affected configuration instead.
 - Build server and browser TypeScript with `npm run build`.
 - Run lint with `npm run lint`; all reported issues must be fixed by the developer agent before completion.
 - Run format with `npm run format` before committing accepted changes; the main agent may perform this final formatting pass.

@@ -38,7 +38,7 @@ load_config() {
 
 usage() {
   echo "Usage: docker/build.sh --release <tag> [--registry <registry>] [--platform <platform>] [--no-latest] [--push] [--force] [--debug]"
-  echo "Usage: docker/build.sh --emit-github-matrix --release <tag> --registry forgejo.alexlab.nl/alexlab --platform linux/arm64 --no-latest"
+  echo "Usage: docker/build.sh --emit-github-matrix --release <tag> --registry forgejo.alexlab.nl/alexlab --platform linux/arm64"
 }
 
 error() {
@@ -128,8 +128,8 @@ emit_matrix() {
     return 0
   fi
 
-  if [ "$NO_LATEST" -eq 0 ] || [ -z "$PLATFORM_INPUT" ] || [ -z "$REGISTRY_OVERRIDE" ] || [ "$PUSH" -eq 1 ] || [ "$FORCE_NO_CACHE" -eq 1 ] || [ "$DEBUG" -eq 1 ]; then
-    error "Metadata mode requires --no-latest, --platform, --registry, and forbids push/debug/force options."
+  if [ "$NO_LATEST" -eq 1 ] || [ -z "$PLATFORM_INPUT" ] || [ -z "$REGISTRY_OVERRIDE" ] || [ "$PUSH" -eq 1 ] || [ "$FORCE_NO_CACHE" -eq 1 ] || [ "$DEBUG" -eq 1 ]; then
+    error "Metadata mode requires --platform and --registry, publishes latest, and forbids --no-latest/push/debug/force options."
   fi
 
   if [ "$REGISTRY_OVERRIDE" != "forgejo.alexlab.nl/alexlab" ]; then
@@ -154,11 +154,12 @@ emit_matrix() {
 
   local versioned_tag="${RELEASE_TAG}-node${BASE_IMAGE_VERSION}"
   local image="${REGISTRY}/${IMAGE_NAME}:${versioned_tag}"
+  local latest_image="${REGISTRY}/${IMAGE_NAME}:latest-node${BASE_IMAGE_VERSION}"
   local normalized_platform="${PLATFORM_INPUT//\//-}"
   local cache_scope="${IMAGE_NAME}-${normalized_platform}"
 
   cat <<EOF >> "$github_output_path"
-matrix={"include":[{"image_name":"${IMAGE_NAME}","image":"${image}","context":"${REPOSITORY_ROOT}","dockerfile":"${DOCKERFILE_PATH}","platform":"${PLATFORM_INPUT}","app_version":"${RELEASE_TAG}","cache_scope":"${cache_scope}"}]}
+matrix={"include":[{"image_name":"${IMAGE_NAME}","image":"${image}","latest_image":"${latest_image}","context":"${REPOSITORY_ROOT}","dockerfile":"${DOCKERFILE_PATH}","platform":"${PLATFORM_INPUT}","app_version":"${RELEASE_TAG}","cache_scope":"${cache_scope}"}]}
 EOF
 
   echo "Emitted release matrix for ${image}" >&2

@@ -8,19 +8,23 @@ Spec reference:
 ## Objective
 
 Record the direct `$super-agent` correction that moved Forgejo image publication
-to a native GitHub-hosted ARM64 runner and removed the Buildx/QEMU release path.
+to a native GitHub-hosted ARM64 runner, removed the Buildx/QEMU release path,
+and removed the Forgejo repository privacy acceptance check.
 
 ## Affected Files
 
-- `.github/workflows/publish-docker-images.yml`
-- `src/tests/unit/github-actions-release-workflow.test.ts`
-- `src/tests/unit/docker-build-script-contract.test.ts`
+- `AGENTS.md`
 - `README.md`
+- `.github/workflows/publish-docker-images.yml`
+- `docker/build.sh`
+- `src/tests/unit/docker-build-script-contract.test.ts`
+- `src/tests/unit/github-actions-validation-workflow.test.ts` (removed)
+- `src/tests/unit/github-actions-release-workflow.test.ts` (removed)
 - `specs/SPEC-github-actions-arm64-forgejo-release.md`
 - `specs/PLAN-github-actions-arm64-forgejo-release.md`
 
-No application code, Dockerfile, build script, API contract, HTTP example,
-credential, generated output, or dependency metadata was changed.
+No application API behavior, Dockerfile, API contract, HTTP example, credential,
+generated output, or dependency metadata was changed.
 
 ## Implementation Steps Performed
 
@@ -34,24 +38,29 @@ credential, generated output, or dependency metadata was changed.
    `ubuntu-latest`.
 4. Removed the QEMU setup, Buildx setup, and `docker/build-push-action` steps.
 5. Added a native publication step that validates `aarch64` and `linux/arm64`,
-   performs one matrix-driven `docker build`, pushes the immutable image once,
-   obtains its repository digest, and records the result.
-6. Updated the deterministic workflow contract test to enforce the new runner,
-   build/push commands, action exclusions, secret boundary, digest output, and
-   logout behavior.
+   performs one matrix-driven `docker build`, tags and pushes both the immutable
+   release image and `latest-node24-alpine`, obtains its repository digest, and
+   records both tags and the digest.
+6. Extended the metadata handoff with the validated latest image reference and
+   covered it in the Docker build-script contract test.
 7. Updated README operator guidance and replaced stale Buildx-focused approved
    artifacts with the delivered native-ARM64 contract.
 8. Reproduced the build-script contract failure with an ambient
    `GITHUB_OUTPUT`, then isolated child-process defaults from that runner-owned
    variable while retaining explicit test-case overrides.
+9. Added repository guidance that GitHub Actions workflows do not require unit
+   tests, then removed the existing release and validation workflow parser tests.
+10. Removed the README requirement to validate private Forgejo ownership and
+   anonymous-pull denial, and aligned the approved completed-work artifacts.
 
 ## Validation Run
 
-- `node -r ts-node/register --test src/tests/unit/github-actions-release-workflow.test.ts`
-  passed.
+- Direct `js-yaml` static inspection parsed `.github/workflows/ci.yml` and
+  `.github/workflows/publish-docker-images.yml` successfully.
+- Repository-path checks confirmed the two removed workflow-specific unit-test
+  files are absent.
 - The Docker build-script contract test passed when invoked with a valid ambient
   `GITHUB_OUTPUT`, confirming the GitHub Actions-only leak is isolated.
-- The test parsed `.github/workflows/publish-docker-images.yml` successfully.
 - `git diff --check` passed before artifact creation and is rerun during final
   reconciliation.
 
@@ -60,9 +69,10 @@ credential, generated output, or dependency metadata was changed.
 - `npm run lint`, `npm test`, `npm run build`, and TypeScript project checks were
   skipped because the requested `$super-agent` workflow permits only validation
   expected to finish within ten seconds.
-- A Docker build, live GitHub Actions tag run, Forgejo authentication/push,
-  digest verification against the registry, and anonymous-pull privacy check
-  were not run.
+- Workflow-specific unit tests were deliberately not run because this change
+  removes that test category from repository policy.
+- A Docker build, live GitHub Actions tag run, Forgejo authentication/push, and
+  digest verification against the registry were not run.
 
 ## QA And Code Review
 
@@ -74,7 +84,8 @@ credential, generated output, or dependency metadata was changed.
 
 `README.md` now describes the native ARM64 runner, ordinary Docker build/push
 path, architecture assertions, and absence of Buildx/QEMU setup and GitHub
-Actions Docker layer caching.
+Actions Docker layer caching. It no longer makes repository privacy or
+anonymous-pull denial a release acceptance requirement.
 
 ## Staging, Commit, And Push Status
 
@@ -92,7 +103,7 @@ Actions Docker layer caching.
   network dependencies.
 - Cross-run Docker layer caching was intentionally removed, so release duration
   may increase.
-- Forgejo privacy, token scope, TLS, successful push, and anonymous pull denial
-  remain operator-owned live checks.
+- Forgejo token scope, TLS, and successful push remain operator-owned live
+  checks.
 - The default Definition of Done is not fully satisfied because full validation,
   QA, review, commit, push, and live release validation were skipped.

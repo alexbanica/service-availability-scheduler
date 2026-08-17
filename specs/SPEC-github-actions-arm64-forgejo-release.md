@@ -19,17 +19,22 @@ with the Docker Engine already provided by that environment.
 
 - Run the image publication job on GitHub's `ubuntu-24.04-arm` hosted runner.
 - Retain tag-only release triggering, metadata preparation, immutable image
-  naming, Forgejo login, read-only GitHub permissions, digest reporting, and
-  unconditional Forgejo logout.
+  naming, moving latest tag publication, Forgejo login, read-only GitHub
+  permissions, digest reporting, and unconditional Forgejo logout.
 - Replace QEMU setup, Buildx setup, `docker/build-push-action`, and its GitHub
   Actions cache configuration with one ordinary `docker build` and one
-  `docker push` per emitted image-matrix row.
+  push per emitted tag in each image-matrix row.
 - Verify the runner reports `aarch64` and the emitted platform is exactly
   `linux/arm64` before building.
-- Update the release workflow contract test and operator documentation.
+- Document the release workflow in operator documentation.
 - Isolate the Docker build-script contract test from an ambient runner
   `GITHUB_OUTPUT` while preserving explicit output paths supplied by individual
   metadata-mode cases.
+- Do not create, update, require, or retain workflow-specific unit tests for
+  GitHub Actions configuration; remove the existing release and validation
+  workflow parser tests.
+- Do not make Forgejo repository privacy or anonymous-pull denial a release
+  acceptance check.
 
 ## Out Of Scope
 
@@ -59,7 +64,9 @@ with the Docker Engine already provided by that environment.
 - The only supported publication platform is `linux/arm64`.
 - The image remains
   `forgejo.alexlab.nl/alexlab/service-availability-scheduler:<tag>-node24-alpine`.
-- `APP_VERSION`, context, Dockerfile, platform, and image reference come from
+- Each release also publishes
+  `forgejo.alexlab.nl/alexlab/service-availability-scheduler:latest-node24-alpine`.
+- `APP_VERSION`, context, Dockerfile, platform, and image references come from
   the validated matrix through step environment variables.
 - Publication uses only `FORGEJO_REGISTRY_USERNAME` and
   `FORGEJO_REGISTRY_TOKEN`.
@@ -75,15 +82,21 @@ with the Docker Engine already provided by that environment.
 4. Before building, the step fails unless `uname -m` is `aarch64` and the matrix
    platform is `linux/arm64`.
 5. For each matrix row, the job executes exactly one `docker build` with the
-   emitted platform, Dockerfile, application version, image tag, and context.
-6. The job executes exactly one `docker push` for that immutable image.
+   emitted platform, Dockerfile, application version, immutable image tag,
+   latest image tag, and context.
+6. The job pushes both the immutable release image and the moving latest image.
 7. It obtains the pushed repository digest from the local Docker image metadata
-   and writes the image and digest to `GITHUB_STEP_SUMMARY`.
+   and writes both tags and the digest to `GITHUB_STEP_SUMMARY`.
 8. Forgejo logout runs with `if: always()` after the publication step.
 9. The build-script test harness removes the parent process's `GITHUB_OUTPUT`
    before spawning `docker/build.sh`. A case that needs an output file must pass
    its own explicit path, so the missing-output case behaves identically on a
    developer machine and inside GitHub Actions.
+10. `AGENTS.md` makes GitHub Actions workflow tests explicitly out of policy.
+    The two existing workflow parser tests are removed; workflow changes use
+    direct syntax and static inspection rather than unit-test maintenance.
+11. Release acceptance no longer depends on Forgejo repository privacy or an
+    anonymous-pull denial check.
 
 The workflow contains no QEMU setup, Buildx setup, `docker buildx` command,
 `docker/build-push-action`, or `type=gha` Docker layer-cache configuration.
@@ -111,16 +124,18 @@ The workflow contains no QEMU setup, Buildx setup, `docker buildx` command,
   the GitHub release workflow uses only its non-building metadata mode.
 - The failing build-script contract is corrected without weakening production
   validation: only inherited test-process state is removed.
+- Release delivery no longer remains draft solely because repository privacy or
+  anonymous-pull denial was not verified.
 
 ## Validation Performed
 
-- The focused release workflow contract test passed.
+- Direct `js-yaml` static inspection parsed both GitHub Actions workflows after
+  the test-policy change.
+- Repository-path checks confirmed both workflow-specific unit-test files are
+  absent.
 - The focused Docker build-script contract test passed with a valid ambient
   `GITHUB_OUTPUT`, reproducing the GitHub Actions environment that previously
   caused the missing-output assertion to fail.
-- The workflow YAML was parsed by that test and checked for the native ARM64
-  label, one native build/push path, exact Forgejo secrets, digest reporting,
-  logout, and absence of QEMU, Buildx, Buildx actions, and `type=gha` caching.
 - `git diff --check` passed before the completed-work artifacts were written and
   is rerun during final reconciliation.
 
@@ -128,12 +143,15 @@ The workflow contains no QEMU setup, Buildx setup, `docker buildx` command,
 
 - Full lint, full tests, TypeScript builds, and Docker builds exceed the
   `$super-agent` short-validation limit and were not run.
-- No live GitHub Actions run, tag push, Forgejo login/push, anonymous-pull check,
-  or runtime ARM64 image validation was performed.
+- No workflow-specific unit test is run because repository guidance now excludes
+  that test category.
+- No live GitHub Actions run, tag push, Forgejo login/push, or runtime ARM64
+  image validation was performed.
 - QA and independent code review are skipped by the requested workflow.
 
 ## Documentation Changes
 
 `README.md` now documents the native `ubuntu-24.04-arm` publication job,
 ordinary Docker build/push sequence, architecture guards, removal of the Buildx
-helper path, and removal of workflow Docker layer caching.
+helper path, removal of workflow Docker layer caching, and removal of the
+Forgejo privacy acceptance check.

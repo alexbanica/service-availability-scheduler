@@ -211,18 +211,20 @@ GitHub Actions workflow and publishes container images on tag pushes only.
   - Tag input handling is owned by `docker/build.sh --emit-github-matrix`:
     - exact lower-case safe tag pattern only (`^[a-z0-9_][a-z0-9_.-]*$`)
     - full image tag length limit of 128 characters
-    - immutable tag mapping only: `<tag>-node24-alpine`
-    - no moving `latest` tag publication from CI
+    - immutable tag mapping: `<tag>-node24-alpine`
+    - moving latest tag mapping: `latest-node24-alpine`
   - Two-job design:
     - `prepare-release`: checks out the tag target commit and emits release matrix to
       `GITHUB_OUTPUT` in GitHub matrix format without build or registry credentials.
     - `publish`: depends on preparation, checks out the same tag target, logs in to
       Forgejo on a native `ubuntu-24.04-arm` GitHub-hosted runner, and runs one
-      ordinary `docker build` followed by one `docker push` using the emitted matrix.
+      ordinary `docker build` followed by pushes for both emitted tags.
   - Publication matrix is the single source of truth for image name, context,
     dockerfile, platform, and `APP_VERSION`.
   - Registry target is:
     `forgejo.alexlab.nl/alexlab/service-availability-scheduler:<tag>-node24-alpine`
+    and the same image is published as
+    `forgejo.alexlab.nl/alexlab/service-availability-scheduler:latest-node24-alpine`.
   - Build platform is `linux/arm64` only. The publish job verifies both the native
     runner architecture and emitted platform before building. It does not install
     QEMU, create a Buildx builder, or pull the Buildx BuildKit helper image.
@@ -234,18 +236,13 @@ GitHub Actions workflow and publishes container images on tag pushes only.
     - `FORGEJO_REGISTRY_USERNAME`
     - `FORGEJO_REGISTRY_TOKEN`
 
-- **Required live operator precondition**
-  - Forgejo `alexlab` organization/package ownership must be private and private
-    resource access must be enforced before release delivery is considered final.
-  - Anonymous pulls for the published image must be denied (operator-owned validation
-    path), otherwise the release is not production-validated.
-
 - **Local build compatibility**
   - `docker/build.sh --release <tag>` remains available and defaults to the checked-in
     local `.env` registry.
   - Local behavior still includes the release tag and moving `latest` tags unless
     `--no-latest` is passed.
-  - CI does not use the local moving tag path and relies on the metadata mode handoff.
+  - CI always publishes the moving latest tag; `--no-latest` is a local-build
+    option only.
 
 No `swagger.yml` or `http/*.http` changes are required for this automation-only
 delivery because no API contract or request/response surface changed.
