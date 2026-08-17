@@ -13,6 +13,7 @@ workflow terminology.
 
 - Display the workflow as `Publish Docker images`.
 - Display tag-triggered runs as `Publish Docker images for <tag>`.
+- Store the workflow as `.github/workflows/publish-docker-images.yml`.
 - Give preparation, publishing, and action steps explicit, sentence-case
   display names.
 - Use `Checkout repository`, `Log in to Forgejo container registry`, and
@@ -21,12 +22,14 @@ workflow terminology.
 
 ## Scope
 
-- `.github/workflows/release.yml`
+- `.github/workflows/publish-docker-images.yml`
+- Checked-in references to the workflow path.
+- Existing unit tests whose sole purpose was parsing GitHub Actions workflows.
 - The matching completed-work spec and plan.
 
 ## Out Of Scope
 
-- Workflow filenames, triggers, permissions, runners, action versions, secrets,
+- Triggers, permissions, runners, action versions, secrets,
   registry coordinates, image tags, build commands, and push behavior.
 - CI-only and non-Docker package workflows.
 
@@ -48,14 +51,16 @@ workflow terminology.
 
 The workflow, run, jobs, and steps use the common labels while the current
 native ARM64 matrix publication content and all executable YAML values remain
-unchanged by this alignment.
+unchanged by this alignment. The workflow file and every checked-in reference
+use the common filename. Existing workflow-parser tests are removed in
+accordance with repository policy instead of being updated for the renamed path.
 
 ## Assumptions And Impact
 
 The affected-project inventory is the set of tracked GitHub workflows that both
-build and publish Docker images. The visible workflow and check labels change;
-operators and branch rules that match old display names may need to select the
-new names. Image publication behavior is unchanged.
+build and publish Docker images. The visible workflow, check labels, and file
+path change; external automation or branch rules that match earlier names or
+paths may need to select the new values. Image publication behavior is unchanged.
 
 ## Validation Performed
 
@@ -71,5 +76,5 @@ workflow.
 
 ## Documentation Changes
 
-This completed-work spec and its plan were added. README changes were not needed
-because operational behavior and workflow filenames did not change.
+The README, existing workflow-path references, and matching completed-work
+artifacts were updated to the common filename.

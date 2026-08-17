@@ -9,7 +9,11 @@ Date: 2026-08-17
 
 ## Affected Files
 
-- `.github/workflows/release.yml`
+- `.github/workflows/publish-docker-images.yml`
+- `README.md`
+- `specs/PLAN-github-actions-arm64-forgejo-release.md`
+- `src/tests/unit/github-actions-release-workflow.test.ts`
+- `src/tests/unit/github-actions-validation-workflow.test.ts`
 - `specs/SPEC-github-actions-docker-publish-naming-alignment.md`
 - `specs/PLAN-github-actions-docker-publish-naming-alignment.md`
 
@@ -17,10 +21,14 @@ Date: 2026-08-17
 
 1. Inventoried tracked Docker build-and-publish workflows across the workspace.
 2. Confirmed `main` matched a freshly fetched `origin/main`.
-3. Added the common workflow/run names and explicit job/step display names.
-4. Preserved triggers, runners, actions, secrets, matrix data, and commands.
-5. Isolated the alignment from the overlapping pre-existing staged change set.
-6. Performed short static validation and reconciled the accepted paths.
+3. Renamed the publication workflow to `publish-docker-images.yml`.
+4. Added the common workflow/run names and explicit job/step display names.
+5. Updated every checked-in reference to the common workflow filename.
+6. Removed the existing GitHub Actions parser tests as required by repository
+   policy rather than retaining a test tied to the former filename.
+7. Preserved triggers, runners, actions, secrets, matrix data, and commands.
+8. Isolated the remaining pre-existing staged change set.
+9. Performed short static validation and reconciled the accepted paths.
 
 ## Validation Run
 
@@ -40,13 +48,13 @@ by the requested `super-agent` workflow.
 
 ## Documentation, Staging, Commit, And Push Status
 
-The matching completed-work artifacts were added; README changes were not
-needed. Only the accepted naming/artifact paths were included in the delivery
-commit; the prior staged change set remains staged. The delivery was committed
-on `main` and pushed to `origin/main`; exact remote verification is recorded in
-the completion report.
+The README, existing path references, and matching completed-work artifacts were
+updated. Only the accepted naming/documentation paths were included in the
+delivery commit; the prior staged change set remains staged. The delivery was
+committed on `main` and pushed to `origin/main`; exact remote verification is
+recorded in the completion report.
 
 ## Residual Risk
 
-Hosted rendering and execution remain unverified. Any external branch rule or
-dashboard keyed to an old workflow/job display name may require re-selection.
+Hosted rendering and execution remain unverified. External automation keyed to
+an earlier workflow path or display name may require reconfiguration.

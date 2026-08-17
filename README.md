@@ -206,7 +206,7 @@ GitHub Actions workflow and publishes container images on tag pushes only.
     database integration tests remain skipped unless existing `TEST_DATABASE_URL`
     and `TEST_DATABASE_ALLOW_TRUNCATE=1` are provided.
 
-- **Release workflow (`.github/workflows/release.yml`)**
+- **Release workflow (`.github/workflows/publish-docker-images.yml`)**
   - Triggers only on Git tag pushes (`push` + `tags: - '*'`).
   - Tag input handling is owned by `docker/build.sh --emit-github-matrix`:
     - exact lower-case safe tag pattern only (`^[a-z0-9_][a-z0-9_.-]*$`)

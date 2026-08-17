@@ -12,7 +12,7 @@ to a native GitHub-hosted ARM64 runner and removed the Buildx/QEMU release path.
 
 ## Affected Files
 
-- `.github/workflows/release.yml`
+- `.github/workflows/publish-docker-images.yml`
 - `src/tests/unit/github-actions-release-workflow.test.ts`
 - `src/tests/unit/docker-build-script-contract.test.ts`
 - `README.md`
@@ -51,7 +51,7 @@ credential, generated output, or dependency metadata was changed.
   passed.
 - The Docker build-script contract test passed when invoked with a valid ambient
   `GITHUB_OUTPUT`, confirming the GitHub Actions-only leak is isolated.
-- The test parsed `.github/workflows/release.yml` successfully.
+- The test parsed `.github/workflows/publish-docker-images.yml` successfully.
 - `git diff --check` passed before artifact creation and is rerun during final
   reconciliation.
 
