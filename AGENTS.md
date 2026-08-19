@@ -151,6 +151,12 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
   login mode presents authentication choices first: email sign-in, Google
   sign-in when enabled, and account creation. The email/password form opens only
   after choosing email sign-in and includes reset-password and back actions.
+- The authenticated header groups theme switching, account deletion, and logout
+  in one burger menu at every viewport size. Opening the menu focuses its first
+  action; Escape closes it and restores focus to the trigger; clicking outside
+  closes it. Starting account deletion closes the menu before opening the
+  dedicated confirmation dialog, whose close action restores focus to the
+  burger trigger.
 - Non-activated users may navigate the authenticated shell, but the browser must
   avoid protected data fetches, auto-refresh scheduling, event subscription, and
   protected mutations until activation.
@@ -219,9 +225,11 @@ This repository is a TypeScript/Node.js reservation app for claiming services pe
 
 ## Specs Folder
 - `specs/` is not a long-term archive for completed implementation history.
-  Keep it focused on active or intentionally retained artifacts.
-- Preserve `specs/SPEC-workspace-owner-environment-deletion.md`; it is an
-  active approved spec and must not be removed during cleanup.
+  Keep it focused on active, not-yet-delivered artifacts or intentionally
+  retained standalone plans.
+- Once delivered behavior and constraints are accurately consolidated into
+  `README.md`, `AGENTS.md`, API contracts, or other maintained documentation,
+  remove its completed `SPEC-*.md` and matching `PLAN-*.md` artifacts together.
 - When using `$super-agent`, completed-work spec and plan artifacts may be
   created under `specs/`, but subsequent cleanup may remove older completed
   artifacts once durable guidance has been moved into `AGENTS.md` or the

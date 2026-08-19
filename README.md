@@ -237,6 +237,10 @@ GitHub Actions workflow and publishes container images on tag pushes only.
     - `FORGEJO_REGISTRY_TOKEN`
 
 - **Local build compatibility**
+  - The checked-out repository root is the Docker build context; release builds
+    do not download a second source tree.
+  - `docker/build.sh` passes only inputs consumed by the Dockerfile, while
+    `docker/.env` contains only active image-tag and local-registry defaults.
   - `docker/build.sh --release <tag>` remains available and defaults to the checked-in
     local `.env` registry.
   - Local behavior still includes the release tag and moving `latest` tags unless
@@ -250,6 +254,20 @@ delivery because no API contract or request/response surface changed.
 Workspace admins define workspace owners, environments, and services from the
 admin UI. Service creation selects existing workspace-scoped owners and
 environments; it does not create them inline.
+
+### Current unverified operational areas
+
+The following behavior is configured or implemented but has not been confirmed
+by the repository's recorded live validation. Treat it as pending operational
+verification, not as proof of a successful production release:
+
+- The native ARM64 release workflow has not been verified by a hosted tag run,
+  live Forgejo authentication/push, or registry digest/runtime image check.
+- Self-service account deletion has not been exercised by recorded live
+  MariaDB/runtime QA; use a disposable database and the guarded test-database
+  settings before relying on its complete transactional cleanup in production.
+- The authenticated burger menu has not received recorded manual responsive or
+  assistive-technology browser QA.
 
 ## Workspace Administration
 
@@ -272,8 +290,13 @@ links use `/workspace-invitations/<code>` and preserve login or registration
 handoff context. Raw invitation codes are never returned by API responses.
 
 Resource administrators can remove pending invitations. Owner and environment
-deletion is an approved spec: deletion must be confirmed, must be scoped to the
-workspace, and must detach affected services without deleting those services.
+deletion requires confirmation, is scoped to the selected workspace, and
+detaches affected services without deleting those services.
+
+The authenticated header groups theme switching, account deletion, and logout
+inside one burger menu. Escape closes the menu and returns keyboard focus to the
+trigger; outside-click also closes it. Closing the account-deletion dialog
+returns focus to the same trigger.
 
 ## Self-Service Account Deletion
 
