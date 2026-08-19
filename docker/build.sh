@@ -197,16 +197,11 @@ build_release() {
 
   cd "$REPOSITORY_ROOT"
 
-  sed -e "s/BASE_IMAGE_VERSION/${BASE_IMAGE_VERSION}/g" \
-      -e "s/BASE_BUILD_IMAGE_VERSION/${BASE_BUILD_IMAGE_VERSION}/g" \
-      "$DOCKERFILE_PATH" | \
-    docker buildx build \
-      "${build_args[@]}" \
-      --build-arg GITHUB_REPO="${GITHUB_REPO}" \
-      --build-arg RELEASE_TAG="${RELEASE_TAG}" \
-      --build-arg APP_VERSION="${RELEASE_TAG}" \
-      -f - \
-      .
+  docker buildx build \
+    "${build_args[@]}" \
+    --build-arg APP_VERSION="${RELEASE_TAG}" \
+    -f "$DOCKERFILE_PATH" \
+    .
 }
 
 if [ "$EMIT_MATRIX" -eq 1 ]; then
